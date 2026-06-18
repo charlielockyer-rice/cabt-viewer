@@ -558,6 +558,34 @@ function buildPrompts(observation: CabtObservation, activePlayerIndex: number, d
     return [];
   }
   const id = promptIdForSelect(select);
+  if (select.context === CabtSelectContext.TO_PRIZE) {
+    return [
+      {
+        id,
+        className: 'ChoosePrizePrompt',
+        type: 'cabt-prize-select',
+        playerId: activePlayerIndex,
+        playerIndex: activePlayerIndex,
+        supported: true,
+        message: cabtSelectLabel(select.context),
+        resultSchema: 'optionIndexes',
+        fields: {
+          prizes: select.option.map((option, optionIndex) => {
+            const optionCard = cardForOption(option, observation);
+            return {
+              index: optionIndex,
+              cards: optionCard ? [cardToView(optionCard, dataMaps)] : [],
+            };
+          }),
+          options: {
+            min: select.minCount,
+            max: select.maxCount,
+          },
+          cabtSelect: select,
+        },
+      },
+    ];
+  }
   if (isCardSelectionPrompt(observation)) {
     return [
       {
@@ -777,6 +805,7 @@ function cabtSelectLabel(context: number) {
     [CabtSelectContext.TO_BENCH]: 'Choose Bench Pokemon',
     [CabtSelectContext.TO_HAND]: 'Choose Card',
     [CabtSelectContext.DISCARD]: 'Choose Discard',
+    [CabtSelectContext.TO_PRIZE]: 'Choose Prize Card',
     [CabtSelectContext.DISCARD_ENERGY_CARD]: 'Choose energy to discard',
     [CabtSelectContext.DISCARD_ENERGY]: 'Choose energy to discard',
     [CabtSelectContext.TO_HAND_ENERGY]: 'Choose energy for your hand',

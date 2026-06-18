@@ -287,6 +287,70 @@ describe('cabtObservationToGameView', () => {
     expect(prompt?.message).toBe('Choose cards to draw');
     expect(prompt?.fields.values).toEqual(['Draw 1', 'Draw 2']);
   });
+
+  it('routes CABT prize selections through the prize prompt with option indexes', () => {
+    const dataMaps: CabtDataMaps = {
+      cardData: {
+        1123: {
+          cardId: 1123,
+          name: 'Switch',
+          cardType: CabtCardType.ITEM,
+          set: 'SVI',
+          setNumber: '194',
+        },
+      },
+      attacks: {},
+    };
+    const observation = {
+      select: {
+        type: CabtSelectType.CARD,
+        context: CabtSelectContext.TO_PRIZE,
+        minCount: 1,
+        maxCount: 1,
+        remainDamageCounter: 0,
+        remainEnergyCost: 0,
+        option: [
+          { type: CabtOptionType.CARD, area: CabtAreaType.PRIZE, index: 3 },
+        ],
+        deck: null,
+        contextCard: null,
+        effect: null,
+      },
+      logs: [],
+      current: {
+        turn: 2,
+        turnActionCount: 0,
+        yourIndex: 0,
+        firstPlayer: 0,
+        supporterPlayed: false,
+        stadiumPlayed: false,
+        energyAttached: true,
+        retreated: false,
+        result: -1,
+        stadium: [],
+        looking: null,
+        players: [
+          {
+            ...player(),
+            prize: [null, null, null, { id: 1123, serial: 70, playerIndex: 0 }],
+          },
+          player(),
+        ],
+      },
+    } satisfies CabtObservation;
+
+    const view = cabtObservationToGameView(observation, [], dataMaps);
+    const prompt = view.prompts[0];
+
+    expect(prompt?.className).toBe('ChoosePrizePrompt');
+    expect(prompt?.message).toBe('Choose Prize Card');
+    expect(prompt?.fields.prizes).toEqual([
+      {
+        index: 0,
+        cards: [expect.objectContaining({ name: 'Switch' })],
+      },
+    ]);
+  });
 });
 
 function player() {
