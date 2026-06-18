@@ -710,7 +710,6 @@ function optionLabel(option: CabtOption, dataMaps: CabtDataMaps, observation: Ca
 function cardForOption(option: CabtOption, observation: CabtObservation): CabtCard | CabtPokemon | null {
   const area = option.area;
   const index = option.index;
-  const playerIndex = option.playerIndex;
   if (area === undefined || area === null || index === undefined || index === null) {
     return null;
   }
@@ -725,6 +724,7 @@ function cardForOption(option: CabtOption, observation: CabtObservation): CabtCa
   if (area === CabtAreaType.LOOKING) {
     return current?.looking?.[index] ?? null;
   }
+  const playerIndex = option.playerIndex ?? current?.yourIndex;
   if (playerIndex === undefined || playerIndex === null || !current?.players[playerIndex]) {
     return null;
   }

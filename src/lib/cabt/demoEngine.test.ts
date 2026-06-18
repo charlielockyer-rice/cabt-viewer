@@ -183,6 +183,66 @@ describe('cabtObservationToGameView', () => {
       expect.objectContaining({ name: 'Basic {G} Energy', energyType: 1 }),
     ]);
   });
+
+  it('resolves current-player card options when CABT omits playerIndex', () => {
+    const dataMaps: CabtDataMaps = {
+      cardData: {
+        8: {
+          cardId: 8,
+          name: 'Basic {W} Energy',
+          cardType: CabtCardType.BASIC_ENERGY,
+          energyType: 2,
+          set: 'SVE',
+          setNumber: '8',
+        },
+      },
+      attacks: {},
+    };
+    const observation = {
+      select: {
+        type: CabtSelectType.CARD,
+        context: CabtSelectContext.TO_HAND,
+        minCount: 1,
+        maxCount: 1,
+        remainDamageCounter: 0,
+        remainEnergyCost: 0,
+        option: [
+          { type: CabtOptionType.CARD, area: CabtAreaType.DISCARD, index: 0 },
+        ],
+        deck: null,
+        contextCard: null,
+        effect: null,
+      },
+      logs: [],
+      current: {
+        turn: 1,
+        turnActionCount: 0,
+        yourIndex: 1,
+        firstPlayer: 0,
+        supporterPlayed: false,
+        stadiumPlayed: false,
+        energyAttached: true,
+        retreated: false,
+        result: -1,
+        stadium: [],
+        looking: null,
+        players: [
+          player(),
+          {
+            ...player(),
+            discard: [{ id: 8, serial: 20, playerIndex: 1 }],
+          },
+        ],
+      },
+    } satisfies CabtObservation;
+
+    const view = cabtObservationToGameView(observation, [], dataMaps);
+    const prompt = view.prompts[0];
+
+    expect(prompt?.fields.cardList).toEqual([
+      expect.objectContaining({ name: 'Basic {W} Energy', energyType: 2 }),
+    ]);
+  });
 });
 
 function player() {
