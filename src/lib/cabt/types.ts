@@ -172,7 +172,6 @@ export type CabtPlayerState = {
   bench: CabtPokemon[];
   benchMax: number;
   deckCount: number;
-  deck?: CabtCard[];
   discard: CabtCard[];
   prize: Array<CabtCard | null>;
   handCount: number;
