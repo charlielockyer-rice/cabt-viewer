@@ -1,0 +1,37 @@
+{
+  "name": "cabt-viewer",
+  "private": true,
+  "description": "Svelte viewer for CABT battle states and replays.",
+  "license": "MIT",
+  "version": "0.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20.19.0 <25"
+  },
+  "scripts": {
+    "dev": "sh -c 'npm run dev:engine & engine_pid=$!; trap \"kill $engine_pid 2>/dev/null\" EXIT INT TERM; npm run dev:web'",
+    "dev:lan": "sh -c 'npm run dev:engine:lan & engine_pid=$!; trap \"kill $engine_pid 2>/dev/null\" EXIT INT TERM; npm run dev:web:lan'",
+    "dev:web": "vite --host 127.0.0.1 --port 5173",
+    "dev:web:lan": "vite --host 0.0.0.0 --port 5173",
+    "dev:engine": "tsx src/engine/server.ts",
+    "dev:engine:lan": "LOCAL_ENGINE_HOST=0.0.0.0 tsx src/engine/server.ts",
+    "build": "tsc -p tsconfig.build.json && vite build",
+    "generate:cabt-data": "python3 scripts/generate-cabt-metadata.py",
+    "generate:cabt-data:docker": "docker run --rm --platform linux/amd64 -v \"$PWD/..:/workspace\" -w /workspace/cabt-viewer python:3.11-slim python scripts/generate-cabt-metadata.py",
+    "start": "sirv dist --host 0.0.0.0 --port ${PORT:-4173} --single",
+    "test": "vitest run",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.1.2",
+    "@types/node": "^24.12.4",
+    "sirv-cli": "^3.0.1",
+    "svelte": "^5.56.3",
+    "typescript": "~6.0.2",
+    "vite": "^8.0.16"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0",
+    "vitest": "^4.1.9"
+  }
+}

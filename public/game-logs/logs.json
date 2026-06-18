@@ -1,0 +1,18 @@
+{
+  "logs": [
+    {
+      "id": "cabt-runner-sample",
+      "name": "CABT runner sample",
+      "file": "cabt-match.json",
+      "players": ["Runner policy", "Runner policy"],
+      "description": "Raw CABT runner output from the local sample policy."
+    },
+    {
+      "id": "kaggle-context-sample",
+      "name": "Kaggle context sample",
+      "file": "kaggle-context.json",
+      "players": ["Sample agent", "Sample agent"],
+      "description": "Kaggle-environments context artifact for replay adapter testing."
+    }
+  ]
+}

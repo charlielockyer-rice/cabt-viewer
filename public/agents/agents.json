@@ -1,0 +1,9 @@
+{
+  "agents": [
+    {
+      "id": "first-legal",
+      "name": "First legal option",
+      "description": "Uses the first legal CABT selection whenever the local engine controls the opponent."
+    }
+  ]
+}

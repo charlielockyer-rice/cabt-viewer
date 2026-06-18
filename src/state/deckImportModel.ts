@@ -1,0 +1,41 @@
+import { parseDeckList } from '../lib/game/deckImport';
+
+export type LocalGameDecks =
+  | {
+      ok: true;
+      player1Cards: string[];
+      player2Cards: string[];
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
+export function parseLocalGameDecks(deck1Text: string, deck2Text: string): LocalGameDecks {
+  const p1 = parseDeckList(deck1Text);
+  const p2 = parseDeckList(deck2Text);
+  if (p1.errors.length || p2.errors.length) {
+    return {
+      ok: false,
+      error: [...p1.errors.map((error) => `Your deck: ${error}`), ...p2.errors.map((error) => `AI opponent deck: ${error}`)].join(
+        '\n',
+      ),
+    };
+  }
+  return {
+    ok: true,
+    player1Cards: p1.cards,
+    player2Cards: p2.cards,
+  };
+}
+
+export function parseLocalGameDeck(deckText: string, label: string): { ok: true; cards: string[] } | { ok: false; error: string } {
+  const parsed = parseDeckList(deckText);
+  if (parsed.errors.length) {
+    return {
+      ok: false,
+      error: parsed.errors.map((error) => `${label}: ${error}`).join('\n'),
+    };
+  }
+  return { ok: true, cards: parsed.cards };
+}
