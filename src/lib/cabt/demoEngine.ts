@@ -697,6 +697,7 @@ function activeAttacks(active: CabtPokemon | null | undefined, dataMaps: CabtDat
 function optionLabel(option: CabtOption, dataMaps: CabtDataMaps, observation: CabtObservation, context?: number) {
   if (context === CabtSelectContext.IS_FIRST && option.type === CabtOptionType.YES) return 'Go first';
   if (context === CabtSelectContext.IS_FIRST && option.type === CabtOptionType.NO) return 'Go second';
+  if (option.type === CabtOptionType.NUMBER) return numberOptionLabel(option, context);
   if (option.type === CabtOptionType.YES) return 'Yes';
   if (option.type === CabtOptionType.NO) return 'No';
   if (option.type === CabtOptionType.END) return 'End turn';
@@ -705,6 +706,23 @@ function optionLabel(option: CabtOption, dataMaps: CabtDataMaps, observation: Ca
   const optionCard = cardForOption(option, observation);
   if (optionCard) return dataMaps.cardData[optionCard.id]?.name ?? `Card ${optionCard.id}`;
   return `Option ${option.type}`;
+}
+
+function numberOptionLabel(option: CabtOption, context?: number) {
+  const value = option.number ?? option.count;
+  if (value === undefined || value === null) {
+    return 'Number';
+  }
+  if (context === CabtSelectContext.DRAW_COUNT) {
+    return `Draw ${value}`;
+  }
+  if (context === CabtSelectContext.DAMAGE_COUNTER_COUNT) {
+    return `${value} damage counter${value === 1 ? '' : 's'}`;
+  }
+  if (context === CabtSelectContext.REMOVE_DAMAGE_COUNTER_COUNT) {
+    return `Remove ${value}`;
+  }
+  return String(value);
 }
 
 function cardForOption(option: CabtOption, observation: CabtObservation): CabtCard | CabtPokemon | null {
@@ -767,6 +785,9 @@ function cabtSelectLabel(context: number) {
     [CabtSelectContext.ATTACH_FROM]: 'Choose Attachment Source',
     [CabtSelectContext.ATTACH_TO]: 'Choose Attachment Target',
     [CabtSelectContext.ATTACK]: 'Choose Attack',
+    [CabtSelectContext.DRAW_COUNT]: 'Choose cards to draw',
+    [CabtSelectContext.DAMAGE_COUNTER_COUNT]: 'Choose damage counter count',
+    [CabtSelectContext.REMOVE_DAMAGE_COUNTER_COUNT]: 'Choose damage counters to remove',
     [CabtSelectContext.IS_FIRST]: 'Choose Turn Order',
     [CabtSelectContext.MULLIGAN]: 'Mulligan',
     [CabtSelectContext.ACTIVATE]: 'Resolve Effect',

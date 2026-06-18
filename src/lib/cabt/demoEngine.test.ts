@@ -243,6 +243,50 @@ describe('cabtObservationToGameView', () => {
       expect.objectContaining({ name: 'Basic {W} Energy', energyType: 2 }),
     ]);
   });
+
+  it('labels CABT draw-count prompts with numeric choices', () => {
+    const observation = {
+      select: {
+        type: CabtSelectType.COUNT,
+        context: CabtSelectContext.DRAW_COUNT,
+        minCount: 1,
+        maxCount: 1,
+        remainDamageCounter: 0,
+        remainEnergyCost: 0,
+        option: [
+          { type: CabtOptionType.NUMBER, number: 1 },
+          { type: CabtOptionType.NUMBER, number: 2 },
+        ],
+        deck: null,
+        contextCard: null,
+        effect: null,
+      },
+      logs: [],
+      current: {
+        turn: 1,
+        turnActionCount: 0,
+        yourIndex: 0,
+        firstPlayer: 0,
+        supporterPlayed: false,
+        stadiumPlayed: false,
+        energyAttached: true,
+        retreated: false,
+        result: -1,
+        stadium: [],
+        looking: null,
+        players: [
+          player(),
+          player(),
+        ],
+      },
+    } satisfies CabtObservation;
+
+    const view = cabtObservationToGameView(observation, [], { cardData: {}, attacks: {} });
+    const prompt = view.prompts[0];
+
+    expect(prompt?.message).toBe('Choose cards to draw');
+    expect(prompt?.fields.values).toEqual(['Draw 1', 'Draw 2']);
+  });
 });
 
 function player() {
