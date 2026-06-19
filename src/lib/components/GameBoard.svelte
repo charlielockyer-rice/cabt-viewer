@@ -2,6 +2,7 @@
   import ActiveDuel from './ActiveDuel.svelte';
   import BenchZone from './BenchZone.svelte';
   import CenterPiles from './CenterPiles.svelte';
+  import DeckPrizeAnimation from './DeckPrizeAnimation.svelte';
   import type { ActionTimelineEvent, CardView, PlayerView, PokemonSlotView } from '../game/types';
 
   type ZoneName = 'discard' | 'lostZone' | 'stadium' | 'playZone';
@@ -215,6 +216,12 @@
       {showDiscard}
     />
 
+    <DeckPrizeAnimation
+      events={animationEvents}
+      scopeKey={animationScopeKey}
+      {replayMode}
+    />
+
     <ActiveDuel
       {topPlayer}
       {bottomPlayer}
@@ -309,7 +316,10 @@
     gap: var(--board-row-gap);
     align-items: stretch;
     justify-items: stretch;
-    padding: var(--board-content-inset-y) var(--board-content-inset-x);
+    padding:
+      var(--board-content-inset-y)
+      var(--board-content-inset-x)
+      var(--board-content-inset-bottom, var(--board-content-inset-y));
     background: var(--board-plane-bg);
     overflow: visible;
     transform: rotateX(var(--board-tilt, 8deg)) scaleY(var(--board-scale-y, 0.94)) translateY(var(--board-lift, 0px));

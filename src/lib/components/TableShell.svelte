@@ -41,7 +41,9 @@
     --board-content-pad: calc(var(--board-card-w) * 0.18);
     --board-edge-pad-x: var(--board-edge-pad);
     --board-content-inset-y: calc(var(--board-outline-pad-y) + var(--board-content-pad));
+    --board-content-inset-bottom: calc(var(--board-content-inset-y) + (var(--board-card-w) * 0.22));
     --board-content-inset-x: calc(var(--board-edge-pad-x) + var(--board-content-pad));
+    --board-bottom-pile-clearance: calc(var(--board-card-w) * 0.18);
     width: max(100vw, var(--min-table-width));
     min-width: var(--min-table-width);
     min-height: 100vh;

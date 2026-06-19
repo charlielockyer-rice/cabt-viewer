@@ -80,7 +80,10 @@
       </button>
       <div class="prize-grid" title={`${topPlayer.name} prizes`} aria-label={`${topPlayer.name} prizes`}>
         {#each visiblePrizeCards(topPlayer.prizesLeft) as index}
-          <span style={`--row: ${Math.floor(index / 2)}; --col: ${index % 2};`}></span>
+          <span
+            data-card-anchor={`player:${topPlayer.index}:prize:${index}`}
+            style={`--row: ${Math.floor(index / 2)}; --col: ${index % 2};`}
+          ></span>
         {/each}
       </div>
     </div>
@@ -152,7 +155,10 @@
       </button>
       <div class="prize-grid" title={`${bottomPlayer.name} prizes`} aria-label={`${bottomPlayer.name} prizes`}>
         {#each visiblePrizeCards(bottomPlayer.prizesLeft) as index}
-          <span style={`--row: ${Math.floor(index / 2)}; --col: ${index % 2};`}></span>
+          <span
+            data-card-anchor={`player:${bottomPlayer.index}:prize:${index}`}
+            style={`--row: ${Math.floor(index / 2)}; --col: ${index % 2};`}
+          ></span>
         {/each}
       </div>
     </div>
@@ -284,12 +290,14 @@
     align-self: end;
     justify-self: start;
     justify-items: center;
+    margin-bottom: var(--board-bottom-pile-clearance, 0px);
   }
 
   .bottom-piles .right-field {
     grid-area: bottom-right;
     align-self: end;
     justify-self: end;
+    margin-bottom: var(--board-bottom-pile-clearance, 0px);
   }
 
   .right-field {

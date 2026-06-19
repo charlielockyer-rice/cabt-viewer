@@ -48,6 +48,7 @@
   const cardMoveDurationMs = 320;
   const cardSequenceStepMs = 35;
   const cardHandoffMs = Math.round(cardMoveDurationMs * 0.88);
+  const cardHeightToWidthRatio = 88 / 63;
   let draws = $state<DrawAnimation[]>([]);
   let seenEventIds = new Set<number>();
   let initialized = false;
@@ -189,6 +190,8 @@
     const firstTargetIndex = Math.max(0, handSlots.length - playerEvents.length);
     const handConcealed = handElement.classList.contains('concealed');
     const startCenter = centerOf(deckRect);
+    const spriteWidth = deckRect.width;
+    const spriteHeight = spriteWidth * cardHeightToWidthRatio;
     const hiddenTargets: HTMLElement[] = [];
 
     const sprites = playerEvents.map((event, index) => {
@@ -208,13 +211,13 @@
         reveal,
         order: index + 1,
         delayMs: index * cardSequenceStepMs,
-        startX: deckRect.left,
-        startY: deckRect.top,
-        width: deckRect.width,
-        height: deckRect.height,
+        startX: startCenter.x - spriteWidth / 2,
+        startY: startCenter.y - spriteHeight / 2,
+        width: spriteWidth,
+        height: spriteHeight,
         moveX: targetCenter.x - startCenter.x,
         moveY: targetCenter.y - startCenter.y,
-        scale: Math.max(0.5, Math.min(1.5, targetRect.width / deckRect.width)),
+        scale: Math.max(0.5, Math.min(1.5, targetRect.width / spriteWidth)),
         arcY: playerIndex === 0 ? -18 : 18,
         rotation: playerIndex === 0 ? -3 : 3,
         targetElement,
@@ -259,8 +262,8 @@
   }
 
   function fallbackHandTarget(handRect: DOMRect, index: number, count: number): DOMRect {
-    const width = Math.min(handRect.height / 1.397, handRect.width / Math.max(1, count));
-    const height = width * 1.397;
+    const width = Math.min(handRect.height / cardHeightToWidthRatio, handRect.width / Math.max(1, count));
+    const height = width * cardHeightToWidthRatio;
     const step = Math.min(width * 0.82, handRect.width / Math.max(1, count));
     const centerX = handRect.left + handRect.width / 2 + (index - (count - 1) / 2) * step;
     const centerY = handRect.top + handRect.height / 2;
