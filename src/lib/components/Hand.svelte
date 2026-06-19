@@ -6,6 +6,7 @@
     player: PlayerView;
     selectedHand?: { playerIndex: number; handIndex: number } | null;
     disabled?: boolean;
+    dimDisabled?: boolean;
     concealed?: boolean;
     playableIndexes?: number[];
     placedIndexes?: number[];
@@ -18,6 +19,7 @@
     player,
     selectedHand = null,
     disabled = false,
+    dimDisabled = true,
     concealed = false,
     playableIndexes = [],
     placedIndexes = [],
@@ -63,12 +65,13 @@
 
 <div
   bind:this={handElement}
-  class:disabled
+  class:disabled={disabled && dimDisabled}
   class:concealed
   class:can-scroll-left={canScrollLeft}
   class:can-scroll-right={canScrollRight}
   class="hand"
   data-card-count={player.hand.length}
+  data-card-anchor={`player:${player.index}:hand`}
   onscroll={updateScrollIndicators}
 >
   {#each player.hand as card, index}

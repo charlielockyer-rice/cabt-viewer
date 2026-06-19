@@ -1,4 +1,5 @@
 import type { GameView } from './types';
+import type { ActionTimelineEvent } from './types';
 
 export type ReplayPlayerInfo = {
   userId: number;
@@ -16,6 +17,8 @@ export type ReplayStep = {
   activePlayerIndex: number;
   type: string;
   payload: unknown;
+  actionTimeline?: ActionTimelineEvent[];
+  displayView?: GameView;
 };
 
 export type ReplaySnapshot = {

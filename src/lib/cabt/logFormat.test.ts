@@ -20,6 +20,22 @@ describe('CABT log formatting', () => {
     })).toBe('Player 1 discarded Basic Water Energy from the deck.');
 
     expect(formatCabtLog({
+      type: CabtLogType.MOVE_CARD,
+      playerIndex: 0,
+      cardId: 3,
+      fromArea: CabtAreaType.DECK,
+      toArea: CabtAreaType.PRIZE,
+    })).toBe('Player 1 set a Prize card.');
+
+    expect(formatCabtLog({
+      type: CabtLogType.MOVE_CARD,
+      playerIndex: 1,
+      cardId: 1158,
+      fromArea: CabtAreaType.HAND,
+      toArea: CabtAreaType.DECK,
+    })).toBe('Player 2 moved a card from hand to deck.');
+
+    expect(formatCabtLog({
       type: CabtLogType.HP_CHANGE,
       playerIndex: 1,
       cardId: 722,

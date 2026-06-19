@@ -5,6 +5,7 @@
   import BoardLayer from './lib/components/BoardLayer.svelte';
   import BoardPromptStrip from './lib/components/prompts/BoardPromptStrip.svelte';
   import EndGamePrompt from './lib/components/EndGamePrompt.svelte';
+  import DeckDrawAnimation from './lib/components/DeckDrawAnimation.svelte';
   import GameBoard from './lib/components/GameBoard.svelte';
   import GameStatus from './lib/components/GameStatus.svelte';
   import Hand from './lib/components/Hand.svelte';
@@ -1232,6 +1233,7 @@
             player={topPlayer}
             selectedHand={selectedHand}
             disabled={!isSelfControlled(topPlayer.index) || (!canAct(topPlayer.index) && setupPrompt?.playerIndex !== topPlayer.index)}
+            dimDisabled={!replayMode}
             playableIndexes={setupPrompt?.playerIndex === topPlayer.index ? setupPlayableIndexes : []}
             placedIndexes={setupPrompt?.playerIndex === topPlayer.index ? setupPlacedIndexes : []}
             concealed={topPlayer.index !== actingPlayerIndex || !isSelfControlled(topPlayer.index)}
@@ -1279,11 +1281,18 @@
           {replayMode}
         />
 
+        <DeckDrawAnimation
+          events={game.actionTimeline ?? []}
+          scopeKey={animationScopeKey}
+          {replayMode}
+        />
+
         <PlayerPanel side="bottom">
           <Hand
             player={bottomPlayer}
             selectedHand={selectedHand}
             disabled={!isSelfControlled(bottomPlayer.index) || (!canAct(bottomPlayer.index) && setupPrompt?.playerIndex !== bottomPlayer.index)}
+            dimDisabled={!replayMode}
             playableIndexes={setupPrompt?.playerIndex === bottomPlayer.index ? setupPlayableIndexes : []}
             placedIndexes={setupPrompt?.playerIndex === bottomPlayer.index ? setupPlacedIndexes : []}
             concealed={!isSelfControlled(bottomPlayer.index)}

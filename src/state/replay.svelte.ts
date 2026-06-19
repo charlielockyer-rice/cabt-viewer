@@ -23,7 +23,14 @@ class ReplayStore {
     if (!replay || !step) {
       return null;
     }
-    return replay.views[step.stateIndex] ?? null;
+    const view = step.displayView ?? replay.views[step.stateIndex] ?? null;
+    if (!view || !step.actionTimeline) {
+      return view;
+    }
+    return {
+      ...view,
+      actionTimeline: step.actionTimeline,
+    };
   }
 
   get maxStepIndex(): number {

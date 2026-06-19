@@ -374,7 +374,7 @@
   }
 
   .deck-card-face {
-    z-index: 6;
+    z-index: 12;
     transform: translate(var(--deck-top-x), var(--deck-top-y));
     box-shadow:
       0 3px 8px rgba(23, 30, 38, 0.12),
@@ -443,7 +443,7 @@
   .deck-pile .pile-count {
     right: auto;
     bottom: auto;
-    z-index: 7;
+    z-index: 13;
     transform: translate(calc(-50% + var(--deck-top-x)), calc(-50% + var(--deck-top-y)));
   }
 

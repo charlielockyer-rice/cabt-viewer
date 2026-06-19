@@ -130,6 +130,12 @@ function moveCardMessage(actor: string, card: string, log: Record<string, unknow
   if (Number(log.fromArea) === CabtAreaType.PRIZE && Number(log.toArea) === CabtAreaType.HAND) {
     return `${actor} took ${card} as a Prize card.`;
   }
+  if (Number(log.fromArea) === CabtAreaType.DECK && Number(log.toArea) === CabtAreaType.PRIZE) {
+    return `${actor} set a Prize card.`;
+  }
+  if (Number(log.fromArea) === CabtAreaType.HAND && Number(log.toArea) === CabtAreaType.DECK) {
+    return `${actor} moved a card from hand to deck.`;
+  }
   if (Number(log.fromArea) === CabtAreaType.DECK && Number(log.toArea) === CabtAreaType.DISCARD) {
     return `${actor} discarded ${card} from the deck.`;
   }
