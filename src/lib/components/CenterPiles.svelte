@@ -1,5 +1,6 @@
 <script lang="ts">
   import CardTile from './CardTile.svelte';
+  import DeckDiscardAnimation from './DeckDiscardAnimation.svelte';
   import DeckShuffleAnimation from './DeckShuffleAnimation.svelte';
   import type { PlayerView } from '../game/types';
   import type { ActionTimelineEvent } from '../game/types';
@@ -35,6 +36,9 @@
     showLostZone,
     showDiscard,
   }: Props = $props();
+
+  let topDeckPileElement = $state<HTMLElement>();
+  let bottomDeckPileElement = $state<HTMLElement>();
 
   function deckPileStyle(deckCount: number, direction: -1 | 1) {
     const layers = visibleDeckLayers(deckCount).length;
@@ -82,7 +86,12 @@
     </div>
     <div class="right-field">
       <div class="right-piles">
-        <span class="stack-pile deck-pile" style={deckPileStyle(topPlayer.deckCount, -1)} title={`${topPlayer.name} deck`}>
+        <span
+          bind:this={topDeckPileElement}
+          class="stack-pile deck-pile"
+          style={deckPileStyle(topPlayer.deckCount, -1)}
+          title={`${topPlayer.name} deck`}
+        >
           <span class="card-anchor" data-card-anchor={`player:${topPlayer.index}:deck`}></span>
           {#each visibleDeckLayers(topPlayer.deckCount) as layer, layerIndex}
             <span class="deck-card-layer" style={`--deck-layer: ${layerIndex};`}></span>
@@ -103,6 +112,7 @@
           type="button"
           class="stack-pile discard-pile"
           class:projected-hover={projectedHoverPile === 'top-discard'}
+          data-card-anchor={`player:${topPlayer.index}:discard`}
           title={`${topPlayer.name} discard`}
           bind:this={topDiscardPileElement}
           onclick={() => showDiscard(topPlayer)}
@@ -112,6 +122,15 @@
           {/if}
           <span class="pile-count">{topPlayer.discard.length}</span>
         </button>
+        <DeckDiscardAnimation
+          events={animationEvents}
+          playerIndex={topPlayer.index}
+          deckElement={topDeckPileElement}
+          discardElement={topDiscardPileElement}
+          scopeKey={animationScopeKey}
+          {replayMode}
+          opponent
+        />
       </div>
     </div>
   </div>
@@ -139,7 +158,12 @@
     </div>
     <div class="right-field">
       <div class="right-piles">
-        <span class="stack-pile deck-pile" style={deckPileStyle(bottomPlayer.deckCount, 1)} title={`${bottomPlayer.name} deck`}>
+        <span
+          bind:this={bottomDeckPileElement}
+          class="stack-pile deck-pile"
+          style={deckPileStyle(bottomPlayer.deckCount, 1)}
+          title={`${bottomPlayer.name} deck`}
+        >
           <span class="card-anchor" data-card-anchor={`player:${bottomPlayer.index}:deck`}></span>
           {#each visibleDeckLayers(bottomPlayer.deckCount) as layer, layerIndex}
             <span class="deck-card-layer" style={`--deck-layer: ${layerIndex};`}></span>
@@ -159,6 +183,7 @@
           type="button"
           class="stack-pile discard-pile"
           class:projected-hover={projectedHoverPile === 'bottom-discard'}
+          data-card-anchor={`player:${bottomPlayer.index}:discard`}
           title={`${bottomPlayer.name} discard`}
           bind:this={bottomDiscardPileElement}
           onclick={() => showDiscard(bottomPlayer)}
@@ -168,6 +193,14 @@
           {/if}
           <span class="pile-count">{bottomPlayer.discard.length}</span>
         </button>
+        <DeckDiscardAnimation
+          events={animationEvents}
+          playerIndex={bottomPlayer.index}
+          deckElement={bottomDeckPileElement}
+          discardElement={bottomDiscardPileElement}
+          scopeKey={animationScopeKey}
+          {replayMode}
+        />
       </div>
     </div>
   </div>
@@ -211,6 +244,10 @@
     display: grid;
     gap: calc(var(--card-w) * 0.12);
     pointer-events: none;
+  }
+
+  .right-piles {
+    position: relative;
   }
 
   :global(.debug-zones) .left-piles,
