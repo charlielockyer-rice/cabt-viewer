@@ -124,6 +124,19 @@ describe('prompt helpers', () => {
     expect(shouldAutoResolvePrompt(goFirst, false, result, false)).toBe(false);
     expect(shouldAutoResolvePrompt(goFirst, true, result, false)).toBe(false);
   });
+
+  it('keeps deck shuffles auto-resolved in manual flows', () => {
+    const shuffle = prompt('ShuffleDeckPrompt');
+    const game = {
+      players: [
+        { deckCount: 3 },
+      ],
+    } as GameView;
+    const result = autoResolvablePromptResult(shuffle, game);
+
+    expect(result).toEqual([0, 1, 2]);
+    expect(shouldAutoResolvePrompt(shuffle, false, result, false)).toBe(true);
+  });
 });
 
 function prompt(className: string, fields: Record<string, unknown> = {}, id = 1): PromptView {

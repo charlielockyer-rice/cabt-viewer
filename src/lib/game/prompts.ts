@@ -104,6 +104,9 @@ export function shouldAutoResolvePrompt(
   if (!prompt || result === undefined) {
     return false;
   }
+  if (prompt.className === 'ShuffleDeckPrompt') {
+    return true;
+  }
   if (isForcedAutoResolvePrompt(prompt)) {
     return allowForcedAutoResolve;
   }
