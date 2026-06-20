@@ -4,6 +4,7 @@
   type Props = {
     replay: ReplaySnapshot;
     step: ReplayStep;
+    displayLabel?: string;
     stepIndex: number;
     copiedForkPoint?: boolean;
     isPlaying?: boolean;
@@ -21,6 +22,7 @@
   let {
     replay,
     step,
+    displayLabel,
     stepIndex,
     copiedForkPoint = false,
     isPlaying = false,
@@ -39,6 +41,7 @@
   let maxStateIndex = $derived(Math.max(0, replay.stateCount - 1));
   let actionValue = $derived(step.actionIndex === null ? 'Initial' : `${step.actionIndex + 1} / ${replay.actionCount}`);
   let stateValue = $derived(`${step.stateIndex} / ${maxStateIndex}`);
+  let timelineLabel = $derived(displayLabel || step.label);
   let payloadPreview = $derived(formatPayload(step.payload));
   let createdLabel = $derived(Number.isFinite(replay.created) ? new Date(replay.created).toLocaleString() : '');
   let playerLabel = $derived(replay.players.map((player) => player.name).join(' vs '));
@@ -63,8 +66,8 @@
 <button class="replay-back-button" aria-label="Back to replay list" onclick={backToReplayHome}>Back</button>
 
 <section class="replay-dock" aria-label="Replay timeline">
-  <div class="replay-caption" title={step.label}>
-    <span>{step.label}</span>
+  <div class="replay-caption" title={timelineLabel}>
+    <span>{timelineLabel}</span>
   </div>
   <div class="replay-controls" aria-label="Replay playback controls">
     <button aria-label="First action" onclick={firstStep} disabled={stepIndex === 0}>|&lt;</button>
@@ -106,7 +109,7 @@
     <span>Action <b>{actionValue}</b></span>
     <span>State <b>{stateValue}</b></span>
     <span>Turn <b>{step.turn}</b></span>
-    <span>{step.label}</span>
+    <span>{timelineLabel}</span>
   </div>
 
   <div class="state-controls">

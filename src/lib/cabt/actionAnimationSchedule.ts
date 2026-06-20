@@ -9,6 +9,10 @@ export const actionAnimationTiming = {
   deckDrawMs: 320,
   deckDrawStepMs: 35,
   deckShuffleMs: 980,
+  deckRevealMs: 1180,
+  deckRevealStepMs: 45,
+  deckRevealReturnMs: 420,
+  deckRevealReturnStepMs: 35,
 } as const;
 
 export function actionAnimationBatchEvents(
@@ -92,6 +96,20 @@ function animationPhaseForEvent(event: ActionTimelineEvent): AnimationPhase | nu
         key: `DeckDiscard:${playerKey}`,
         durationMs: actionAnimationTiming.deckDiscardMs,
         stepMs: actionAnimationTiming.deckDiscardStepMs,
+      };
+    }
+    if (fromArea === CabtAreaType.DECK && toArea === CabtAreaType.LOOKING) {
+      return {
+        key: `DeckReveal:${playerKey}`,
+        durationMs: actionAnimationTiming.deckRevealMs,
+        stepMs: actionAnimationTiming.deckRevealStepMs,
+      };
+    }
+    if (fromArea === CabtAreaType.LOOKING && toArea === CabtAreaType.DECK) {
+      return {
+        key: `DeckRevealReturn:${playerKey}`,
+        durationMs: actionAnimationTiming.deckRevealReturnMs,
+        stepMs: actionAnimationTiming.deckRevealReturnStepMs,
       };
     }
   }

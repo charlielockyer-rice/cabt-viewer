@@ -46,6 +46,30 @@ describe('actionAnimationStartMs', () => {
 
     expect(actionAnimationStartMs(events, events[2])).toBe(0);
   });
+
+  it('sequences deck reveal cards after a played supporter', () => {
+    const events: ActionTimelineEvent[] = [
+      event(1, 'Play', { cardId: 1235, serial: 26 }),
+      event(2, 'MoveCard', { cardId: 3, serial: 32, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.LOOKING }),
+      event(3, 'MoveCard', { cardId: 3, serial: 58, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.LOOKING }),
+    ];
+
+    expect(actionAnimationStartMs(events, events[1])).toBe(actionAnimationTiming.handMoveMs);
+    expect(actionAnimationStartMs(events, events[2])).toBe(actionAnimationTiming.handMoveMs + actionAnimationTiming.deckRevealStepMs);
+  });
+
+  it('sequences revealed cards returning before the follow-up shuffle', () => {
+    const events: ActionTimelineEvent[] = [
+      event(1, 'MoveCard', { cardId: 3, serial: 58, fromArea: CabtAreaType.LOOKING, toArea: CabtAreaType.DECK }),
+      event(2, 'MoveCard', { cardId: 1227, serial: 22, fromArea: CabtAreaType.LOOKING, toArea: CabtAreaType.DECK }),
+      event(3, 'Shuffle', {}),
+    ];
+
+    expect(actionAnimationStartMs(events, events[1])).toBe(actionAnimationTiming.deckRevealReturnStepMs);
+    expect(actionAnimationStartMs(events, events[2])).toBe(
+      actionAnimationTiming.deckRevealReturnMs + actionAnimationTiming.deckRevealReturnStepMs,
+    );
+  });
 });
 
 describe('actionAnimationBatchEvents', () => {

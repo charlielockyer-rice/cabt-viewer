@@ -19,6 +19,14 @@ class ReplayStore {
     return this.replay?.steps[this.stepIndex] ?? null;
   }
 
+  get currentDisplayLabel(): string {
+    const step = this.currentStep;
+    if (!step) {
+      return '';
+    }
+    return step.animationPhases?.[this.animationPhaseIndex]?.label ?? step.label;
+  }
+
   get currentView(): GameView | null {
     const replay = this.replay;
     const step = this.currentStep;

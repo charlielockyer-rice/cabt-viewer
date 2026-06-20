@@ -117,6 +117,8 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
   let logId = 1;
   let timelineId = 1;
 
+  const frameEntries: ReplayFrameEntry[] = [];
+
   visualFrames.forEach((frame, index) => {
     const frameLogs = frame.logs ?? [];
     const timeline = cabtLogsToTimeline(frameLogs, { nextId: timelineId });
@@ -127,6 +129,33 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
     const view = frameToGameView(frame, players, logs, timeline.events);
     views.push(view);
     const groups = replayActionGroups(timeline.events, frame.current.turn);
+    frameEntries.push({ frame, view, groups });
+  });
+
+  for (let index = 0; index < frameEntries.length; index += 1) {
+    const { frame, view, groups } = frameEntries[index];
+    const continuation = deckRevealContinuation(frameEntries, index);
+    if (continuation) {
+      const currentView = frameEntries[continuation.endIndex].view;
+      steps.push(replayStepForFrame({
+        view: currentView,
+        stateIndex: continuation.endIndex,
+        label: continuation.group.label,
+        type: continuation.group.type,
+        actionTimeline: continuation.group.events,
+        displayView: groupedStepDisplayView(views[index - 1], currentView, [continuation.group], 0),
+        animationPhases: groupedStepAnimationPhases(views[index - 1], currentView, [continuation.group], 0),
+        payload: {
+          events: continuation.group.events,
+          select: frameEntries[continuation.endIndex].frame.select,
+          selected: frameEntries[continuation.endIndex].frame.selected,
+          action: frameEntries[continuation.endIndex].frame.action,
+        },
+      }));
+      index = continuation.endIndex;
+      continue;
+    }
+
     if (groups.length) {
       for (const [groupIndex, group] of groups.entries()) {
         steps.push(replayStepForFrame({
@@ -158,7 +187,7 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
         },
       }));
     }
-  });
+  }
 
   applyPendingPlayedDiscards(steps, views);
 
@@ -190,6 +219,65 @@ type ReplayActionGroup = {
   events: ActionTimelineEvent[];
   turn: number;
 };
+
+type ReplayFrameEntry = {
+  frame: CabtVisualizeFrame;
+  view: GameView;
+  groups: ReplayActionGroup[];
+};
+
+type DeckRevealContinuation = {
+  endIndex: number;
+  group: ReplayActionGroup;
+};
+
+function deckRevealContinuation(entries: ReplayFrameEntry[], startIndex: number): DeckRevealContinuation | null {
+  const firstGroup = entries[startIndex].groups[0];
+  if (!firstGroup || entries[startIndex].groups.length !== 1 || !isDeckRevealPlayGroup(firstGroup)) {
+    return null;
+  }
+  const playerIndex = firstGroup.events.find((event) => event.kind === 'Play')?.playerIndex;
+  if (playerIndex === undefined) {
+    return null;
+  }
+
+  for (let index = startIndex + 1; index < entries.length; index += 1) {
+    const groups = entries[index].groups;
+    if (!groups.length) {
+      continue;
+    }
+    if (groups.length === 1 && isDeckRevealResolutionGroup(groups[0], playerIndex)) {
+      return {
+        endIndex: index,
+        group: {
+          ...firstGroup,
+          events: [...firstGroup.events, ...groups[0].events],
+        },
+      };
+    }
+    return null;
+  }
+  return null;
+}
+
+function isDeckRevealPlayGroup(group: ReplayActionGroup): boolean {
+  return group.events.some((event) => event.kind === 'Play')
+    && group.events.some((event) => isMoveBetween(event, CabtAreaType.DECK, CabtAreaType.LOOKING));
+}
+
+function isDeckRevealResolutionGroup(group: ReplayActionGroup, playerIndex: number): boolean {
+  return group.events.every((event) => event.playerIndex === undefined || event.playerIndex === playerIndex)
+    && group.events.some((event) => event.kind === 'Attach')
+    && group.events.some((event) => isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.DECK))
+    && group.events.some((event) => event.kind === 'Shuffle');
+}
+
+function isMoveBetween(event: ActionTimelineEvent, fromArea: number, toArea: number): boolean {
+  const params = event.params as Record<string, unknown> | undefined;
+  return isMoveCardKind(event.kind)
+    && Number(params?.fromArea) === fromArea
+    && Number(params?.toArea) === toArea;
+}
 
 function replayActionGroups(events: ActionTimelineEvent[], turn: number): ReplayActionGroup[] {
   const groups: ReplayActionGroup[] = [];
@@ -491,6 +579,7 @@ function groupedStepAnimationPhases(
       : projectedViewForEvents(phaseStartView, currentView, phase.events);
     phases.push({
       key: phase.key,
+      label: animationPhaseLabel(phase),
       view: {
         ...phaseView,
         actionTimeline: phase.events,
@@ -537,6 +626,43 @@ function animationEventPhases(events: ActionTimelineEvent[]): AnimationEventPhas
   return phases.filter((phase) => phase.events.some((event) => animationPhaseKey(event)));
 }
 
+function animationPhaseLabel(phase: AnimationEventPhase): string | undefined {
+  const event = phase.events.find((candidate) => animationPhaseKey(candidate));
+  if (!event) {
+    return undefined;
+  }
+  const actor = playerLabel(event.playerIndex);
+  const cardEventCount = phase.events.filter((candidate) => animationPhaseKey(candidate) === phase.key).length;
+
+  if (phase.key.startsWith('Play:') || phase.key.startsWith('Attach:') || phase.key.startsWith('Shuffle:')) {
+    return event.message;
+  }
+  if (phase.key.startsWith('HandToDeck:')) {
+    return `${actor} put ${cardEventCount} ${plural(cardEventCount, 'card')} from hand into their deck.`;
+  }
+  if (phase.key.startsWith('Draw:')) {
+    return cardEventCount === 1 ? event.message : `${actor} drew ${cardEventCount} cards.`;
+  }
+  if (phase.key.startsWith('DeckDiscard:')) {
+    return cardEventCount === 1 ? event.message : `${actor} discarded ${cardEventCount} cards from the deck.`;
+  }
+  if (phase.key.startsWith('DeckRevealReturn:')) {
+    return `${actor} returned ${cardEventCount} revealed ${plural(cardEventCount, 'card')} to their deck.`;
+  }
+  if (phase.key.startsWith('DeckReveal:')) {
+    return `${actor} revealed the top ${cardEventCount} ${plural(cardEventCount, 'card')} of their deck.`;
+  }
+  return event.message;
+}
+
+function playerLabel(playerIndex: number | undefined): string {
+  return playerIndex === undefined ? 'Game' : `Player ${playerIndex + 1}`;
+}
+
+function plural(count: number, singular: string): string {
+  return count === 1 ? singular : `${singular}s`;
+}
+
 function animationPhaseKey(event: ActionTimelineEvent): string | null {
   const params = event.params as Record<string, unknown> | undefined;
   const fromArea = Number(params?.fromArea);
@@ -555,6 +681,12 @@ function animationPhaseKey(event: ActionTimelineEvent): string | null {
     }
     if (fromArea === CabtAreaType.DECK && toArea === CabtAreaType.DISCARD) {
       return `DeckDiscard:${playerKey}`;
+    }
+    if (fromArea === CabtAreaType.DECK && toArea === CabtAreaType.LOOKING) {
+      return `DeckReveal:${playerKey}`;
+    }
+    if (fromArea === CabtAreaType.LOOKING && toArea === CabtAreaType.DECK) {
+      return `DeckRevealReturn:${playerKey}`;
     }
   }
   if (event.kind === 'Shuffle') {
@@ -586,6 +718,12 @@ function animationPhaseCardDurationMs(key: string): number {
   if (key.startsWith('DeckDiscard:')) {
     return actionAnimationTiming.deckDiscardMs;
   }
+  if (key.startsWith('DeckReveal:')) {
+    return actionAnimationTiming.deckRevealMs;
+  }
+  if (key.startsWith('DeckRevealReturn:')) {
+    return actionAnimationTiming.deckRevealReturnMs;
+  }
   return actionAnimationTiming.handMoveMs;
 }
 
@@ -595,6 +733,12 @@ function animationPhaseStepMs(key: string): number {
   }
   if (key.startsWith('DeckDiscard:')) {
     return actionAnimationTiming.deckDiscardStepMs;
+  }
+  if (key.startsWith('DeckReveal:')) {
+    return actionAnimationTiming.deckRevealStepMs;
+  }
+  if (key.startsWith('DeckRevealReturn:')) {
+    return actionAnimationTiming.deckRevealReturnStepMs;
   }
   if (key.startsWith('Shuffle:')) {
     return actionAnimationTiming.deckShuffleMs;

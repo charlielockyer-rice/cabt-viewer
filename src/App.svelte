@@ -6,6 +6,7 @@
   import BoardPromptStrip from './lib/components/prompts/BoardPromptStrip.svelte';
   import EndGamePrompt from './lib/components/EndGamePrompt.svelte';
   import DeckDrawAnimation from './lib/components/DeckDrawAnimation.svelte';
+  import DeckRevealAnimation from './lib/components/DeckRevealAnimation.svelte';
   import HandPlayAnimation from './lib/components/HandPlayAnimation.svelte';
   import HandResetAnimation from './lib/components/HandResetAnimation.svelte';
   import GameBoard from './lib/components/GameBoard.svelte';
@@ -1184,6 +1185,7 @@
         <ReplayTimeline
           replay={replayStore.replay}
           step={replayStore.currentStep}
+          displayLabel={replayStore.currentDisplayLabel}
           stepIndex={replayStore.stepIndex}
           copiedForkPoint={replayStore.copiedForkPoint}
           isPlaying={replayStore.isPlaying}
@@ -1294,6 +1296,12 @@
         />
 
         <DeckDrawAnimation
+          events={game.actionTimeline ?? []}
+          scopeKey={animationScopeKey}
+          {replayMode}
+        />
+
+        <DeckRevealAnimation
           events={game.actionTimeline ?? []}
           scopeKey={animationScopeKey}
           {replayMode}

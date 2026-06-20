@@ -634,10 +634,261 @@ describe('cabtReplayToSnapshot', () => {
       'Shuffle',
       'Draw',
     ]);
+    expect(step.animationPhases?.map((phase) => phase.label)).toEqual([
+      "Player 1 played Lillie's Determination.",
+      'Player 1 put 5 cards from hand into their deck.',
+      'Player 1 shuffled their deck.',
+      'Player 1 drew 4 cards.',
+    ]);
     expect(step.animationPhases?.[0].view.players[0].hand.map((card) => card.serial)).toEqual([120, 101, 81, 109, 100]);
     expect(step.animationPhases?.[1].view.players[0].hand.map((card) => card.serial)).toEqual([120, 101, 81, 109, 100]);
     expect(step.animationPhases?.[2].view.players[0].hand).toHaveLength(0);
     expect(step.animationPhases?.[3].view.players[0].hand.map((card) => card.serial)).toEqual([94, 102, 80, 100]);
+  });
+
+  it('builds a separate deck reveal phase for Waitress-style topdeck looks', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 2,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 722, serial: 6 }],
+            bench: [],
+            benchMax: 5,
+            hand: [
+              { id: 1235, serial: 26 },
+              { id: 3, serial: 31 },
+            ],
+            deckCount: 46,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 46,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'Play', playerIndex: 0, cardId: 1235, serial: 26 },
+          { type: 'MoveCard', playerIndex: 0, cardId: 3, serial: 32, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.LOOKING },
+          { type: 'MoveCard', playerIndex: 0, cardId: 3, serial: 58, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.LOOKING },
+          { type: 'MoveCard', playerIndex: 0, cardId: 1227, serial: 22, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.LOOKING },
+        ],
+        current: {
+          turn: 2,
+          yourIndex: 0,
+          result: -1,
+          looking: [
+            { id: 3, serial: 32 },
+            { id: 3, serial: 58 },
+            { id: 1227, serial: 22 },
+          ],
+          players: [{
+            active: [{ id: 722, serial: 6 }],
+            bench: [],
+            benchMax: 5,
+            hand: [
+              { id: 3, serial: 31 },
+            ],
+            deckCount: 43,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 46,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    const step = snapshot.steps[1];
+    expect(step.animationPhases?.map((phase) => phase.key.replace(/:\d+$/, ''))).toEqual([
+      'Play',
+      'DeckReveal',
+    ]);
+    expect(step.animationPhases?.map((phase) => phase.label)).toEqual([
+      'Player 1 played Waitress.',
+      'Player 1 revealed the top 3 cards of their deck.',
+    ]);
+    expect(step.animationPhases?.[0].view.players[0].hand.map((card) => card.serial)).toEqual([31]);
+    expect(step.animationPhases?.[1].view.players[0].deckCount).toBe(43);
+  });
+
+  it('coalesces Waitress-style reveal, attach, return, and shuffle into one replay step', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 2,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 722, serial: 6 }],
+            bench: [],
+            benchMax: 5,
+            hand: [
+              { id: 1235, serial: 26 },
+              { id: 3, serial: 31 },
+            ],
+            deckCount: 46,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 46,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'Play', playerIndex: 0, cardId: 1235, serial: 26 },
+          { type: 'MoveCard', playerIndex: 0, cardId: 3, serial: 32, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.LOOKING },
+          { type: 'MoveCard', playerIndex: 0, cardId: 3, serial: 58, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.LOOKING },
+          { type: 'MoveCard', playerIndex: 0, cardId: 1227, serial: 22, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.LOOKING },
+        ],
+        select: {
+          type: 'Card',
+          context: 'AttachTo',
+        },
+        current: {
+          turn: 2,
+          yourIndex: 0,
+          result: -1,
+          looking: [
+            { id: 3, serial: 32 },
+            { id: 3, serial: 58 },
+            { id: 1227, serial: 22 },
+          ],
+          players: [{
+            active: [{ id: 722, serial: 6 }],
+            bench: [],
+            benchMax: 5,
+            hand: [
+              { id: 3, serial: 31 },
+            ],
+            deckCount: 43,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 46,
+            prize: [],
+          }],
+        },
+      }, {
+        select: {
+          type: 'Card',
+          context: 'AttachFrom',
+          contextCard: { id: 3, serial: 32 },
+        },
+        current: {
+          turn: 2,
+          yourIndex: 0,
+          result: -1,
+          looking: [
+            { id: 3, serial: 32 },
+            { id: 3, serial: 58 },
+            { id: 1227, serial: 22 },
+          ],
+          players: [{
+            active: [{ id: 722, serial: 6 }],
+            bench: [],
+            benchMax: 5,
+            hand: [
+              { id: 3, serial: 31 },
+            ],
+            deckCount: 43,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 46,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'Attach', playerIndex: 0, cardId: 3, serial: 32, cardIdTarget: 722, serialTarget: 6 },
+          { type: 'MoveCard', playerIndex: 0, cardId: 3, serial: 58, fromArea: CabtAreaType.LOOKING, toArea: CabtAreaType.DECK },
+          { type: 'MoveCard', playerIndex: 0, cardId: 1227, serial: 22, fromArea: CabtAreaType.LOOKING, toArea: CabtAreaType.DECK },
+          { type: 'Shuffle', playerIndex: 0 },
+        ],
+        current: {
+          turn: 2,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{
+              id: 722,
+              serial: 6,
+              energyCards: [{ id: 3, serial: 32 }],
+            }],
+            bench: [],
+            benchMax: 5,
+            hand: [
+              { id: 3, serial: 31 },
+            ],
+            deckCount: 45,
+            discard: [{ id: 1235, serial: 26 }],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 46,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    expect(snapshot.steps).toHaveLength(2);
+    const step = snapshot.steps[1];
+    expect(step.label).toBe('Player 1 played Waitress.');
+    expect(step.stateIndex).toBe(3);
+    expect(step.actionTimeline?.map((event) => event.kind)).toEqual([
+      'Play',
+      'MoveCard',
+      'MoveCard',
+      'MoveCard',
+      'Attach',
+      'MoveCard',
+      'MoveCard',
+      'Shuffle',
+    ]);
+    expect(step.animationPhases?.map((phase) => phase.key.replace(/:\d+$/, ''))).toEqual([
+      'Play',
+      'DeckReveal',
+      'Attach',
+      'DeckRevealReturn',
+      'Shuffle',
+    ]);
+    expect(step.animationPhases?.map((phase) => phase.label)).toEqual([
+      'Player 1 played Waitress.',
+      'Player 1 revealed the top 3 cards of their deck.',
+      'Player 1 attached Basic Water Energy to Snover.',
+      'Player 1 returned 2 revealed cards to their deck.',
+      'Player 1 shuffled their deck.',
+    ]);
   });
 
   it('exposes per-frame action timeline events for replay animations', () => {

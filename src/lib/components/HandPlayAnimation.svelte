@@ -201,6 +201,9 @@
     if (!handElement || !target || !planeElement) {
       return [];
     }
+    if (event.kind === 'Attach' && !hasKnownHandSource(handElement, serial)) {
+      return [];
+    }
 
     const sourceRect = sourceRectForHand(handElement, serial);
     const visualTarget = visualTargetForAnimation(target);
@@ -425,6 +428,16 @@
       height,
       toJSON: () => ({}),
     } as DOMRect;
+  }
+
+  function hasKnownHandSource(handElement: HTMLElement, serial: number): boolean {
+    if (!Number.isFinite(serial)) {
+      return false;
+    }
+    if (previousCardRects.has(serial)) {
+      return true;
+    }
+    return handElement.querySelector(`[data-card-serial="${serial}"]`) instanceof HTMLElement;
   }
 
   function snapshotHandCardRects(): Map<number, RectSnapshot> {

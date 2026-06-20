@@ -24,6 +24,7 @@ export type ReplayStep = {
 
 export type ReplayAnimationPhase = {
   key: string;
+  label?: string;
   view: GameView;
   actionTimeline: ActionTimelineEvent[];
   durationMs: number;
