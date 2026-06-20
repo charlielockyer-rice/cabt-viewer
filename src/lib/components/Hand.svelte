@@ -261,6 +261,7 @@
 
   :global(.player-panel.top) .hand.concealed :global(.card-tile) {
     width: var(--card-w);
+    transform: rotate(180deg);
   }
 
   :global(.player-panel.top) .hand.concealed .hand-card-frame {

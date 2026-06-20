@@ -25,6 +25,7 @@
   import { localGameApi, type PlayerControl } from './lib/game/httpClient';
   import { formatCabtDeckList } from './lib/game/deckImport';
   import { labelFor } from './lib/game/labels';
+  import { replayFollowPlayerForPosition } from './lib/game/replayFollow';
   import cardRows from './lib/cabt/cardData.generated.json';
   import type { BoardInteractionStrategy } from './lib/game/boardInteraction';
   import {
@@ -334,6 +335,15 @@
   $effect(() => {
     if (game && (followActive || actingPlayerIsSelf) && !replayMode && !playingSequence) {
       viewSettingsStore.followPlayer(actingPlayerIndex);
+    }
+  });
+  $effect(() => {
+    if (!replayMode || !followActive) {
+      return;
+    }
+    const playerIndex = replayFollowPlayerForPosition(replayStore.replay?.steps, replayStore.stepIndex);
+    if (playerIndex !== undefined) {
+      viewSettingsStore.followPlayer(playerIndex);
     }
   });
   let gameFinished = $derived(game?.phase === 7);
@@ -1237,7 +1247,7 @@
             dimDisabled={!replayMode}
             playableIndexes={setupPrompt?.playerIndex === topPlayer.index ? setupPlayableIndexes : []}
             placedIndexes={setupPrompt?.playerIndex === topPlayer.index ? setupPlacedIndexes : []}
-            concealed={topPlayer.index !== actingPlayerIndex || !isSelfControlled(topPlayer.index)}
+            concealed
             onSelect={selectHandCard}
             onDrag={onHandDrag}
             onDragEnd={clearDragState}

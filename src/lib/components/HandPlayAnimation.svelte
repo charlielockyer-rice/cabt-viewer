@@ -213,7 +213,7 @@
       return [slotAttachAnimationForEvent(target, sourceRect, targetRect, card.imageUrl ?? '', order)];
     }
 
-    const sourceQuad = rectQuad(sourceRect);
+    const sourceQuad = sourceQuadForHand(handElement, sourceRect);
     const targetQuad = viewportQuad(visualTarget);
 
     return [{
@@ -487,6 +487,22 @@
       { x: rect.right, y: rect.top },
       { x: rect.right, y: rect.bottom },
       { x: rect.left, y: rect.bottom },
+    ];
+  }
+
+  function sourceQuadForHand(handElement: HTMLElement, rect: DOMRect): Point[] {
+    if (handElement.closest('.player-panel.top')) {
+      return rotatedRectQuad(rect);
+    }
+    return rectQuad(rect);
+  }
+
+  function rotatedRectQuad(rect: DOMRect): Point[] {
+    return [
+      { x: rect.right, y: rect.bottom },
+      { x: rect.left, y: rect.bottom },
+      { x: rect.left, y: rect.top },
+      { x: rect.right, y: rect.top },
     ];
   }
 
