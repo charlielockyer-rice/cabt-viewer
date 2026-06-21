@@ -74,6 +74,18 @@ describe('actionAnimationStartMs', () => {
     expect(actionAnimationStartMs(events, events[1])).toBe(actionAnimationTiming.evolveMs);
   });
 
+  it('animates board position moves without staggering paired moves', () => {
+    const events: ActionTimelineEvent[] = [
+      event(1, 'MoveCard', { cardId: 722, serial: 10, fromArea: CabtAreaType.BENCH, toArea: CabtAreaType.ACTIVE }),
+      event(2, 'MoveCard', { cardId: 721, serial: 11, fromArea: CabtAreaType.ACTIVE, toArea: CabtAreaType.BENCH }),
+      event(3, 'Draw', { cardId: 3, serial: 12 }),
+    ];
+
+    expect(actionAnimationStartMs(events, events[0])).toBe(0);
+    expect(actionAnimationStartMs(events, events[1])).toBe(0);
+    expect(actionAnimationStartMs(events, events[2])).toBe(actionAnimationTiming.boardMoveMs);
+  });
+
   it('sequences deck reveal cards after a played supporter', () => {
     const events: ActionTimelineEvent[] = [
       event(1, 'Play', { cardId: 1235, serial: 26 }),

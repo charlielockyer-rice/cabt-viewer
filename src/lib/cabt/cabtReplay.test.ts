@@ -1697,4 +1697,122 @@ describe('cabtReplayToSnapshot', () => {
     expect(snapshot.views[step.stateIndex].players[1].discard.map((card) => card.serial)).toEqual([96, 64]);
     expect(snapshot.views[step.stateIndex].players[1].discard.at(-1)?.serial).toBe(64);
   });
+
+  it('holds the source board while a benched Pokemon is promoted active', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 4,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 45,
+            prize: [],
+          }, {
+            active: [],
+            bench: [{ id: 722, serial: 67, hp: 90, maxHp: 90 }],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 46,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'MoveCard', playerIndex: 1, cardId: 722, serial: 67, fromArea: CabtAreaType.BENCH, toArea: CabtAreaType.ACTIVE },
+        ],
+        current: {
+          turn: 4,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 45,
+            prize: [],
+          }, {
+            active: [{ id: 722, serial: 67, hp: 90, maxHp: 90 }],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 46,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    const step = snapshot.steps[1];
+    expect(step.animationPhases?.map((phase) => phase.key)).toEqual(['BoardMove:1']);
+    expect(step.animationPhases?.[0].view.players[1].bench[0].pokemon?.serial).toBe(67);
+    expect(step.animationPhases?.[0].view.players[1].active.empty).toBe(true);
+    expect(snapshot.views[step.stateIndex].players[1].active.pokemon?.serial).toBe(67);
+    expect(snapshot.views[step.stateIndex].players[1].bench.some((slot) => slot.pokemon?.serial === 67)).toBe(false);
+  });
+
+  it('holds the source board while active and benched Pokemon switch places', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 4,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 721, serial: 64, hp: 150, maxHp: 150 }],
+            bench: [{ id: 722, serial: 67, hp: 90, maxHp: 90 }],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 45,
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 46,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'MoveCard', playerIndex: 0, cardId: 721, serial: 64, fromArea: CabtAreaType.ACTIVE, toArea: CabtAreaType.BENCH },
+          { type: 'MoveCard', playerIndex: 0, cardId: 722, serial: 67, fromArea: CabtAreaType.BENCH, toArea: CabtAreaType.ACTIVE },
+        ],
+        current: {
+          turn: 4,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 722, serial: 67, hp: 90, maxHp: 90 }],
+            bench: [{ id: 721, serial: 64, hp: 150, maxHp: 150 }],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 45,
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 46,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    const step = snapshot.steps[1];
+    expect(step.animationPhases?.map((phase) => phase.key)).toEqual(['BoardMove:0']);
+    expect(step.animationPhases?.[0].actionTimeline).toHaveLength(2);
+    expect(step.animationPhases?.[0].view.players[0].active.pokemon?.serial).toBe(64);
+    expect(step.animationPhases?.[0].view.players[0].bench[0].pokemon?.serial).toBe(67);
+    expect(snapshot.views[step.stateIndex].players[0].active.pokemon?.serial).toBe(67);
+    expect(snapshot.views[step.stateIndex].players[0].bench[0].pokemon?.serial).toBe(64);
+  });
 });

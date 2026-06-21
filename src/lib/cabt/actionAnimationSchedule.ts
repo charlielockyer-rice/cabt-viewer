@@ -18,6 +18,7 @@ export const actionAnimationTiming = {
   damageMs: 320,
   damageVisualMs: 560,
   knockOutMs: 620,
+  boardMoveMs: 520,
 } as const;
 
 export function actionAnimationBatchEvents(
@@ -105,6 +106,13 @@ function animationPhaseForEvent(event: ActionTimelineEvent): AnimationPhase | nu
   }
 
   if (event.kind === 'MoveCard') {
+    if (isBoardPositionMove(fromArea, toArea)) {
+      return {
+        key: `BoardMove:${playerKey}`,
+        durationMs: actionAnimationTiming.boardMoveMs,
+        stepMs: 0,
+      };
+    }
     if (isKnockOutMove(fromArea, toArea)) {
       return {
         key: `KnockOut:${playerKey}`,
@@ -182,4 +190,9 @@ function isHandMoveDestination(area: number): boolean {
 function isKnockOutMove(fromArea: number, toArea: number): boolean {
   return toArea === CabtAreaType.DISCARD
     && (fromArea === CabtAreaType.ACTIVE || fromArea === CabtAreaType.BENCH);
+}
+
+function isBoardPositionMove(fromArea: number, toArea: number): boolean {
+  return (fromArea === CabtAreaType.ACTIVE && toArea === CabtAreaType.BENCH)
+    || (fromArea === CabtAreaType.BENCH && toArea === CabtAreaType.ACTIVE);
 }

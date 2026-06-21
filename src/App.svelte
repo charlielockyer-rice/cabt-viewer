@@ -4,6 +4,7 @@
   import AppHeader from './lib/components/AppHeader.svelte';
   import AttackAnimation from './lib/components/AttackAnimation.svelte';
   import BoardLayer from './lib/components/BoardLayer.svelte';
+  import BoardMoveAnimation from './lib/components/BoardMoveAnimation.svelte';
   import BoardPromptStrip from './lib/components/prompts/BoardPromptStrip.svelte';
   import EndGamePrompt from './lib/components/EndGamePrompt.svelte';
   import DeckDrawAnimation from './lib/components/DeckDrawAnimation.svelte';
@@ -1341,6 +1342,12 @@
         <AttackAnimation
           events={game.actionTimeline ?? []}
           stepEvents={animationStepEvents}
+          scopeKey={animationScopeKey}
+          {replayMode}
+        />
+
+        <BoardMoveAnimation
+          events={game.actionTimeline ?? []}
           scopeKey={animationScopeKey}
           {replayMode}
         />

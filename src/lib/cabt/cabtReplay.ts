@@ -418,7 +418,9 @@ function startsReplayGroup(event: ActionTimelineEvent, current: ReplayActionGrou
       && !isChoiceConsequenceGroup(current.type);
   }
   if (isMoveCardKind(kind)) {
-    return isMoveCardKind(current.type) && !sameMoveCardBatch(current.events.at(-1), event);
+    return isMoveCardKind(current.type)
+      && !sameMoveCardBatch(current.events.at(-1), event)
+      && !sameBoardPositionMoveBatch(current.events.at(-1), event);
   }
   if (kind === 'HasBasicPokemon') {
     return current.type !== 'Draw' && current.type !== 'HasBasicPokemon';
@@ -491,6 +493,17 @@ function sameMoveCardBatch(previous: ActionTimelineEvent | undefined, next: Acti
   return previous?.playerIndex === next.playerIndex
     && Number(previousParams?.fromArea) === Number(nextParams?.fromArea)
     && Number(previousParams?.toArea) === Number(nextParams?.toArea);
+}
+
+function sameBoardPositionMoveBatch(previous: ActionTimelineEvent | undefined, next: ActionTimelineEvent): boolean {
+  return previous?.playerIndex === next.playerIndex
+    && isBoardPositionMoveEvent(previous)
+    && isBoardPositionMoveEvent(next);
+}
+
+function isBoardPositionMoveEvent(event: ActionTimelineEvent | undefined): boolean {
+  const params = event?.params as Record<string, unknown> | undefined;
+  return isMoveCardKind(event?.kind) && isBoardPositionMove(Number(params?.fromArea), Number(params?.toArea));
 }
 
 function drawGroupLabel(events: ActionTimelineEvent[]): string {
@@ -909,6 +922,9 @@ function animationPhaseKey(event: ActionTimelineEvent): string | null {
     return `Damage:${playerKey}`;
   }
   if (event.kind === 'MoveCard') {
+    if (isBoardPositionMove(fromArea, toArea)) {
+      return `BoardMove:${playerKey}`;
+    }
     if (isKnockOutMove(fromArea, toArea)) {
       return `KnockOut:${playerKey}`;
     }
@@ -945,14 +961,16 @@ function animationPhaseUsesSourceView(key: string): boolean {
     || key.startsWith('Evolve:')
     || key.startsWith('Attack:')
     || key.startsWith('Damage:')
-    || key.startsWith('KnockOut:');
+    || key.startsWith('KnockOut:')
+    || key.startsWith('BoardMove:');
 }
 
 function animationPhaseNeedsDedicatedView(phase: AnimationEventPhase): boolean {
   return phase.key.startsWith('Evolve:')
     || phase.key.startsWith('Attack:')
     || phase.key.startsWith('Damage:')
-    || phase.key.startsWith('KnockOut:');
+    || phase.key.startsWith('KnockOut:')
+    || phase.key.startsWith('BoardMove:');
 }
 
 function animationSourceViewForPhase(
@@ -967,6 +985,9 @@ function animationSourceViewForPhase(
     return projectedViewForEvents(phaseStartView, currentView, phase.events, { deferBoardStateEvents: true });
   }
   if (phase.key.startsWith('KnockOut:')) {
+    return projectedViewForEvents(phaseStartView, currentView, phase.events, { deferMoveCardEvents: true });
+  }
+  if (phase.key.startsWith('BoardMove:')) {
     return projectedViewForEvents(phaseStartView, currentView, phase.events, { deferMoveCardEvents: true });
   }
   return phaseStartView;
@@ -1009,6 +1030,9 @@ function animationPhaseCardDurationMs(key: string): number {
   if (key.startsWith('KnockOut:')) {
     return actionAnimationTiming.knockOutMs;
   }
+  if (key.startsWith('BoardMove:')) {
+    return actionAnimationTiming.boardMoveMs;
+  }
   return actionAnimationTiming.handMoveMs;
 }
 
@@ -1039,6 +1063,9 @@ function animationPhaseStepMs(key: string): number {
   }
   if (key.startsWith('KnockOut:')) {
     return actionAnimationTiming.knockOutMs;
+  }
+  if (key.startsWith('BoardMove:')) {
+    return 0;
   }
   return actionAnimationTiming.handMoveStepMs;
 }
@@ -1295,6 +1322,11 @@ function applyReplayEvent(
 function isKnockOutMove(fromArea: number, toArea: number): boolean {
   return toArea === CabtAreaType.DISCARD
     && (fromArea === CabtAreaType.ACTIVE || fromArea === CabtAreaType.BENCH);
+}
+
+function isBoardPositionMove(fromArea: number, toArea: number): boolean {
+  return (fromArea === CabtAreaType.ACTIVE && toArea === CabtAreaType.BENCH)
+    || (fromArea === CabtAreaType.BENCH && toArea === CabtAreaType.ACTIVE);
 }
 
 function isKnockOutEvent(event: ActionTimelineEvent): boolean {
