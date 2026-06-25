@@ -293,11 +293,11 @@
     --board-bottom-row-align: end;
     --active-preferred-w: calc(var(--board-card-w) * 1.48);
     --active-fit-w: max(
-      calc(var(--board-card-w) * 1.15),
-      calc((var(--board-grid-h) - (var(--bench-row-h) * 2) - (var(--board-row-gap) * 2) - var(--active-gap)) / 2.794)
+      calc(var(--board-card-w) * var(--active-min-card-scale, 1.15)),
+      calc((var(--board-grid-h) - (var(--bench-row-h) * 2) - (var(--board-row-gap) * 2) - var(--active-gap)) / (var(--card-aspect-h, 1.397) * 2))
     );
     --active-w: min(var(--active-preferred-w), var(--active-fit-w));
-    --active-h: calc(var(--active-w) * 1.397);
+    --active-h: calc(var(--active-w) * var(--card-aspect-h, 1.397));
     --pile-w: calc(var(--board-card-w) * 1.28);
     --prize-card-w: calc(var(--board-card-w) * 0.96);
     --prize-grid-w: calc(var(--prize-card-w) * 1.98);
