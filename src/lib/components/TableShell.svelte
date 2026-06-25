@@ -16,17 +16,8 @@
 
 <style>
   .table-shell {
-    --card-aspect-h: 1.397;
-    --hand-card-board-scale: 1.55;
-    --hand-hover-pad-scale: 0.065;
-    --hand-hover-clearance-scale: 2.5;
-    --board-row-gap-scale: 0.16;
-    --active-gap-scale: 0.24;
-    --active-min-card-scale: 1.15;
-    --bench-card-scale: 1.24;
-    --bench-row-h-scale: 1.42;
-    --board-outline-pad-y-scale: 0.06;
-    --board-content-pad-scale: 0.18;
+    --board-card-floor-w: 38px;
+    --board-card-readable-min-w: 44px;
     --opponent-hand-height: clamp(58px, 7.2vh, 84px);
     --replay-dock-h: 0px;
     --hand-board-gap: 0px;
@@ -39,7 +30,9 @@
     --board-fit-active-units: calc(var(--active-min-card-scale) * var(--card-aspect-h) * 2);
     --board-fit-units: calc(var(--board-fit-hand-units) + var(--board-fit-padding-units) + var(--board-fit-bench-units) + var(--board-fit-gap-units) + var(--board-fit-active-units));
     --board-fit-card-w: calc((100vh - var(--opponent-hand-height) - var(--hand-board-gap) - var(--board-bottom-hand-clearance) - var(--replay-dock-h) - var(--board-fit-safety-y)) / var(--board-fit-units));
-    --board-card-w: clamp(44px, min(8vw, 8.1vh, var(--board-fit-card-w)), 104px);
+    --board-fluid-card-w: min(8vw, 8.1vh);
+    --board-readable-card-w: max(var(--board-card-readable-min-w), var(--board-fluid-card-w));
+    --board-card-w: clamp(var(--board-card-floor-w), min(var(--board-readable-card-w), var(--board-fit-card-w)), 104px);
     --card-w: var(--board-card-w);
     --hand-card-w: min(clamp(96px, min(7.8vw, 14.5vh), 150px), calc(var(--board-card-w) * var(--hand-card-board-scale)));
     --min-table-width: 760px;
@@ -68,7 +61,8 @@
     min-width: var(--min-table-width);
     min-height: 100vh;
     position: relative;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
     padding: 0;
     background: var(--app-backdrop-bg);
     -webkit-user-select: none;

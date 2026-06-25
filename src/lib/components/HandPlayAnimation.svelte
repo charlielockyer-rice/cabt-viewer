@@ -3,6 +3,7 @@
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
+  import { viewportQuad, type Point } from '../dom/planeGeometry';
   import { replayAnimationPhaseGapMs } from '../game/replay';
   import type { ActionTimelineEvent } from '../game/types';
 
@@ -10,11 +11,6 @@
     events?: ActionTimelineEvent[];
     scopeKey?: string | number;
     replayMode?: boolean;
-  };
-
-  type Point = {
-    x: number;
-    y: number;
   };
 
   type RectSnapshot = Point & {
@@ -560,74 +556,6 @@
       { x: rect.left, y: rect.top },
       { x: rect.right, y: rect.top },
     ];
-  }
-
-  function viewportQuad(element: HTMLElement): Point[] {
-    const quad = (element as HTMLElement & {
-      getBoxQuads?: () => Array<{
-        p1: Point;
-        p2: Point;
-        p3: Point;
-        p4: Point;
-      }>;
-    }).getBoxQuads?.()[0];
-
-    if (quad) {
-      return [quad.p1, quad.p2, quad.p3, quad.p4];
-    }
-
-    return measuredViewportQuad(element);
-  }
-
-  function measuredViewportQuad(element: HTMLElement): Point[] {
-    const width = element.offsetWidth;
-    const height = element.offsetHeight;
-    if (width <= 0 || height <= 0) {
-      return rectQuad(element.getBoundingClientRect());
-    }
-
-    const positions = [
-      { x: 0, y: 0 },
-      { x: width, y: 0 },
-      { x: width, y: height },
-      { x: 0, y: height },
-    ];
-    const previousPosition = element.style.position;
-    const needsPosition = getComputedStyle(element).position === 'static';
-    if (needsPosition) {
-      element.style.position = 'relative';
-    }
-
-    const markers = positions.map((position) => {
-      const marker = document.createElement('span');
-      marker.style.cssText = [
-        'position: absolute',
-        `left: ${position.x}px`,
-        `top: ${position.y}px`,
-        'width: 0',
-        'height: 0',
-        'margin: 0',
-        'padding: 0',
-        'border: 0',
-        'visibility: hidden',
-        'pointer-events: none',
-      ].join('; ');
-      element.append(marker);
-      return marker;
-    });
-
-    const points = markers.map((marker) => {
-      const rect = marker.getBoundingClientRect();
-      return { x: rect.left, y: rect.top };
-    });
-
-    for (const marker of markers) {
-      marker.remove();
-    }
-    if (needsPosition) {
-      element.style.position = previousPosition;
-    }
-    return points;
   }
 
   function cssMatrix3dForQuad(width: number, height: number, quad: Point[]): string | null {

@@ -16,23 +16,16 @@ export function centerOf(rect: DOMRect): Point {
 
 export function planeMapper(planeElement: HTMLElement): PlaneMapper {
   const fallbackRect = planeElement.getBoundingClientRect();
-  const quad = (planeElement as HTMLElement & {
-    getBoxQuads?: () => Array<{
-      p1: Point;
-      p2: Point;
-      p3: Point;
-      p4: Point;
-    }>;
-  }).getBoxQuads?.()[0];
   const width = planeElement.offsetWidth || fallbackRect.width;
   const height = planeElement.offsetHeight || fallbackRect.height;
 
-  if (!quad || width <= 0 || height <= 0) {
+  if (width <= 0 || height <= 0) {
     return fallbackPlaneMapper(fallbackRect);
   }
 
+  const quad = viewportQuad(planeElement);
   const homography = solveHomography(
-    [quad.p1, quad.p2, quad.p3, quad.p4],
+    quad,
     [
       { x: 0, y: 0 },
       { x: width, y: 0 },
@@ -50,6 +43,23 @@ export function planeMapper(planeElement: HTMLElement): PlaneMapper {
   };
 }
 
+export function viewportQuad(element: HTMLElement): Point[] {
+  const quad = (element as HTMLElement & {
+    getBoxQuads?: () => Array<{
+      p1: Point;
+      p2: Point;
+      p3: Point;
+      p4: Point;
+    }>;
+  }).getBoxQuads?.()[0];
+
+  if (quad) {
+    return [quad.p1, quad.p2, quad.p3, quad.p4];
+  }
+
+  return measuredViewportQuad(element);
+}
+
 function fallbackPlaneMapper(fallbackRect: DOMRect): PlaneMapper {
   return {
     pointFromViewport: (point) => ({
@@ -57,6 +67,67 @@ function fallbackPlaneMapper(fallbackRect: DOMRect): PlaneMapper {
       y: point.y - fallbackRect.top,
     }),
   };
+}
+
+function measuredViewportQuad(element: HTMLElement): Point[] {
+  const width = element.offsetWidth;
+  const height = element.offsetHeight;
+  if (width <= 0 || height <= 0) {
+    return rectQuad(element.getBoundingClientRect());
+  }
+
+  const positions = [
+    { x: 0, y: 0 },
+    { x: width, y: 0 },
+    { x: width, y: height },
+    { x: 0, y: height },
+  ];
+  const previousPosition = element.style.position;
+  const needsPosition = getComputedStyle(element).position === 'static';
+  if (needsPosition) {
+    element.style.position = 'relative';
+  }
+
+  const markers = positions.map((position) => {
+    const marker = document.createElement('span');
+    marker.style.cssText = [
+      'position: absolute',
+      `left: ${position.x}px`,
+      `top: ${position.y}px`,
+      'width: 0',
+      'height: 0',
+      'margin: 0',
+      'padding: 0',
+      'border: 0',
+      'visibility: hidden',
+      'pointer-events: none',
+    ].join('; ');
+    element.append(marker);
+    return marker;
+  });
+
+  try {
+    return markers.map((marker) => {
+      const rect = marker.getBoundingClientRect();
+      return { x: rect.left, y: rect.top };
+    });
+  } finally {
+    for (const marker of markers) {
+      marker.remove();
+    }
+    if (needsPosition) {
+      element.style.position = previousPosition;
+    }
+  }
+}
+
+function rectQuad(rect: DOMRect): Point[] {
+  return [
+    { x: rect.left, y: rect.top },
+    { x: rect.right, y: rect.top },
+    { x: rect.right, y: rect.bottom },
+    { x: rect.left, y: rect.bottom },
+  ];
 }
 
 function solveHomography(from: Point[], to: Point[]): number[] | null {

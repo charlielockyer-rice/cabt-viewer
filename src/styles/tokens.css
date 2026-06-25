@@ -106,6 +106,17 @@
     inset 0 0 0 2px rgba(41, 161, 139, 0.14),
     0 10px 26px rgba(23, 30, 38, 0.08);
   --board-center-opacity: 0.34;
+  --card-aspect-h: 1.397;
+  --hand-card-board-scale: 1.55;
+  --hand-hover-pad-scale: 0.065;
+  --hand-hover-clearance-scale: 2.5;
+  --board-row-gap-scale: 0.16;
+  --active-gap-scale: 0.24;
+  --active-min-card-scale: 1.15;
+  --bench-card-scale: 1.24;
+  --bench-row-h-scale: 1.42;
+  --board-outline-pad-y-scale: 0.06;
+  --board-content-pad-scale: 0.18;
   --slot-empty-bg: rgba(255, 255, 255, 0.08);
   --slot-empty-border: rgba(30, 36, 43, 0.13);
   --slot-label-bg: rgba(255, 255, 255, 0.78);
