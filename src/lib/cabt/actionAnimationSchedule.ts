@@ -13,6 +13,8 @@ export const actionAnimationTiming = {
   deckRevealStepMs: 45,
   deckRevealReturnMs: 420,
   deckRevealReturnStepMs: 35,
+  prizeTakeMs: 1180,
+  prizeTakeStepMs: 45,
   evolveMs: 680,
   attackAnnounceMs: 520,
   damageMs: 320,
@@ -105,7 +107,7 @@ function animationPhaseForEvent(event: ActionTimelineEvent): AnimationPhase | nu
     };
   }
 
-  if (event.kind === 'MoveCard') {
+  if (event.kind === 'MoveCard' || event.kind === 'MoveCardReverse') {
     if (isBoardPositionMove(fromArea, toArea)) {
       return {
         key: `BoardMove:${playerKey}`,
@@ -153,6 +155,13 @@ function animationPhaseForEvent(event: ActionTimelineEvent): AnimationPhase | nu
         key: `DeckRevealReturn:${playerKey}`,
         durationMs: actionAnimationTiming.deckRevealReturnMs,
         stepMs: actionAnimationTiming.deckRevealReturnStepMs,
+      };
+    }
+    if (fromArea === CabtAreaType.PRIZE && toArea === CabtAreaType.HAND) {
+      return {
+        key: `PrizeTake:${playerKey}`,
+        durationMs: actionAnimationTiming.prizeTakeMs,
+        stepMs: actionAnimationTiming.prizeTakeStepMs,
       };
     }
   }

@@ -234,6 +234,7 @@
       events={animationEvents}
       scopeKey={animationScopeKey}
       {replayMode}
+      animateTakes={false}
     />
 
     <ActiveDuel

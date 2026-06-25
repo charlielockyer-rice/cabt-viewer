@@ -120,6 +120,19 @@ describe('actionAnimationStartMs', () => {
       actionAnimationTiming.deckRevealReturnMs + actionAnimationTiming.deckRevealReturnStepMs,
     );
   });
+
+  it('sequences Prize takes before follow-up effects', () => {
+    const events: ActionTimelineEvent[] = [
+      event(1, 'MoveCard', { cardId: 96, serial: 120, fromArea: CabtAreaType.PRIZE, toArea: CabtAreaType.HAND }),
+      event(2, 'MoveCard', { cardId: 1261, serial: 121, fromArea: CabtAreaType.PRIZE, toArea: CabtAreaType.HAND }),
+      event(3, 'Shuffle', {}),
+    ];
+
+    expect(actionAnimationStartMs(events, events[1])).toBe(actionAnimationTiming.prizeTakeStepMs);
+    expect(actionAnimationStartMs(events, events[2])).toBe(
+      actionAnimationTiming.prizeTakeMs + actionAnimationTiming.prizeTakeStepMs,
+    );
+  });
 });
 
 describe('actionAnimationBatchEvents', () => {

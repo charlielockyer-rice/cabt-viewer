@@ -7,6 +7,7 @@
   import BoardPromptStrip from './lib/components/prompts/BoardPromptStrip.svelte';
   import EndGamePrompt from './lib/components/EndGamePrompt.svelte';
   import DeckDrawAnimation from './lib/components/DeckDrawAnimation.svelte';
+  import DeckPrizeAnimation from './lib/components/DeckPrizeAnimation.svelte';
   import DeckRevealAnimation from './lib/components/DeckRevealAnimation.svelte';
   import HandPlayAnimation from './lib/components/HandPlayAnimation.svelte';
   import HandResetAnimation from './lib/components/HandResetAnimation.svelte';
@@ -1324,6 +1325,13 @@
           events={game.actionTimeline ?? []}
           scopeKey={animationScopeKey}
           {replayMode}
+        />
+
+        <DeckPrizeAnimation
+          events={game.actionTimeline ?? []}
+          scopeKey={animationScopeKey}
+          {replayMode}
+          animatePlacements={false}
         />
 
         <HandPlayAnimation

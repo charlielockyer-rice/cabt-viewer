@@ -458,7 +458,7 @@
     }
     const handSlots = handCardSlots(handElement, playerIndex);
     const targetElement = handSlotForSerial(handSlots, serial);
-    const targetRect = targetElement?.getBoundingClientRect() ?? fallbackHandTarget(handRect, index, count);
+    const targetRect = handCardVisualRect(targetElement) ?? fallbackHandTarget(handRect, index, count);
     return {
       center: centerOf(targetRect),
       width: targetRect.width,
@@ -481,6 +481,21 @@
       return undefined;
     }
     return handSlots.find((element) => Number(element.dataset.cardSerial) === serial);
+  }
+
+  function handCardVisualRect(targetElement: HTMLElement | undefined): DOMRect | undefined {
+    if (!targetElement) {
+      return undefined;
+    }
+    const visual = targetElement.querySelector('.card-tile');
+    if (visual instanceof HTMLElement) {
+      const rect = visual.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        return rect;
+      }
+    }
+    const rect = targetElement.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 ? rect : undefined;
   }
 
   function fallbackHandTarget(handRect: DOMRect, index: number, count: number): DOMRect {
@@ -628,7 +643,7 @@
   .reveal-card {
     position: absolute;
     display: block;
-    border-radius: 7px;
+    border-radius: 9px;
     transform-origin: center;
     transform-style: preserve-3d;
     isolation: isolate;

@@ -365,7 +365,7 @@
   .hand-reset-card {
     position: absolute;
     display: block;
-    border-radius: 5px;
+    border-radius: 6px;
     transform-origin: center;
     transform-style: preserve-3d;
     will-change: transform;

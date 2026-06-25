@@ -363,7 +363,7 @@
   .draw-card {
     position: absolute;
     display: block;
-    border-radius: 5px;
+    border-radius: 6px;
     pointer-events: none;
     transform-origin: center;
     transform-style: preserve-3d;

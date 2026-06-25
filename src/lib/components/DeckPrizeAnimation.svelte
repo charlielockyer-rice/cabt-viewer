@@ -1,13 +1,17 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
+  import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
   import { centerOf, planeMapper } from '../dom/planeGeometry';
-  import type { ActionTimelineEvent } from '../game/types';
+  import type { ActionTimelineEvent, CardView } from '../game/types';
 
   type Props = {
     events?: ActionTimelineEvent[];
     scopeKey?: string | number;
     replayMode?: boolean;
+    animatePlacements?: boolean;
+    animateTakes?: boolean;
   };
 
   type PrizeTargetAnimation = {
@@ -18,22 +22,60 @@
     startY: number;
   };
 
+  type PrizeTakeMode = 'revealing' | 'direct';
+
+  type PrizeTakeSprite = {
+    id: string;
+    card?: CardView;
+    reveal: boolean;
+    mode: PrizeTakeMode;
+    order: number;
+    delayMs: number;
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+    sourceScale: number;
+    revealX: number;
+    revealY: number;
+    takeX: number;
+    takeY: number;
+    takeScale: number;
+    takeRotation: number;
+    takeFlip: number;
+    rotation: number;
+    targetElement?: HTMLElement;
+  };
+
+  type PrizeTakeAnimation = {
+    id: number;
+    sprites: PrizeTakeSprite[];
+    hiddenTargets: HTMLElement[];
+  };
+
   let {
     events = [],
     scopeKey = '',
     replayMode = false,
+    animatePlacements = true,
+    animateTakes = true,
   }: Props = $props();
 
   const timers: ReturnType<typeof setTimeout>[] = [];
   const cardMoveDurationMs = 280;
   const cardSequenceStepMs = 45;
   const cardHandoffMs = cardMoveDurationMs + 24;
+  const directTakeDurationMs = 520;
+  const cardHeightToWidthRatio = 88 / 63;
   let seenEventIds = new Set<number>();
   let initialized = false;
   let reduceMotion = $state(false);
   let lastScopeKey: string | number = '';
+  let nextAnimationId = 1;
   let anchorElement = $state<HTMLElement>();
+  let prizeTakes = $state<PrizeTakeAnimation[]>([]);
   const activeTargetCounts = new WeakMap<HTMLElement, number>();
+  const hiddenTargetCounts = new Map<HTMLElement, number>();
   let activeTargets: HTMLElement[] = [];
 
   onMount(() => {
@@ -50,7 +92,7 @@
   });
 
   onDestroy(() => {
-    clearPlacements();
+    clearAnimations();
   });
 
   $effect(() => {
@@ -68,10 +110,11 @@
     }
 
     if (replayMode && scopeChanged) {
-      clearPlacements();
+      clearAnimations();
     }
 
-    const prizeEvents = currentEvents.filter((event) => {
+    const animationEvents = actionAnimationBatchEvents(currentEvents, seenEventIds, replayMode, scopeChanged);
+    const placementEvents = animatePlacements ? currentEvents.filter((event) => {
       if (!isPrizePlacementEvent(event)) {
         return false;
       }
@@ -79,22 +122,39 @@
         return false;
       }
       return true;
-    });
+    }) : [];
+    const takeEvents = animateTakes
+      ? animationEvents.filter((event) => isPrizeTakeEvent(event) && shouldAnimateEvent(event, scopeChanged))
+      : [];
 
     for (const event of currentEvents) {
       seenEventIds.add(event.id);
     }
 
-    if (prizeEvents.length) {
-      startPlacement(prizeEvents);
+    if (placementEvents.length) {
+      startPlacement(placementEvents);
+    }
+    if (takeEvents.length) {
+      startPrizeTake(takeEvents, animationEvents);
     }
   });
+
+  function shouldAnimateEvent(event: ActionTimelineEvent, scopeChanged: boolean): boolean {
+    return (replayMode && scopeChanged) || !seenEventIds.has(event.id);
+  }
 
   function isPrizePlacementEvent(event: ActionTimelineEvent): boolean {
     const params = event.params as Record<string, unknown> | undefined;
     return (event.kind === 'MoveCard' || event.kind === 'MoveCardReverse')
       && Number(params?.fromArea) === CabtAreaType.DECK
       && Number(params?.toArea) === CabtAreaType.PRIZE;
+  }
+
+  function isPrizeTakeEvent(event: ActionTimelineEvent): boolean {
+    const params = event.params as Record<string, unknown> | undefined;
+    return (event.kind === 'MoveCard' || event.kind === 'MoveCardReverse')
+      && Number(params?.fromArea) === CabtAreaType.PRIZE
+      && Number(params?.toArea) === CabtAreaType.HAND;
   }
 
   function startPlacement(prizeEvents: ActionTimelineEvent[]) {
@@ -133,13 +193,56 @@
     timers.push(timer);
   }
 
-  function clearPlacements() {
+  function startPrizeTake(takeEvents: ActionTimelineEvent[], animationEvents: ActionTimelineEvent[]) {
+    if (reduceMotion) {
+      return;
+    }
+
+    const eventsByPlayer = new Map<number, ActionTimelineEvent[]>();
+    for (const event of takeEvents) {
+      if (event.playerIndex === undefined) {
+        continue;
+      }
+      const playerEvents = eventsByPlayer.get(event.playerIndex) ?? [];
+      playerEvents.push(event);
+      eventsByPlayer.set(event.playerIndex, playerEvents);
+    }
+
+    const sprites = [...eventsByPlayer.entries()].flatMap(([playerIndex, playerEvents]) =>
+      takeSpritesForPlayer(playerIndex, playerEvents, animationEvents),
+    );
+    if (!sprites.length) {
+      return;
+    }
+
+    const hiddenTargets = sprites
+      .map((sprite) => sprite.targetElement)
+      .filter((target): target is HTMLElement => target instanceof HTMLElement);
+    hideTargets(hiddenTargets);
+
+    const animation: PrizeTakeAnimation = {
+      id: nextAnimationId++,
+      sprites,
+      hiddenTargets,
+    };
+    prizeTakes = [...prizeTakes, animation];
+
+    const timer = setTimeout(() => {
+      showTargets(hiddenTargets);
+      prizeTakes = prizeTakes.filter((item) => item.id !== animation.id);
+    }, Math.max(...sprites.map((sprite) => sprite.delayMs + prizeTakeDurationMs(sprite))) + 20);
+    timers.push(timer);
+  }
+
+  function clearAnimations() {
     for (const timer of timers) {
       clearTimeout(timer);
     }
     timers.length = 0;
     deactivateTargets(activeTargets);
     activeTargets = [];
+    clearHiddenTargets();
+    prizeTakes = [];
   }
 
   function targetAnimationsForPlayer(playerIndex: number, playerEvents: ActionTimelineEvent[]): PrizeTargetAnimation[] {
@@ -179,6 +282,72 @@
     });
   }
 
+  function takeSpritesForPlayer(
+    playerIndex: number,
+    playerEvents: ActionTimelineEvent[],
+    animationEvents: ActionTimelineEvent[],
+  ): PrizeTakeSprite[] {
+    const sourceRects = prizeSourceRects(playerIndex, playerEvents.length);
+    const handElement = handAnchor(playerIndex);
+    if (!sourceRects.length || !handElement) {
+      return [];
+    }
+
+    const handRect = handElement.getBoundingClientRect();
+    if (handRect.width <= 0 || handRect.height <= 0) {
+      return [];
+    }
+
+    const handSlots = handCardSlots(handElement, playerIndex);
+    const handConcealed = handElement.classList.contains('concealed');
+    const layout = revealLayout(playerEvents.length);
+
+    return playerEvents.flatMap((event, index) => {
+      const params = event.params as Record<string, unknown> | undefined;
+      const cardId = Number(params?.cardId);
+      const serial = Number(params?.serial);
+      const sourceRect = sourceRects[index] ?? sourceRects[sourceRects.length - 1];
+      if (!sourceRect || sourceRect.width <= 0 || sourceRect.height <= 0) {
+        return [];
+      }
+
+      const sourceCenter = centerOf(sourceRect);
+      const revealTarget = layout.target(index);
+      const targetElement = handSlotForSerial(handSlots, serial)
+        ?? handSlots[Math.max(0, handSlots.length - playerEvents.length + index)];
+      const targetRect = handCardVisualRect(targetElement) ?? fallbackHandTarget(handRect, index, playerEvents.length);
+      const targetCenter = centerOf(targetRect);
+      const reveal = !handConcealed && Number.isFinite(cardId);
+
+      return [{
+        id: `${event.id}-${Number.isFinite(serial) ? serial : index}`,
+        card: reveal ? {
+          ...cabtCardToView(cardId),
+          serial: Number.isFinite(serial) ? serial : undefined,
+          playerIndex,
+        } : undefined,
+        reveal,
+        mode: reveal ? 'revealing' : 'direct',
+        order: index + 1,
+        delayMs: actionAnimationStartMs(animationEvents, event),
+        left: sourceCenter.x - layout.cardWidth / 2,
+        top: sourceCenter.y - layout.cardHeight / 2,
+        width: layout.cardWidth,
+        height: layout.cardHeight,
+        sourceScale: Math.max(0.18, Math.min(0.85, sourceRect.width / layout.cardWidth)),
+        revealX: revealTarget.x - sourceCenter.x,
+        revealY: revealTarget.y - sourceCenter.y,
+        takeX: targetCenter.x - sourceCenter.x,
+        takeY: targetCenter.y - sourceCenter.y,
+        takeScale: Math.max(0.25, Math.min(1.15, targetRect.width / layout.cardWidth)),
+        takeRotation: handConcealed ? 180 : 0,
+        takeFlip: handConcealed ? 0 : 180,
+        rotation: revealTarget.rotation,
+        targetElement,
+      }];
+    });
+  }
+
   function activateTarget(animation: PrizeTargetAnimation) {
     const count = activeTargetCounts.get(animation.target) ?? 0;
     activeTargetCounts.set(animation.target, count + 1);
@@ -209,10 +378,68 @@
     activeTargets = [...nextActiveTargets];
   }
 
+  function hideTargets(targets: HTMLElement[]) {
+    for (const target of targets) {
+      const count = hiddenTargetCounts.get(target) ?? 0;
+      hiddenTargetCounts.set(target, count + 1);
+      target.dataset.prizeTakeAnimationHidden = 'true';
+    }
+  }
+
+  function showTargets(targets: HTMLElement[]) {
+    for (const target of targets) {
+      const count = (hiddenTargetCounts.get(target) ?? 1) - 1;
+      if (count > 0) {
+        hiddenTargetCounts.set(target, count);
+        continue;
+      }
+      hiddenTargetCounts.delete(target);
+      delete target.dataset.prizeTakeAnimationHidden;
+    }
+  }
+
+  function clearHiddenTargets() {
+    for (const target of hiddenTargetCounts.keys()) {
+      delete target.dataset.prizeTakeAnimationHidden;
+    }
+    hiddenTargetCounts.clear();
+  }
+
   function deckTopElement(playerIndex: number): HTMLElement | null {
     const anchor = document.querySelector(`[data-card-anchor="player:${playerIndex}:deck"]`);
     const pile = anchor?.closest('.deck-pile') as HTMLElement | null;
     return pile?.querySelector('.deck-card-face') ?? pile;
+  }
+
+  function handAnchor(playerIndex: number): HTMLElement | null {
+    return document.querySelector(`[data-card-anchor="player:${playerIndex}:hand"]`);
+  }
+
+  function handCardSlots(handElement: HTMLElement, playerIndex: number): HTMLElement[] {
+    return Array.from(handElement.querySelectorAll(`[data-hand-card-slot^="player:${playerIndex}:hand:"]`))
+      .filter((element): element is HTMLElement => element instanceof HTMLElement);
+  }
+
+  function handSlotForSerial(handSlots: HTMLElement[], serial: number): HTMLElement | undefined {
+    if (!Number.isFinite(serial)) {
+      return undefined;
+    }
+    return handSlots.find((element) => Number(element.dataset.cardSerial) === serial);
+  }
+
+  function handCardVisualRect(targetElement: HTMLElement | undefined): DOMRect | undefined {
+    if (!targetElement) {
+      return undefined;
+    }
+    const visual = targetElement.querySelector('.card-tile');
+    if (visual instanceof HTMLElement) {
+      const rect = visual.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        return rect;
+      }
+    }
+    const rect = targetElement.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 ? rect : undefined;
   }
 
   function prizeSlots(playerIndex: number): HTMLElement[] {
@@ -227,9 +454,193 @@
     return Number.isFinite(value) ? value : 0;
   }
 
+  function prizeSourceRects(playerIndex: number, count: number): DOMRect[] {
+    const slots = prizeSlots(playerIndex);
+    const grid = prizeGridForPlayer(playerIndex);
+    if (!slots.length && !grid) {
+      return [];
+    }
+    const firstMissingIndex = slots.length;
+    return Array.from({ length: count }, (_, index) => prizeRectForIndex(slots, firstMissingIndex + index, grid));
+  }
+
+  function prizeRectForIndex(slots: HTMLElement[], index: number, grid: HTMLElement | null): DOMRect {
+    const existing = slots.find((slot) => prizeIndex(slot) === index);
+    if (existing) {
+      return existing.getBoundingClientRect();
+    }
+
+    const firstRect = slots[0]?.getBoundingClientRect() ?? prizeGridCardRect(grid);
+    const row = Math.floor(index / 2);
+    const col = index % 2;
+    const firstIndex = slots[0] ? prizeIndex(slots[0]) : 0;
+    const firstRow = Math.floor(firstIndex / 2);
+    const firstCol = firstIndex % 2;
+    const left = firstRect.left + (col - firstCol) * firstRect.width * 0.98;
+    const top = firstRect.top + (row - firstRow) * firstRect.width * 0.71;
+    return {
+      left,
+      top,
+      right: left + firstRect.width,
+      bottom: top + firstRect.height,
+      x: left,
+      y: top,
+      width: firstRect.width,
+      height: firstRect.height,
+      toJSON: () => ({}),
+    } as DOMRect;
+  }
+
+  function prizeGridForPlayer(playerIndex: number): HTMLElement | null {
+    const deckAnchor = document.querySelector(`[data-card-anchor="player:${playerIndex}:deck"]`);
+    const fieldPiles = deckAnchor?.closest('.field-piles');
+    const grid = fieldPiles?.querySelector('.prize-grid');
+    return grid instanceof HTMLElement ? grid : null;
+  }
+
+  function prizeGridCardRect(grid: HTMLElement | null): DOMRect {
+    const gridRect = grid?.getBoundingClientRect();
+    if (!gridRect || gridRect.width <= 0 || gridRect.height <= 0) {
+      return {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        toJSON: () => ({}),
+      } as DOMRect;
+    }
+    const width = gridRect.width / 1.98;
+    const height = width * cardHeightToWidthRatio;
+    return {
+      left: gridRect.left,
+      top: gridRect.top,
+      right: gridRect.left + width,
+      bottom: gridRect.top + height,
+      x: gridRect.left,
+      y: gridRect.top,
+      width,
+      height,
+      toJSON: () => ({}),
+    } as DOMRect;
+  }
+
+  function fallbackHandTarget(handRect: DOMRect, index: number, count: number): DOMRect {
+    const width = Math.min(handRect.height / cardHeightToWidthRatio, handRect.width / Math.max(1, count));
+    const height = width * cardHeightToWidthRatio;
+    const step = Math.min(width * 0.82, handRect.width / Math.max(1, count));
+    const centerX = handRect.left + handRect.width / 2 + (index - (count - 1) / 2) * step;
+    const centerY = handRect.top + handRect.height / 2;
+    return {
+      left: centerX - width / 2,
+      top: centerY - height / 2,
+      right: centerX + width / 2,
+      bottom: centerY + height / 2,
+      x: centerX - width / 2,
+      y: centerY - height / 2,
+      width,
+      height,
+      toJSON: () => ({}),
+    } as DOMRect;
+  }
+
+  function revealLayout(count: number) {
+    const viewportWidth = typeof window === 'undefined' ? 1200 : window.innerWidth;
+    const viewportHeight = typeof window === 'undefined' ? 800 : window.innerHeight;
+    const boardRect = typeof document === 'undefined'
+      ? undefined
+      : document.querySelector('.playmat')?.getBoundingClientRect();
+    const centerX = boardRect ? boardRect.left + boardRect.width / 2 : viewportWidth / 2;
+    const centerY = boardRect ? boardRect.top + boardRect.height * 0.5 : viewportHeight * 0.47;
+    const maxWidth = boardRect ? boardRect.width - 96 : viewportWidth - 96;
+    const availableWidth = Math.max(220, maxWidth);
+    const spacingRatio = viewportWidth < 760 ? 0.62 : 0.7;
+    const minCardWidth = viewportWidth < 760 ? 92 : 112;
+    const maxColumns = Math.max(1, Math.floor(((availableWidth / minCardWidth) - 1) / spacingRatio + 1));
+    const columns = Math.min(count, maxColumns);
+    const rows = Math.ceil(count / columns);
+    const boardHeight = boardRect?.height ?? viewportHeight;
+    const revealBandHeight = boardHeight * (viewportWidth < 760 ? 0.46 : 0.52);
+    const maxByHeight = revealBandHeight / (cardHeightToWidthRatio * (rows + Math.max(0, rows - 1) * 0.08));
+    const maxReadableWidth = Math.min(viewportWidth < 760 ? 174 : 252, availableWidth, maxByHeight);
+    const countScale = count <= 1 ? 1 : count <= 2 ? 0.9 : count <= 4 ? 0.78 : count <= 6 ? 0.68 : 0.58;
+    const desiredCardWidth = maxReadableWidth * countScale;
+    const maxByWidth = availableWidth / (1 + spacingRatio * Math.max(0, columns - 1));
+    const cardWidth = Math.max(minCardWidth, Math.min(maxReadableWidth, desiredCardWidth, maxByWidth));
+    const cardHeight = cardWidth * cardHeightToWidthRatio;
+    const spacing = cardWidth * spacingRatio;
+    const rotationStep = count <= 1 ? 0 : Math.min(5, 20 / Math.max(1, count - 1));
+    const arcDrop = cardWidth * 0.045;
+    const rowGap = cardHeight * 0.08;
+    const totalHeight = rows * cardHeight + Math.max(0, rows - 1) * rowGap;
+    const originY = centerY - totalHeight / 2 + cardHeight / 2;
+
+    return {
+      cardWidth,
+      cardHeight,
+      target(index: number) {
+        const row = Math.floor(index / columns);
+        const rowStart = row * columns;
+        const cardsInRow = Math.min(columns, count - rowStart);
+        const column = index - rowStart;
+        const offset = column - (cardsInRow - 1) / 2;
+        return {
+          x: centerX + offset * spacing,
+          y: originY + row * (cardHeight + rowGap) + Math.abs(offset) * arcDrop,
+          rotation: offset * rotationStep,
+        };
+      },
+    };
+  }
+
+  function prizeTakeDurationMs(sprite: PrizeTakeSprite): number {
+    return sprite.mode === 'direct' ? directTakeDurationMs : actionAnimationTiming.prizeTakeMs;
+  }
+
+  function takeSpriteStyle(sprite: PrizeTakeSprite): string {
+    return [
+      `left: ${sprite.left}px`,
+      `top: ${sprite.top}px`,
+      `width: ${sprite.width}px`,
+      `height: ${sprite.height}px`,
+      `--prize-source-scale: ${sprite.sourceScale.toFixed(3)}`,
+      `--prize-reveal-x: ${sprite.revealX.toFixed(1)}px`,
+      `--prize-reveal-y: ${sprite.revealY.toFixed(1)}px`,
+      `--prize-take-x: ${sprite.takeX.toFixed(1)}px`,
+      `--prize-take-y: ${sprite.takeY.toFixed(1)}px`,
+      `--prize-take-scale: ${sprite.takeScale.toFixed(3)}`,
+      `--prize-take-rotation: ${sprite.takeRotation.toFixed(1)}deg`,
+      `--prize-take-flip: ${sprite.takeFlip.toFixed(1)}deg`,
+      `--prize-reveal-rotation: ${sprite.rotation.toFixed(1)}deg`,
+      '--prize-overlay-z: 0px',
+      `--prize-take-delay: ${sprite.delayMs}ms`,
+      `z-index: ${sprite.order}`,
+    ].join('; ');
+  }
 </script>
 
 <span class="deck-prize-animation-anchor" bind:this={anchorElement} aria-hidden="true"></span>
+<span class="prize-take-animation" aria-hidden="true">
+  {#each prizeTakes as take (take.id)}
+    {#each take.sprites as sprite (sprite.id)}
+      <span class={`prize-take-card ${sprite.mode}`} class:revealed={sprite.reveal} style={takeSpriteStyle(sprite)}>
+        <span class="prize-take-card-inner">
+          <span class="prize-take-card-face prize-take-card-back"></span>
+          <span class="prize-take-card-face prize-take-card-front">
+            {#if sprite.card?.imageUrl}
+              <img src={sprite.card.imageUrl} alt="" draggable="false" />
+            {:else}
+              <span class="fallback-name">{sprite.card?.name ?? 'Prize card'}</span>
+            {/if}
+          </span>
+        </span>
+      </span>
+    {/each}
+  {/each}
+</span>
 
 <style>
   .deck-prize-animation-anchor {
@@ -263,6 +674,98 @@
     will-change: transform, opacity;
   }
 
+  .prize-take-animation {
+    position: fixed;
+    inset: 0;
+    z-index: 41;
+    overflow: visible;
+    pointer-events: none;
+    perspective: 1200px;
+    transform-style: preserve-3d;
+  }
+
+  :global([data-prize-take-animation-hidden='true']) {
+    visibility: hidden;
+  }
+
+  .prize-take-card {
+    position: absolute;
+    display: block;
+    border-radius: 9px;
+    transform-origin: center;
+    transform-style: preserve-3d;
+    isolation: isolate;
+    will-change: transform, opacity;
+  }
+
+  .prize-take-card.revealing {
+    animation: prize-take-reveal 1180ms cubic-bezier(0.18, 0.86, 0.24, 1) var(--prize-take-delay) both;
+  }
+
+  .prize-take-card.direct {
+    animation: prize-take-direct 520ms cubic-bezier(0.2, 0.82, 0.22, 1) var(--prize-take-delay) both;
+  }
+
+  .prize-take-card-inner {
+    position: absolute;
+    inset: 0;
+    display: block;
+    border-radius: inherit;
+    transform-style: preserve-3d;
+    will-change: transform;
+  }
+
+  .prize-take-card.revealed .prize-take-card-inner {
+    animation: prize-take-flip 1180ms ease-in-out var(--prize-take-delay) both;
+  }
+
+  .prize-take-card-face {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    border-radius: inherit;
+    box-shadow:
+      0 18px 38px rgba(23, 30, 38, 0.26),
+      0 0 0 1px rgba(18, 21, 26, 0.18);
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+  }
+
+  .prize-take-card-back {
+    transform: translateZ(0.2px);
+    background:
+      var(--cardback-shade),
+      url("/assets/cardback.png") center / cover no-repeat;
+  }
+
+  .prize-take-card-front {
+    transform: rotateY(180deg) translateZ(0.2px);
+    background: #f7f8fa;
+  }
+
+  .prize-take-card:not(.revealed) .prize-take-card-front {
+    display: none;
+  }
+
+  .prize-take-card-front img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: fill;
+    pointer-events: none;
+  }
+
+  .fallback-name {
+    padding: 0 9px;
+    color: #1f2933;
+    font-size: 13px;
+    font-weight: 900;
+    line-height: 1.1;
+    text-align: center;
+  }
+
   @keyframes deck-prize-place {
     0% {
       opacity: 0;
@@ -278,9 +781,102 @@
     }
   }
 
+  @keyframes prize-take-reveal {
+    0% {
+      opacity: 0;
+      transform:
+        translate3d(0, 0, var(--prize-overlay-z))
+        scale(var(--prize-source-scale))
+        rotate(0deg);
+    }
+    2% {
+      opacity: 1;
+      transform:
+        translate3d(0, 0, var(--prize-overlay-z))
+        scale(var(--prize-source-scale))
+        rotate(0deg);
+    }
+    42% {
+      opacity: 1;
+      transform:
+        translate3d(var(--prize-reveal-x), var(--prize-reveal-y), var(--prize-overlay-z))
+        scale(1)
+        rotate(var(--prize-reveal-rotation));
+    }
+    68% {
+      opacity: 1;
+      transform:
+        translate3d(var(--prize-reveal-x), var(--prize-reveal-y), var(--prize-overlay-z))
+        scale(1)
+        rotate(var(--prize-reveal-rotation));
+    }
+    96% {
+      opacity: 1;
+      transform:
+        translate3d(var(--prize-take-x), var(--prize-take-y), var(--prize-overlay-z))
+        scale(var(--prize-take-scale))
+        rotate(var(--prize-take-rotation));
+    }
+    100% {
+      opacity: 1;
+      transform:
+        translate3d(var(--prize-take-x), var(--prize-take-y), var(--prize-overlay-z))
+        scale(var(--prize-take-scale))
+        rotate(var(--prize-take-rotation));
+    }
+  }
+
+  @keyframes prize-take-direct {
+    0% {
+      opacity: 0;
+      transform:
+        translate3d(0, 0, var(--prize-overlay-z))
+        scale(var(--prize-source-scale))
+        rotate(0deg);
+    }
+    1% {
+      opacity: 1;
+      transform:
+        translate3d(0, 0, var(--prize-overlay-z))
+        scale(var(--prize-source-scale))
+        rotate(0deg);
+    }
+    88% {
+      opacity: 1;
+      transform:
+        translate3d(var(--prize-take-x), var(--prize-take-y), var(--prize-overlay-z))
+        scale(var(--prize-take-scale))
+        rotate(var(--prize-take-rotation));
+    }
+    100% {
+      opacity: 1;
+      transform:
+        translate3d(var(--prize-take-x), var(--prize-take-y), var(--prize-overlay-z))
+        scale(var(--prize-take-scale))
+        rotate(var(--prize-take-rotation));
+    }
+  }
+
+  @keyframes prize-take-flip {
+    0% {
+      transform: rotateY(0deg);
+    }
+    36% {
+      transform: rotateY(180deg);
+    }
+    72% {
+      transform: rotateY(180deg);
+    }
+    100% {
+      transform: rotateY(var(--prize-take-flip));
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
-    :global([data-prize-animation-active='true']::after) {
-      animation: none;
+    .prize-take-card.revealing,
+    .prize-take-card.direct,
+    .prize-take-card.revealed .prize-take-card-inner {
+      animation-duration: 1ms;
     }
   }
 </style>
