@@ -75,10 +75,11 @@ The committed example lives at
 `public/local-card-images/` are ignored by git, so they can be used for local
 image packs without committing those assets.
 
-When Scrydex card images are enabled, card backs default to
-`https://images.scrydex.com/pokemon/large` and energy symbols use the bundled
-local images. The manifest only needs `cardBack` or `energy` entries when you
-want to override those defaults.
+Manifest image values may be same-origin paths like `/local-card-images/...` or
+absolute HTTPS URLs for images you host elsewhere. The app does not proxy or
+bundle those files; the browser loads the configured URLs directly. The manifest
+only needs `cardBack` or `energy` entries when you want to override those
+defaults.
 
 For Scrydex card-face URLs, set a source:
 
@@ -88,9 +89,9 @@ VITE_CABT_CARD_BACK_IMAGE_URL=/local-card-images/cardback.png
 VITE_CABT_ENERGY_IMAGE_TEMPLATE=/local-card-images/energy/{slug}.webp
 ```
 
-The Scrydex source uses this repo's set map to build card-face URLs in the
-`https://images.scrydex.com/pokemon/{setId}-{number}/large` shape. Leave the
-source unset to avoid generated external card-art URLs entirely.
+The Scrydex source uses this repo's set map to build provider URLs for card
+faces. Leave the source unset to avoid generated external card-art URLs
+entirely.
 
 For a local mirror or your own hosted files, use a template instead:
 
@@ -103,6 +104,14 @@ VITE_CABT_ENERGY_IMAGE_TEMPLATE=/local-card-images/energy/{slug}.webp
 Template tokens are `{set}`, `{setId}`, `{number}`, `{numberPadded}`, `{name}`,
 and `{fullName}` for card faces. Energy-image templates support `{type}`,
 `{name}`, and `{slug}`.
+
+Templates can also point at your own hosted images:
+
+```bash
+VITE_CABT_CARD_IMAGE_TEMPLATE=https://assets.example.com/cabt/cards/{set}/{number}.png
+VITE_CABT_CARD_BACK_IMAGE_URL=https://assets.example.com/cabt/cardback.png
+VITE_CABT_ENERGY_IMAGE_TEMPLATE=https://assets.example.com/cabt/energy/{slug}.webp
+```
 
 ## Run Local CABT Play
 
