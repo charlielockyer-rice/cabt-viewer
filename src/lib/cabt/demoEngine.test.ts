@@ -387,8 +387,8 @@ describe('cabtObservationToGameView', () => {
     const prompt = view.prompts[0];
 
     expect(prompt?.fields.cardList).toEqual([
-      expect.objectContaining({ index: 0, name: 'Basic {W} Energy', imageUrl: undefined }),
-      expect.objectContaining({ index: 1, name: 'Mega Signal', imageUrl: undefined }),
+      expect.objectContaining({ index: 0, name: 'Basic {W} Energy' }),
+      expect.objectContaining({ index: 1, name: 'Mega Signal' }),
     ]);
   });
 

@@ -449,14 +449,16 @@ describe('cabtReplayToSnapshot', () => {
 
     expect(snapshot.steps[1].label).toBe('Player 1 played Mega Signal.');
     expect(snapshot.steps[1].displayView?.players[0].hand.map((card) => card.serial)).toEqual([46]);
-    expect(snapshot.steps[1].displayView?.players[0].discard.map((card) => card.serial)).toEqual([14]);
+    expect(snapshot.steps[1].displayView?.players[0].playZone.map((card) => card.serial)).toEqual([14]);
+    expect(snapshot.steps[1].displayView?.players[0].discard).toHaveLength(0);
     expect(snapshot.views[snapshot.steps[1].stateIndex].players[0].discard).toHaveLength(0);
-    expect(snapshot.steps[2].displayView?.players[0].discard.map((card) => card.serial)).toEqual([14]);
+    expect(snapshot.steps[2].displayView?.players[0].playZone.map((card) => card.serial)).toEqual([14]);
+    expect(snapshot.steps[2].displayView?.players[0].discard).toHaveLength(0);
     expect(snapshot.views[snapshot.steps[2].stateIndex].players[0].discard).toHaveLength(0);
     expect(snapshot.views[snapshot.steps[3].stateIndex].players[0].discard.map((card) => card.serial)).toEqual([14]);
   });
 
-  it('keeps a projected played trainer in discard during the follow-up board move animation', () => {
+  it('keeps a played trainer in the resolving zone during the follow-up board move animation', () => {
     const snapshot = cabtReplayToSnapshot({
       visualize: [{
         current: {
@@ -544,11 +546,15 @@ describe('cabtReplayToSnapshot', () => {
 
     const playStep = snapshot.steps[1];
     const switchStep = snapshot.steps[2];
-    expect(playStep.displayView?.players[0].discard.map((card) => card.serial)).toEqual([14]);
+    expect(playStep.displayView?.players[0].playZone.map((card) => card.serial)).toEqual([14]);
+    expect(playStep.displayView?.players[0].discard).toHaveLength(0);
     expect(snapshot.views[playStep.stateIndex].players[0].discard).toHaveLength(0);
     expect(switchStep.animationPhases?.map((phase) => phase.key)).toEqual(['BoardMove:0']);
-    expect(switchStep.animationPhases?.[0].view.players[0].discard.map((card) => card.serial)).toEqual([14]);
+    expect(switchStep.animationPhases?.[0].view.players[0].playZone.map((card) => card.serial)).toEqual([14]);
+    expect(switchStep.animationPhases?.[0].view.players[0].discard).toHaveLength(0);
     expect(switchStep.animationPhases?.[0].view.players[0].active.pokemon?.serial).toBe(79);
+    expect(switchStep.displayView).toBeUndefined();
+    expect(snapshot.views[switchStep.stateIndex].players[0].discard.map((card) => card.serial)).toEqual([14]);
     expect(snapshot.views[switchStep.stateIndex].players[0].active.pokemon?.serial).toBe(81);
   });
 
@@ -1220,6 +1226,14 @@ describe('cabtReplayToSnapshot', () => {
     expect(step.animationPhases?.[1].view.players[0].hand.map((card) => card.serial)).toEqual([120, 101, 81, 109, 100]);
     expect(step.animationPhases?.[2].view.players[0].hand).toHaveLength(0);
     expect(step.animationPhases?.[3].view.players[0].hand.map((card) => card.serial)).toEqual([94, 102, 80, 100]);
+    expect(step.animationPhases?.map((phase) => phase.view.players[0].playZone.map((card) => card.serial))).toEqual([
+      [83],
+      [83],
+      [83],
+      [83],
+    ]);
+    expect(step.animationPhases?.every((phase) => !phase.view.players[0].discard.some((card) => card.serial === 83))).toBe(true);
+    expect(snapshot.views[step.stateIndex].players[0].discard.map((card) => card.serial)).toContain(83);
   });
 
   it('builds a separate deck reveal phase for Waitress-style topdeck looks', () => {

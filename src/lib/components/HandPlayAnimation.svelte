@@ -294,6 +294,9 @@
           && Number(params?.toArea) === CabtAreaType.DISCARD
         );
     }
+    if (event.kind === 'Play' && isPlayZoneCardTarget(target)) {
+      return true;
+    }
     if (event.kind === 'MoveCard') {
       const toArea = Number(params?.toArea);
       return toArea === CabtAreaType.ACTIVE || toArea === CabtAreaType.BENCH;
@@ -304,6 +307,11 @@
   function isDiscardCardTarget(target: HTMLElement): boolean {
     return target.classList.contains('card-tile')
       && target.closest('[data-card-anchor$=":discard"]') instanceof HTMLElement;
+  }
+
+  function isPlayZoneCardTarget(target: HTMLElement): boolean {
+    return target.dataset.cardAnchor?.endsWith(':playZone') === true
+      || target.closest('[data-card-anchor$=":playZone"]') instanceof HTMLElement;
   }
 
   function activateTarget(animation: TargetAnimation) {
@@ -408,11 +416,25 @@
     }
 
     if (event.kind === 'Play') {
-      return discardTarget(playerIndex, serial)
+      return playZoneTarget(playerIndex, serial)
+        ?? discardTarget(playerIndex, serial)
         ?? boardSlotByPokemonIdentity(serial, cardId, playerIndex);
     }
 
     return null;
+  }
+
+  function playZoneTarget(playerIndex: number | undefined, serial: number): HTMLElement | null {
+    if (playerIndex === undefined) {
+      return null;
+    }
+    if (Number.isFinite(serial)) {
+      const card = document.querySelector(`[data-card-anchor="player:${playerIndex}:playZone"] [data-card-serial="${serial}"]`);
+      if (card instanceof HTMLElement) {
+        return card;
+      }
+    }
+    return document.querySelector(`[data-card-anchor="player:${playerIndex}:playZone"]`);
   }
 
   function discardTarget(playerIndex: number | undefined, serial: number): HTMLElement | null {

@@ -197,7 +197,7 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
     }
   }
 
-  applyPendingPlayedDiscards(steps, views);
+  applyResolvingPlayedCards(steps, views);
   applyKnockOutDiscardTopOrdering(steps, views);
 
   steps.forEach((step, index) => {
@@ -1201,13 +1201,13 @@ function projectedViewForEvents(
   return view;
 }
 
-type PendingPlayedDiscard = {
+type ResolvingPlayedCard = {
   playerIndex: number;
   card: CardView;
 };
 
-function applyPendingPlayedDiscards(steps: ReplayStep[], views: GameView[]): void {
-  let pending: PendingPlayedDiscard[] = [];
+function applyResolvingPlayedCards(steps: ReplayStep[], views: GameView[]): void {
+  let resolving: ResolvingPlayedCard[] = [];
 
   for (const step of steps) {
     const baseView = views[step.stateIndex];
@@ -1215,23 +1215,39 @@ function applyPendingPlayedDiscards(steps: ReplayStep[], views: GameView[]): voi
       continue;
     }
 
-    pending = pending.filter((entry) => !playerHasDiscardCard(baseView.players[entry.playerIndex], entry.card));
     for (const event of step.actionTimeline ?? []) {
-      const pendingCard = pendingPlayedDiscardForEvent(baseView, event);
-      if (pendingCard && !pending.some((entry) => entry.playerIndex === pendingCard.playerIndex && sameKnownCard(entry.card, pendingCard.card))) {
-        pending = [...pending, pendingCard];
+      const resolvingCard = resolvingPlayedCardForEvent(baseView, event);
+      if (resolvingCard && !resolving.some((entry) => entry.playerIndex === resolvingCard.playerIndex && sameKnownCard(entry.card, resolvingCard.card))) {
+        resolving = [...resolving, resolvingCard];
       }
     }
 
-    if (!pending.length) {
-      continue;
+    const displayResolving = resolving.filter((entry) => shouldShowResolvingCardInDisplay(step, baseView, entry));
+    const phaseResolving = resolving.filter((entry) => shouldShowResolvingCardInPhase(step, baseView, entry));
+    if (displayResolving.length) {
+      const view = step.displayView ?? baseView;
+      step.displayView = gameViewWithResolvingCards(view, displayResolving);
+    }
+    if (phaseResolving.length && step.animationPhases?.length) {
+      step.animationPhases = step.animationPhases.map((phase) => ({
+        ...phase,
+        view: gameViewWithResolvingCards(phase.view, phaseResolving),
+      }));
     }
 
-    const view = step.displayView ?? baseView;
-    const missingPendingCards = pending.filter((entry) => !playerHasDiscardCard(view.players[entry.playerIndex], entry.card));
-    if (missingPendingCards.length) {
-      step.displayView = gameViewWithPendingDiscards(view, missingPendingCards);
-    }
+    const visibleResolving = [...displayResolving, ...phaseResolving];
+    resolving = resolving.flatMap((entry) => {
+      if (!visibleResolving.some((visibleEntry) => sameResolvingCard(visibleEntry, entry))) {
+        return [];
+      }
+      if (playerHasDiscardCard(baseView.players[entry.playerIndex], entry.card)) {
+        return [];
+      }
+      if (stepContainsPlayForCard(step, entry.card)) {
+        return [entry];
+      }
+      return [entry];
+    });
   }
 }
 
@@ -1287,21 +1303,26 @@ function promoteDiscardCardToTop(view: GameView | undefined, event: ActionTimeli
   };
 }
 
-function pendingPlayedDiscardForEvent(view: GameView, event: ActionTimelineEvent): PendingPlayedDiscard | undefined {
+function resolvingPlayedCardForEvent(view: GameView, event: ActionTimelineEvent): ResolvingPlayedCard | undefined {
   if (event.kind !== 'Play' || event.playerIndex === undefined) {
     return undefined;
   }
   const player = view.players[event.playerIndex];
   const card = cardViewFromEvent(event);
-  if (!player || !card || playerHasDiscardCard(player, card) || playerHasCardInPlay(player, event)) {
+  if (!player || !card || card.id === undefined || playerHasCardInPlay(player, event) || !isResolvingTrainerCard(card.id)) {
     return undefined;
   }
   return { playerIndex: event.playerIndex, card };
 }
 
-function gameViewWithPendingDiscards(view: GameView, pending: PendingPlayedDiscard[]): GameView {
+function isResolvingTrainerCard(cardId: number): boolean {
+  const kind = cardDatabase.get(cardId)?.kind ?? '';
+  return kind === 'Item' || kind === 'Supporter';
+}
+
+function gameViewWithResolvingCards(view: GameView, resolving: ResolvingPlayedCard[]): GameView {
   const cardsByPlayer = new Map<number, CardView[]>();
-  for (const entry of pending) {
+  for (const entry of resolving) {
     const cards = cardsByPlayer.get(entry.playerIndex) ?? [];
     cardsByPlayer.set(entry.playerIndex, [...cards, entry.card]);
   }
@@ -1315,13 +1336,48 @@ function gameViewWithPendingDiscards(view: GameView, pending: PendingPlayedDisca
       }
       return {
         ...player,
-        discard: [
-          ...player.discard,
-          ...pendingCards.filter((card) => !player.discard.some((discardCard) => sameKnownCard(discardCard, card))),
+        discard: player.discard.filter((discardCard) => !pendingCards.some((card) => sameKnownCard(discardCard, card))),
+        playZone: [
+          ...player.playZone.filter((playZoneCard) => !pendingCards.some((card) => sameKnownCard(playZoneCard, card))),
+          ...pendingCards,
         ],
       };
     }),
   };
+}
+
+function shouldShowResolvingCardInDisplay(step: ReplayStep, baseView: GameView, entry: ResolvingPlayedCard): boolean {
+  if (!playerHasDiscardCard(baseView.players[entry.playerIndex], entry.card)) {
+    return true;
+  }
+  return stepContainsPlayForCard(step, entry.card) && !step.animationPhases?.length;
+}
+
+function shouldShowResolvingCardInPhase(step: ReplayStep, baseView: GameView, entry: ResolvingPlayedCard): boolean {
+  return shouldShowResolvingCardInDisplay(step, baseView, entry)
+    || stepContainsPlayForCard(step, entry.card)
+    || isCardEffectContinuationStep(step);
+}
+
+function stepContainsPlayForCard(step: ReplayStep, card: CardView): boolean {
+  return (step.actionTimeline ?? []).some((event) => event.kind === 'Play' && eventCardMatches(card, event));
+}
+
+function isCardEffectContinuationStep(step: ReplayStep): boolean {
+  return (step.actionTimeline ?? []).some((event) => [
+    'Switch',
+    'MoveCard',
+    'MoveCardReverse',
+    'Draw',
+    'DrawReverse',
+    'Shuffle',
+    'HpChange',
+    'HPChange',
+  ].includes(event.kind ?? ''));
+}
+
+function sameResolvingCard(left: ResolvingPlayedCard, right: ResolvingPlayedCard): boolean {
+  return left.playerIndex === right.playerIndex && sameKnownCard(left.card, right.card);
 }
 
 function shouldProjectSingleGroup(currentView: GameView, group: ReplayActionGroup): boolean {

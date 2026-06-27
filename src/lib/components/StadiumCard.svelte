@@ -50,7 +50,7 @@
   }
 
   .top-stadium-card {
-    grid-row: 1;
+    grid-row: 2;
     grid-column: 1;
     justify-self: end;
     align-self: center;
@@ -62,7 +62,7 @@
   }
 
   .bottom-stadium-card {
-    grid-row: 3;
+    grid-row: 2;
     grid-column: 3;
     justify-self: start;
     align-self: center;
