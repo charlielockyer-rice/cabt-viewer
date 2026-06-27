@@ -456,6 +456,102 @@ describe('cabtReplayToSnapshot', () => {
     expect(snapshot.views[snapshot.steps[3].stateIndex].players[0].discard.map((card) => card.serial)).toEqual([14]);
   });
 
+  it('keeps a projected played trainer in discard during the follow-up board move animation', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 304, serial: 79, hp: 150, maxHp: 150 }],
+            bench: [{ id: 878, serial: 81, hp: 90, maxHp: 90 }],
+            benchMax: 5,
+            hand: [
+              { id: 1182, serial: 14 },
+            ],
+            deckCount: 46,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 53,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'Play', playerIndex: 0, cardId: 1182, serial: 14 },
+        ],
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 304, serial: 79, hp: 150, maxHp: 150 }],
+            bench: [{ id: 878, serial: 81, hp: 90, maxHp: 90 }],
+            benchMax: 5,
+            hand: [],
+            deckCount: 46,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 53,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          {
+            type: 'Switch',
+            playerIndex: 0,
+            cardIdActive: 304,
+            serialActive: 79,
+            cardIdBench: 878,
+            serialBench: 81,
+          },
+        ],
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 878, serial: 81, hp: 90, maxHp: 90 }],
+            bench: [{ id: 304, serial: 79, hp: 150, maxHp: 150 }],
+            benchMax: 5,
+            hand: [],
+            deckCount: 46,
+            discard: [{ id: 1182, serial: 14 }],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 53,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    const playStep = snapshot.steps[1];
+    const switchStep = snapshot.steps[2];
+    expect(playStep.displayView?.players[0].discard.map((card) => card.serial)).toEqual([14]);
+    expect(snapshot.views[playStep.stateIndex].players[0].discard).toHaveLength(0);
+    expect(switchStep.animationPhases?.map((phase) => phase.key)).toEqual(['BoardMove:0']);
+    expect(switchStep.animationPhases?.[0].view.players[0].discard.map((card) => card.serial)).toEqual([14]);
+    expect(switchStep.animationPhases?.[0].view.players[0].active.pokemon?.serial).toBe(79);
+    expect(snapshot.views[switchStep.stateIndex].players[0].active.pokemon?.serial).toBe(81);
+  });
+
   it('holds the pre-evolution board state while an evolution animation resolves', () => {
     const snapshot = cabtReplayToSnapshot({
       visualize: [{

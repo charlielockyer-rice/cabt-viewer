@@ -344,6 +344,7 @@
     width: var(--energy-icon-size);
     height: var(--energy-icon-size);
     border-radius: 999px;
+    overflow: hidden;
     filter: drop-shadow(0 3px 4px rgba(23, 30, 38, 0.38));
   }
 

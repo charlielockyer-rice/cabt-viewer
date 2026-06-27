@@ -13,6 +13,13 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# The CABT CSV has these two POR special-energy collection numbers swapped
+# relative to the card-art/catalog numbering used by the viewer image source.
+CARD_METADATA_CORRECTIONS: dict[int, dict[str, Any]] = {
+    19: {"setNumber": "88"},
+    20: {"setNumber": "87"},
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -106,6 +113,7 @@ def merge_card_rows(engine_cards: list[dict[str, Any]], csv_rows: dict[int, dict
         card_id = int(engine["cardId"])
         csv_row = csv_rows.get(card_id)
         if csv_row:
+            csv_row = {**csv_row, **CARD_METADATA_CORRECTIONS.get(card_id, {})}
             row = {
                 **csv_row,
                 "cardId": card_id,

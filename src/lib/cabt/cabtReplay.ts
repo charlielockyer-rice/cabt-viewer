@@ -1037,15 +1037,44 @@ function animationSourceViewForPhase(
     return projectedViewForEvents(phaseStartView, currentView, phase.events, { deferMoveCardEvents: true });
   }
   if (phase.key.startsWith('BoardMove:')) {
-    return projectedViewForEvents(phaseStartView, currentView, phase.events, {
-      deferBoardStateEvents: true,
-      deferMoveCardEvents: true,
-    });
+    return boardMoveSourceView(
+      projectedViewForEvents(phaseStartView, currentView, phase.events, {
+        deferBoardStateEvents: true,
+        deferMoveCardEvents: true,
+      }),
+      phaseStartView,
+      currentView,
+    );
   }
   if (phase.key.startsWith('AttachedMove:')) {
     return projectedViewForEvents(phaseStartView, currentView, phase.events, { deferMoveCardEvents: true });
   }
   return phaseStartView;
+}
+
+function boardMoveSourceView(sourceView: GameView, phaseStartView: GameView, currentView: GameView): GameView {
+  return {
+    ...sourceView,
+    players: sourceView.players.map((player, playerIndex) => {
+      const phaseStartPlayer = phaseStartView.players[playerIndex];
+      const currentPlayer = currentView.players[playerIndex];
+      if (!phaseStartPlayer || !currentPlayer) {
+        return player;
+      }
+      return {
+        ...player,
+        discard: mergedKnownCards(phaseStartPlayer.discard, currentPlayer.discard),
+        playZone: mergedKnownCards(phaseStartPlayer.playZone, currentPlayer.playZone),
+      };
+    }),
+  };
+}
+
+function mergedKnownCards(left: CardView[], right: CardView[]): CardView[] {
+  return [
+    ...left,
+    ...right.filter((card) => !left.some((existing) => sameKnownCard(existing, card))),
+  ];
 }
 
 function animationPhaseDurationMs(key: string, count: number): number {

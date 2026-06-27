@@ -1,6 +1,7 @@
 <script lang="ts">
   import { energyImageUrl } from '../game/cardAssets';
   import { energySymbolInfo, energySymbolInfoForType, type EnergySymbolInfo } from '../game/energyIcons';
+  import { energyImageSlug, energyImageType } from '../game/visualAssets';
 
   type Props = {
     card?: { name?: string; fullName?: string; energyType?: string | number };
@@ -21,6 +22,7 @@
   let symbol = $derived<EnergySymbolInfo>(card ? energySymbolInfo(card) : energySymbolInfoForType(type));
   let label = $derived(title || symbol.label);
   let imageSrc = $derived(energyImageUrl(card, type));
+  let specialImage = $derived(!!card && energyImageSlug(card, type) !== energyImageType(card, type));
   let symbolStyle = $derived([
     `--energy-symbol-bg: ${symbol.color}`,
     `--energy-symbol-fg: ${symbol.textColor}`,
@@ -32,6 +34,7 @@
   <img
     class={`energy-symbol image-symbol ${symbol.type} ${className}`}
     class:unpaid={!paid}
+    class:special-image={specialImage}
     src={imageSrc}
     alt={label}
     title={label}
@@ -82,6 +85,11 @@
     object-fit: contain;
     pointer-events: none;
     -webkit-user-drag: none;
+  }
+
+  .energy-symbol.image-symbol.special-image {
+    object-fit: cover;
+    transform: scale(1.34);
   }
 
   .energy-symbol.unpaid {

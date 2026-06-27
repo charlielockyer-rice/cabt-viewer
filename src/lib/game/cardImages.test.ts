@@ -6,6 +6,7 @@ import {
   resolveCardImageUrlFromManifest,
 } from './cardImages';
 import { energyImageSourceUrl } from './cardAssetSources';
+import cardRows from '../cabt/cardData.generated.json';
 
 describe('card image resolver', () => {
   it('does not synthesize external image URLs without user config', () => {
@@ -76,5 +77,10 @@ describe('card image resolver', () => {
   it('uses bundled energy symbols when no manifest or template overrides are configured', () => {
     expect(energyImageSourceUrl({ name: 'Basic Psychic Energy' })).toBe('/assets/energy-icons/psychic.webp');
     expect(energyImageSourceUrl({ name: 'Double Turbo Energy' })).toBe('/assets/energy/double-turbo.png');
+  });
+
+  it('keeps POR special-energy metadata aligned with external card art numbering', () => {
+    expect(cardRows.find((card) => card.name === 'Telepath Psychic Energy')).toMatchObject({ set: 'POR', setNumber: '88' });
+    expect(cardRows.find((card) => card.name === 'Rock Fighting Energy')).toMatchObject({ set: 'POR', setNumber: '87' });
   });
 });
