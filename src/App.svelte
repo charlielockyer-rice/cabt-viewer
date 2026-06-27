@@ -56,6 +56,7 @@
   import { createDamageTransferStrategy } from './lib/game/strategies/damageTransferStrategy';
   import { createPutDamageStrategy } from './lib/game/strategies/putDamageStrategy';
   import { loadAgentOptions, loadGameLogs, type AgentOption, type GameLogEntry } from './lib/home/catalog';
+  import { kaggleEpisodeReplayUrl, type KaggleEpisodeDay, type KaggleEpisodeSummary } from './lib/kaggle/episodes';
   import {
     SlotType,
     targetFor,
@@ -92,9 +93,11 @@
 
   type HomeMode = 'play' | 'logs';
 
-  let showPromptGallery = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('view') === 'prompt-gallery';
-  const initialReplayMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('view') === 'replay';
+  let showPromptGallery = initialSearchParam('view') === 'prompt-gallery';
+  const initialReplayMode = initialSearchParam('view') === 'replay';
   let homeMode = $state<HomeMode>(initialReplayMode ? 'logs' : 'play');
+  let lastKaggleDaySlug = $state(initialSearchParam('kaggleDay'));
+  let lastKaggleEpisodeId = $state(initialSearchParam('kaggleEpisode'));
   let agents = $state<AgentOption[]>([]);
   let gameLogs = $state<GameLogEntry[]>([]);
   let player1Control = $state<PlayerControl>('self');
@@ -167,8 +170,10 @@
   });
   $effect(() => {
     document.body.classList.toggle('prompt-gallery-page', showPromptGallery);
+    document.body.classList.toggle('logs-home-page', !showPromptGallery && homeMode === 'logs' && !game);
     return () => {
       document.body.classList.remove('prompt-gallery-page');
+      document.body.classList.remove('logs-home-page');
     };
   });
   $effect(() => {
@@ -581,8 +586,25 @@
     zoneViewerStore.close();
     viewSettingsStore.resetView();
     activePlayerControls = ['self', 'self'];
+    lastKaggleDaySlug = '';
+    lastKaggleEpisodeId = '';
     homeMode = 'logs';
+    replaceReplayUrl(log.file || log.id);
     await replayStore.loadSaved(log.file || log.id);
+  }
+
+  async function loadKaggleEpisode(day: KaggleEpisodeDay, episode: KaggleEpisodeSummary) {
+    const replayUrl = kaggleEpisodeReplayUrl(day.slug, episode.episodeId);
+    gameSessionStore.reset();
+    resetSaveReplayStatus();
+    zoneViewerStore.close();
+    viewSettingsStore.resetView();
+    activePlayerControls = ['self', 'self'];
+    lastKaggleDaySlug = day.slug;
+    lastKaggleEpisodeId = episode.episodeId;
+    homeMode = 'logs';
+    replaceKaggleReplayUrl(day, episode, replayUrl);
+    await replayStore.loadUrl(replayUrl);
   }
 
   async function saveReplay() {
@@ -942,6 +964,36 @@
     return control === 'agent' ? 'Agent' : 'Self';
   }
 
+  function initialSearchParam(name: string): string {
+    return typeof window === 'undefined' ? '' : new URLSearchParams(window.location.search).get(name) ?? '';
+  }
+
+  function replaceKaggleReplayUrl(day: KaggleEpisodeDay, episode: KaggleEpisodeSummary, replayUrl: string) {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    params.set('view', 'replay');
+    params.set('kaggleDay', day.slug);
+    params.set('kaggleEpisode', episode.episodeId);
+    params.set('replayUrl', replayUrl);
+    params.delete('replay');
+    window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}${window.location.hash}`);
+  }
+
+  function replaceReplayUrl(replayId: string) {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    params.set('view', 'replay');
+    params.set('replay', replayId);
+    params.delete('replayUrl');
+    params.delete('kaggleDay');
+    params.delete('kaggleEpisode');
+    window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}${window.location.hash}`);
+  }
+
   function isAttachEnergyAvailable(index: number) {
     const blocked = new Set<number>(promptBlockedIndexes(attachPrompt));
     return isAttachEnergyAvailableModel(index, [...blocked], attachPromptAssignments);
@@ -1169,6 +1221,8 @@
         {catalogBusy}
         {error}
         {catalogError}
+        kaggleSelectedSlug={lastKaggleDaySlug}
+        kaggleSelectedEpisodeId={lastKaggleEpisodeId}
         setHomeMode={(nextMode) => {
           homeMode = nextMode;
           if (nextMode === 'logs') {
@@ -1180,6 +1234,7 @@
         }}
         startGame={startGame}
         {loadGameLog}
+        {loadKaggleEpisode}
         refreshCatalog={() => void refreshCatalog()}
       />
   {:else if bottomPlayer && topPlayer}

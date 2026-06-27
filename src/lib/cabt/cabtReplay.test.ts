@@ -3,6 +3,50 @@ import { cabtReplayToSnapshot } from './cabtReplay';
 import { CabtAreaType } from './types';
 
 describe('cabtReplayToSnapshot', () => {
+  it('loads top-level Kaggle episode JSON from the public archive datasets', () => {
+    const snapshot = cabtReplayToSnapshot({
+      id: 'episode-env-id',
+      title: 'Card Battle',
+      info: {
+        EpisodeId: 81726640,
+        TeamNames: ['Archive player 1', 'Archive player 2'],
+      },
+      steps: [[{
+        action: [],
+        reward: 0,
+        status: 'ACTIVE',
+        observation: { step: 0 },
+        visualize: [{
+          current: {
+            turn: 1,
+            yourIndex: 0,
+            result: -1,
+            players: [{
+              active: [],
+              bench: [],
+              benchMax: 5,
+              handCount: 0,
+              deckCount: 60,
+              prize: [],
+            }, {
+              active: [],
+              bench: [],
+              benchMax: 5,
+              handCount: 0,
+              deckCount: 60,
+              prize: [],
+            }],
+          },
+        }],
+      }]],
+    });
+
+    expect(snapshot.id).toBe('episode-env-id');
+    expect(snapshot.name).toBe('Card Battle replay');
+    expect(snapshot.players.map((player) => player.name)).toEqual(['Archive player 1', 'Archive player 2']);
+    expect(snapshot.views).toHaveLength(1);
+  });
+
   it('renders physical attached energy cards instead of provided energy units', () => {
     const snapshot = cabtReplayToSnapshot({
       visualize: [{

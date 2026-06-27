@@ -15,6 +15,10 @@ body.prompt-gallery-page {
   overflow: auto;
 }
 
+body.logs-home-page {
+  overflow: auto;
+}
+
 button,
 textarea,
 input {

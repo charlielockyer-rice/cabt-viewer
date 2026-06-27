@@ -81,18 +81,26 @@ type CabtVisualizeFrame = {
   };
 };
 
-type KaggleContext = {
-  environment?: {
-    id?: string;
-    title?: string;
-    rewards?: number[];
-    statuses?: string[];
-    steps?: Array<Array<{ action?: unknown; observation?: Record<string, unknown>; status?: string; reward?: number }>>;
-    info?: {
-      TeamNames?: string[];
-      EpisodeId?: string | number;
-    };
+type KaggleEnvironment = {
+  id?: string;
+  title?: string;
+  rewards?: number[];
+  statuses?: string[];
+  steps?: Array<Array<{
+    action?: unknown;
+    observation?: Record<string, unknown>;
+    status?: string;
+    reward?: number;
+    visualize?: unknown;
+  }>>;
+  info?: {
+    TeamNames?: string[];
+    EpisodeId?: string | number;
   };
+};
+
+type KaggleContext = {
+  environment?: KaggleEnvironment;
 };
 
 type CabtRunnerJson = {
@@ -109,7 +117,7 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
     throw new Error('CABT replay did not include visualize frames.');
   }
 
-  const environment = (input as KaggleContext)?.environment;
+  const environment = replayEnvironment(input);
   const players = playerNames(input);
   const views: GameView[] = [];
   const steps: ReplayStep[] = [];
@@ -1527,7 +1535,7 @@ function extractVisualizeFrames(input: unknown): CabtVisualizeFrame[] {
     return runnerFrames as CabtVisualizeFrame[];
   }
 
-  const steps = (input as KaggleContext)?.environment?.steps;
+  const steps = replayEnvironment(input)?.steps;
   const frames = steps?.[0]?.[0]?.observation?.visualize;
   if (Array.isArray(frames)) {
     return frames as CabtVisualizeFrame[];
@@ -1537,16 +1545,19 @@ function extractVisualizeFrames(input: unknown): CabtVisualizeFrame[] {
   if (Array.isArray(firstStepFrames)) {
     return firstStepFrames as CabtVisualizeFrame[];
   }
-
-  const nestedEnvironment = (input as { environment?: { steps?: unknown } })?.environment?.steps;
-  if (Array.isArray(nestedEnvironment)) {
-    const maybeFrames = (nestedEnvironment[0] as Array<Record<string, unknown>> | undefined)?.[0]?.visualize;
-    if (Array.isArray(maybeFrames)) {
-      return maybeFrames as CabtVisualizeFrame[];
-    }
-  }
-
   return [];
+}
+
+function replayEnvironment(input: unknown): KaggleEnvironment | undefined {
+  const wrapped = (input as KaggleContext)?.environment;
+  if (wrapped?.steps) {
+    return wrapped;
+  }
+  const topLevel = input as KaggleEnvironment;
+  if (Array.isArray(topLevel?.steps)) {
+    return topLevel;
+  }
+  return wrapped;
 }
 
 function frameToGameView(
@@ -1686,7 +1697,7 @@ function faceDownCard(): CardView {
 }
 
 function playerNames(input: unknown): string[] {
-  const names = (input as KaggleContext)?.environment?.info?.TeamNames;
+  const names = replayEnvironment(input)?.info?.TeamNames;
   return names?.length ? names : ['Player 1', 'Player 2'];
 }
 

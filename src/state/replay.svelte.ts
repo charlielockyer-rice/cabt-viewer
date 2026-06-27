@@ -58,6 +58,14 @@ class ReplayStore {
   }
 
   async loadSaved(id = 'kaggle-context.json'): Promise<void> {
+    await this.loadCandidates(replayCandidates(id));
+  }
+
+  async loadUrl(url: string): Promise<void> {
+    await this.loadCandidates([url]);
+  }
+
+  private async loadCandidates(candidates: string[]): Promise<void> {
     if (this.loading) {
       return;
     }
@@ -67,7 +75,7 @@ class ReplayStore {
     this.error = '';
     this.copiedForkPoint = false;
     try {
-      this.replay = await loadCabtReplay(id);
+      this.replay = await loadCabtReplay(candidates);
       this.stepIndex = 0;
       this.animationPhaseIndex = 0;
       this.scheduleAnimationPhase();
@@ -230,8 +238,7 @@ class ReplayStore {
   }
 }
 
-async function loadCabtReplay(id: string): Promise<ReplaySnapshot> {
-  const candidates = replayCandidates(id);
+async function loadCabtReplay(candidates: string[]): Promise<ReplaySnapshot> {
   const failures: string[] = [];
   for (const url of candidates) {
     try {
