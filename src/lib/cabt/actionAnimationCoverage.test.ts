@@ -121,7 +121,7 @@ describe('classifyAnimationCoverage', () => {
     expect(coverage.label).toBe('Board Pokemon return to deck');
   });
 
-  it('recognizes pre-evolution stack moves as attached-card moves', () => {
+  it('does not claim pre-evolution stack moves are polished without a source anchor', () => {
     const coverage = classifyAnimationCoverage(event('MoveCard', {
       fromArea: CabtAreaType.PRE_EVOLUTION,
       toArea: CabtAreaType.DECK,
@@ -129,8 +129,20 @@ describe('classifyAnimationCoverage', () => {
       serial: 12,
     }));
 
-    expect(coverage.level).toBe('polished');
-    expect(coverage.label).toBe('Attached card move');
+    expect(coverage.level).toBe('static');
+    expect(coverage.label).toBe('Evolution stack move is projected but not animated');
+  });
+
+  it('does not claim attached-card moves to hand are polished without a cross-plane animation', () => {
+    const coverage = classifyAnimationCoverage(event('MoveCard', {
+      fromArea: CabtAreaType.ENERGY,
+      toArea: CabtAreaType.HAND,
+      cardId: 3,
+      serial: 12,
+    }));
+
+    expect(coverage.level).toBe('static');
+    expect(coverage.label).toBe('Attached card to hand needs a cross-plane animation');
   });
 
   it('flags uncommon zone movements as static state changes', () => {

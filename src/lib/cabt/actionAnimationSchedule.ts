@@ -266,12 +266,10 @@ function isBoardToDeckMove(fromArea: number, toArea: number): boolean {
 
 function isAttachedCardArea(area: number): boolean {
   return area === CabtAreaType.ENERGY
-    || area === CabtAreaType.TOOL
-    || area === CabtAreaType.PRE_EVOLUTION;
+    || area === CabtAreaType.TOOL;
 }
 
 function isAttachedCardMoveDestination(area: number): boolean {
   return area === CabtAreaType.DISCARD
-    || area === CabtAreaType.HAND
     || area === CabtAreaType.DECK;
 }

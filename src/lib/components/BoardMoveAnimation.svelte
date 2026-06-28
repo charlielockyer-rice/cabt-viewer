@@ -65,6 +65,8 @@
   let lastScopeKey: string | number = '';
   let reduceMotion = $state(false);
   let sprites = $state<BoardMoveSprite[]>([]);
+  let animationGeneration = 0;
+  const activeHiddenElements = new Set<HTMLElement>();
 
   onMount(() => {
     if (typeof window.matchMedia !== 'function') {
@@ -80,15 +82,16 @@
   });
 
   onDestroy(() => {
-    for (const timer of timers) {
-      clearTimeout(timer);
-    }
+    clearBoardMoves();
   });
 
   $effect(() => {
     const currentEvents = events;
     const currentScopeKey = scopeKey;
     const scopeChanged = initialized && currentScopeKey !== lastScopeKey;
+    if (scopeChanged) {
+      clearBoardMoves();
+    }
     lastScopeKey = currentScopeKey;
 
     if (!initialized) {
@@ -115,6 +118,7 @@
     if (!motionLayer || !boardPlane) {
       return;
     }
+    const generation = animationGeneration;
     const moveEvents = animationEvents.filter(isBoardMoveEvent);
     for (const instruction of moveEvents.flatMap((event) => moveInstructionsForEvent(event, moveEvents))) {
       const sourceElement = instruction.source;
@@ -150,16 +154,22 @@
       };
 
       const startTimer = setTimeout(async () => {
+        if (generation !== animationGeneration) {
+          return;
+        }
         sprites = [...sprites, sprite];
         await tick();
+        if (generation !== animationGeneration) {
+          return;
+        }
         if (!document.body.contains(sourceElement) || !document.body.contains(targetElement)) {
           sprites = sprites.filter((item) => item.id !== sprite.id);
           return;
         }
 
         const correction = measureSpriteCorrection(sprite, targetElement);
-        sourceElement.dataset.boardMoveAnimationHidden = 'true';
-        targetElement.dataset.boardMoveAnimationHidden = 'true';
+        hideBoardMoveElement(sourceElement);
+        hideBoardMoveElement(targetElement);
         sprites = sprites.map((item) => item.id === sprite.id
           ? {
               ...item,
@@ -169,7 +179,7 @@
             }
           : item);
         const finishTimer = setTimeout(() => {
-          handOffWhenDestinationReady(sourceElement, targetElement, sprite, Date.now());
+          handOffWhenDestinationReady(sourceElement, targetElement, sprite, Date.now(), generation);
         }, boardMoveHandoffDelayMs(animationEvents, instruction, delayMs));
         timers.push(finishTimer);
       }, delayMs);
@@ -410,8 +420,27 @@
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
   }
 
-  function clearBoardMoveAnimation(source: HTMLElement) {
-    delete source.dataset.boardMoveAnimationHidden;
+  function clearBoardMoves() {
+    animationGeneration += 1;
+    for (const timer of timers) {
+      clearTimeout(timer);
+    }
+    timers.length = 0;
+    for (const element of activeHiddenElements) {
+      delete element.dataset.boardMoveAnimationHidden;
+    }
+    activeHiddenElements.clear();
+    sprites = [];
+  }
+
+  function hideBoardMoveElement(element: HTMLElement) {
+    activeHiddenElements.add(element);
+    element.dataset.boardMoveAnimationHidden = 'true';
+  }
+
+  function showBoardMoveElement(element: HTMLElement) {
+    delete element.dataset.boardMoveAnimationHidden;
+    activeHiddenElements.delete(element);
   }
 
   function measureSpriteCorrection(sprite: BoardMoveSprite, target: HTMLElement) {
@@ -463,7 +492,11 @@
     target: HTMLElement,
     sprite: BoardMoveSprite,
     startTime: number,
+    generation: number,
   ) {
+    if (generation !== animationGeneration) {
+      return;
+    }
     const destinationReady = sprite.waitForDestinationCard
       ? destinationContainsCard(target, sprite)
       : sprite.toDeck
@@ -472,14 +505,14 @@
     const timedOut = Date.now() - startTime >= boardMoveHandoffMaxWaitMs;
     const detached = !document.body.contains(source) || !document.body.contains(target);
     if (destinationReady || timedOut || detached) {
-      clearBoardMoveAnimation(source);
-      clearBoardMoveAnimation(target);
+      showBoardMoveElement(source);
+      showBoardMoveElement(target);
       sprites = sprites.filter((item) => item.id !== sprite.id);
       return;
     }
 
     const retry = setTimeout(() => {
-      handOffWhenDestinationReady(source, target, sprite, startTime);
+      handOffWhenDestinationReady(source, target, sprite, startTime, generation);
     }, boardMoveHandoffPollMs);
     timers.push(retry);
   }

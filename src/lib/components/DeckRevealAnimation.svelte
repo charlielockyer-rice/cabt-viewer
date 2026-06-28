@@ -12,7 +12,7 @@
     replayMode?: boolean;
   };
 
-  type RevealMode = 'revealing' | 'searching' | 'placing' | 'held' | 'selecting' | 'taking' | 'attaching' | 'returning';
+  type RevealMode = 'revealing' | 'searching' | 'held' | 'selecting' | 'taking' | 'attaching' | 'returning';
 
   type RevealSprite = {
     id: string;
@@ -167,7 +167,7 @@
 
     clearReveals();
     const hiddenTargets = sprites
-      .filter((sprite) => (sprite.mode === 'searching' || sprite.mode === 'placing') && sprite.targetElement)
+      .filter((sprite) => sprite.mode === 'searching' && sprite.targetElement)
       .map((sprite) => sprite.targetElement!);
     hideTargets(hiddenTargets);
     const animation: RevealAnimation = {
@@ -177,21 +177,18 @@
     reveals = [animation];
 
     for (const sprite of sprites) {
-      if (sprite.mode !== 'searching' && sprite.mode !== 'placing') {
+      if (sprite.mode !== 'searching') {
         continue;
       }
-      const revealMs = motionDurationMs(sprite.mode === 'placing' ? actionAnimationTiming.boardMoveMs : actionAnimationTiming.deckRevealMs);
+      const revealMs = motionDurationMs(actionAnimationTiming.deckRevealMs);
       const target = sprite.targetElement;
-      if (target) {
-        const showTimer = setTimeout(() => {
+      const handoffTimer = setTimeout(() => {
+        if (target) {
           showTargets([target]);
-        }, sprite.delayMs + revealMs);
-        timers.push(showTimer);
-      }
-      const removeTimer = setTimeout(() => {
+        }
         removeSprites((item) => item.id === sprite.id);
       }, sprite.delayMs + revealMs + handoffSettleMs);
-      timers.push(removeTimer);
+      timers.push(handoffTimer);
     }
 
     const timer = setTimeout(() => {
@@ -248,10 +245,6 @@
       const sourceCenter = spriteCenter(takeSource);
       const delayMs = actionAnimationStartMs(animationEvents, event);
       if (target.element) {
-        const showTimer = setTimeout(() => {
-          showTargets([target.element!]);
-        }, delayMs + actionAnimationTiming.handMoveMs);
-        timers.push(showTimer);
         hideTargets([target.element]);
       }
       updateSprites((item) => item.serial === serial
@@ -265,6 +258,9 @@
           }
         : item);
       const timer = setTimeout(() => {
+        if (target.element) {
+          showTargets([target.element]);
+        }
         removeSprites((item) => item.serial === serial);
       }, delayMs + actionAnimationTiming.handMoveMs + handoffSettleMs);
       timers.push(timer);
@@ -377,6 +373,30 @@
 
   }
 
+  function boardSlotByPokemonIdentity(serial: number, cardId: number, playerIndex: number | undefined): HTMLElement | null {
+    if (Number.isFinite(serial)) {
+      const bySerial = document.querySelector(`[data-pokemon-serial="${serial}"]`);
+      if (bySerial instanceof HTMLElement) {
+        return bySerial;
+      }
+    }
+    if (playerIndex !== undefined && Number.isFinite(cardId)) {
+      const byId = document.querySelector(`[data-owner-index="${playerIndex}"][data-pokemon-card-id="${cardId}"]`);
+      if (byId instanceof HTMLElement) {
+        return byId;
+      }
+    }
+    return null;
+  }
+
+  function visualTargetForAnimation(target: HTMLElement | null): HTMLElement | null {
+    if (!target) {
+      return null;
+    }
+    const cardTile = target.querySelector('.card-tile');
+    return cardTile instanceof HTMLElement ? cardTile : target;
+  }
+
   function markAttachTarget(target: HTMLElement, serial: number, delayMs: number) {
     const startTimer = setTimeout(() => {
       const energyBadge = attachedEnergyElement(target, serial);
@@ -431,17 +451,12 @@
       const cardId = Number(params?.cardId);
       const serial = Number(params?.serial);
       const toArea = Number(params?.toArea);
-      const boardTarget = (toArea === CabtAreaType.ACTIVE || toArea === CabtAreaType.BENCH)
-        ? boardPlacementTargetForEvent(event)
-        : undefined;
       const target = layout.target(index);
       const takeTarget = toArea === CabtAreaType.HAND
         ? handTargetForPlayer(playerIndex, serial, index, playerEvents.length)
         : undefined;
-      const startWidth = boardTarget?.width ?? layout.cardWidth;
-      const startHeight = boardTarget?.height ?? layout.cardHeight;
-      const destination = boardTarget?.center ?? takeTarget?.center ?? target;
-      const mode: RevealMode = boardTarget ? 'placing' : toArea === CabtAreaType.HAND ? 'searching' : 'revealing';
+      const destination = takeTarget?.center ?? target;
+      const mode: RevealMode = toArea === CabtAreaType.HAND ? 'searching' : 'revealing';
       return {
         id: `${event.id}-${Number.isFinite(serial) ? serial : index}`,
         card: {
@@ -450,21 +465,21 @@
           playerIndex,
         },
         serial: Number.isFinite(serial) ? serial : undefined,
-        targetElement: boardTarget?.element ?? takeTarget?.element,
+        targetElement: takeTarget?.element,
         order: index + 1,
         mode,
         delayMs: actionAnimationStartMs(animationEvents, event),
-        left: deckCenter.x - startWidth / 2,
-        top: deckCenter.y - startHeight / 2,
-        width: startWidth,
-        height: startHeight,
+        left: deckCenter.x - layout.cardWidth / 2,
+        top: deckCenter.y - layout.cardHeight / 2,
+        width: layout.cardWidth,
+        height: layout.cardHeight,
         revealX: target.x - deckCenter.x,
         revealY: target.y - deckCenter.y,
-        deckScale: Math.max(0.32, Math.min(0.9, deckRect.width / startWidth)),
+        deckScale: Math.max(0.32, Math.min(0.9, deckRect.width / layout.cardWidth)),
         takeX: destination.x - deckCenter.x,
         takeY: destination.y - deckCenter.y,
-        takeScale: Math.max(0.32, Math.min(1.2, (boardTarget?.width ?? takeTarget?.width ?? startWidth) / startWidth)),
-        takeRotation: boardTarget?.rotation ?? (takeTarget?.concealed ? 180 : 0),
+        takeScale: Math.max(0.32, Math.min(1.2, (takeTarget?.width ?? layout.cardWidth) / layout.cardWidth)),
+        takeRotation: takeTarget?.concealed ? 180 : 0,
         takeFlip: takeTarget?.concealed ? 0 : 180,
         exitX: 0,
         exitY: 0,
@@ -520,25 +535,6 @@
           rotation: offset * rotationStep,
         };
       },
-    };
-  }
-
-  function boardPlacementTargetForEvent(
-    event: ActionTimelineEvent,
-  ): { center: { x: number; y: number }; width: number; height: number; rotation: number; element?: HTMLElement } | undefined {
-    const params = event.params as Record<string, unknown> | undefined;
-    const target = boardSlotByPokemonIdentity(Number(params?.serial), Number(params?.cardId), event.playerIndex);
-    const visualTarget = visualTargetForAnimation(target);
-    const rect = visualTarget?.getBoundingClientRect();
-    if (!target || !rect || rect.width <= 0 || rect.height <= 0) {
-      return undefined;
-    }
-    return {
-      center: centerOf(rect),
-      width: rect.width,
-      height: rect.height,
-      rotation: target.closest('.top-active-slot, .bench-row.opponent') ? 180 : 0,
-      element: target,
     };
   }
 
@@ -683,30 +679,6 @@
     return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 1 : durationMs;
   }
 
-  function boardSlotByPokemonIdentity(serial: number, cardId: number, playerIndex: number | undefined): HTMLElement | null {
-    if (Number.isFinite(serial)) {
-      const bySerial = document.querySelector(`[data-pokemon-serial="${serial}"]`);
-      if (bySerial instanceof HTMLElement) {
-        return bySerial;
-      }
-    }
-    if (playerIndex !== undefined && Number.isFinite(cardId)) {
-      const byId = document.querySelector(`[data-owner-index="${playerIndex}"][data-pokemon-card-id="${cardId}"]`);
-      if (byId instanceof HTMLElement) {
-        return byId;
-      }
-    }
-    return null;
-  }
-
-  function visualTargetForAnimation(target: HTMLElement | null): HTMLElement | null {
-    if (!target) {
-      return null;
-    }
-    const cardTile = target.querySelector('.card-tile');
-    return cardTile instanceof HTMLElement ? cardTile : target;
-  }
-
   function spriteCenter(sprite: RevealSprite): { x: number; y: number } {
     return {
       x: sprite.left + sprite.width / 2 + sprite.revealX,
@@ -822,10 +794,6 @@
     animation: deck-search-reveal 1180ms cubic-bezier(0.18, 0.86, 0.24, 1) var(--reveal-delay) both;
   }
 
-  .reveal-card.placing {
-    animation: deck-board-place 520ms cubic-bezier(0.2, 0.82, 0.22, 1) var(--reveal-delay) both;
-  }
-
   .reveal-card.held {
     transform: translate3d(var(--reveal-x), var(--reveal-y), 0) scale(1) rotate(var(--reveal-rotation));
   }
@@ -866,10 +834,6 @@
 
   .reveal-card.searching .reveal-card-inner {
     animation: deck-search-reveal-flip 1180ms ease-in-out var(--reveal-delay) both;
-  }
-
-  .reveal-card.placing .reveal-card-inner {
-    animation: deck-board-place-flip 520ms ease-in-out var(--reveal-delay) both;
   }
 
   .reveal-card.returning .reveal-card-inner {
@@ -969,37 +933,6 @@
       transform: translate3d(var(--reveal-x), var(--reveal-y), 0) scale(1) rotate(var(--reveal-rotation));
     }
     96% {
-      opacity: 1;
-      transform:
-        translate3d(var(--take-x), var(--take-y), 0)
-        scale(var(--take-scale))
-        rotate(var(--take-rotation));
-    }
-    100% {
-      opacity: 0;
-      transform:
-        translate3d(var(--take-x), var(--take-y), 0)
-        scale(var(--take-scale))
-        rotate(var(--take-rotation));
-    }
-  }
-
-  @keyframes deck-board-place {
-    0% {
-      opacity: 0;
-      transform:
-        translate3d(0, 0, 0)
-        scale(var(--deck-scale))
-        rotate(0deg);
-    }
-    4% {
-      opacity: 1;
-      transform:
-        translate3d(0, 0, 0)
-        scale(var(--deck-scale))
-        rotate(0deg);
-    }
-    82% {
       opacity: 1;
       transform:
         translate3d(var(--take-x), var(--take-y), 0)
@@ -1107,16 +1040,6 @@
     }
     100% {
       transform: rotateY(var(--take-flip));
-    }
-  }
-
-  @keyframes deck-board-place-flip {
-    0% {
-      transform: rotateY(0deg);
-    }
-    42%,
-    100% {
-      transform: rotateY(180deg);
     }
   }
 

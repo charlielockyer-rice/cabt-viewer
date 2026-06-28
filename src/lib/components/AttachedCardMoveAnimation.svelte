@@ -246,7 +246,6 @@
       )
       && (
         Number(params?.toArea) === CabtAreaType.DISCARD
-        || Number(params?.toArea) === CabtAreaType.HAND
         || Number(params?.toArea) === CabtAreaType.DECK
       );
   }
@@ -314,9 +313,6 @@
     if (toArea === CabtAreaType.DECK) {
       const anchor = document.querySelector(`[data-card-anchor="player:${playerIndex}:deck"]`);
       return anchor?.closest('.deck-pile') as HTMLElement | null;
-    }
-    if (toArea === CabtAreaType.HAND) {
-      return document.querySelector(`[data-card-anchor="player:${playerIndex}:hand"]`);
     }
     return null;
   }

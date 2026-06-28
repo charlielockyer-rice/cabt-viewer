@@ -20,6 +20,8 @@
   let initialized = false;
   let lastScopeKey: string | number = '';
   let reduceMotion = $state(false);
+  let animationGeneration = 0;
+  const activeAbilityElements = new Set<HTMLElement>();
 
   onMount(() => {
     if (typeof window.matchMedia !== 'function') {
@@ -35,15 +37,16 @@
   });
 
   onDestroy(() => {
-    for (const timer of timers) {
-      clearTimeout(timer);
-    }
+    clearAbilityAnimations();
   });
 
   $effect(() => {
     const currentEvents = events;
     const currentScopeKey = scopeKey;
     const scopeChanged = initialized && currentScopeKey !== lastScopeKey;
+    if (scopeChanged) {
+      clearAbilityAnimations();
+    }
     lastScopeKey = currentScopeKey;
 
     if (!initialized) {
@@ -66,6 +69,7 @@
   });
 
   function startAbilityAnnouncements(animationEvents: ActionTimelineEvent[]) {
+    const generation = animationGeneration;
     for (const event of animationEvents.filter((candidate) => candidate.kind === 'Ability')) {
       const source = slotElementForEvent(event);
       if (!source) {
@@ -73,16 +77,44 @@
       }
       const delayMs = actionAnimationStartMs(animationEvents, event);
       const timer = setTimeout(() => {
-        source.dataset.abilityAnnounceActive = 'true';
-        source.style.setProperty('--ability-name', JSON.stringify(abilityNameForEvent(event)));
+        if (generation !== animationGeneration) {
+          return;
+        }
+        activateAbilityElement(source, abilityNameForEvent(event));
         const cleanup = setTimeout(() => {
-          delete source.dataset.abilityAnnounceActive;
-          source.style.removeProperty('--ability-name');
+          if (generation !== animationGeneration) {
+            return;
+          }
+          clearAbilityElement(source);
         }, actionAnimationTiming.abilityAnnounceMs);
         timers.push(cleanup);
       }, delayMs);
       timers.push(timer);
     }
+  }
+
+  function clearAbilityAnimations() {
+    animationGeneration += 1;
+    for (const timer of timers) {
+      clearTimeout(timer);
+    }
+    timers.length = 0;
+    for (const element of activeAbilityElements) {
+      clearAbilityElement(element);
+    }
+    activeAbilityElements.clear();
+  }
+
+  function activateAbilityElement(element: HTMLElement, abilityName: string) {
+    activeAbilityElements.add(element);
+    element.dataset.abilityAnnounceActive = 'true';
+    element.style.setProperty('--ability-name', JSON.stringify(abilityName));
+  }
+
+  function clearAbilityElement(element: HTMLElement) {
+    delete element.dataset.abilityAnnounceActive;
+    element.style.removeProperty('--ability-name');
+    activeAbilityElements.delete(element);
   }
 
   function slotElementForEvent(event: ActionTimelineEvent): HTMLElement | null {

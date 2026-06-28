@@ -25,14 +25,9 @@ const polishedMoveAreas = new Set([
   moveKey(CabtAreaType.HAND, CabtAreaType.ACTIVE),
   moveKey(CabtAreaType.HAND, CabtAreaType.BENCH),
   moveKey(CabtAreaType.ENERGY, CabtAreaType.DISCARD),
-  moveKey(CabtAreaType.ENERGY, CabtAreaType.HAND),
   moveKey(CabtAreaType.ENERGY, CabtAreaType.DECK),
   moveKey(CabtAreaType.TOOL, CabtAreaType.DISCARD),
-  moveKey(CabtAreaType.TOOL, CabtAreaType.HAND),
   moveKey(CabtAreaType.TOOL, CabtAreaType.DECK),
-  moveKey(CabtAreaType.PRE_EVOLUTION, CabtAreaType.DISCARD),
-  moveKey(CabtAreaType.PRE_EVOLUTION, CabtAreaType.HAND),
-  moveKey(CabtAreaType.PRE_EVOLUTION, CabtAreaType.DECK),
   moveKey(CabtAreaType.STADIUM, CabtAreaType.DISCARD),
   moveKey(CabtAreaType.ACTIVE, CabtAreaType.BENCH),
   moveKey(CabtAreaType.BENCH, CabtAreaType.ACTIVE),
@@ -81,6 +76,24 @@ export function classifyAnimationCoverage(
     }
 
     const shape = moveKey(fromArea, toArea);
+    if (fromArea === CabtAreaType.PRE_EVOLUTION) {
+      return {
+        key,
+        level: 'static',
+        label: 'Evolution stack move is projected but not animated',
+        notes: ['Pre-evolution cards do not have a visible source anchor yet, so this must not be counted as polished animation coverage.'],
+      };
+    }
+
+    if (isAttachedCardArea(fromArea) && toArea === CabtAreaType.HAND) {
+      return {
+        key,
+        level: 'static',
+        label: 'Attached card to hand needs a cross-plane animation',
+        notes: ['The current attached-card mover runs inside the tilted board plane; hand destinations need an explicit viewport/hand transition before this can count as polished.'],
+      };
+    }
+
     if (!polishedMoveAreas.has(shape)) {
       return {
         key,
@@ -292,12 +305,10 @@ function hasFiniteNumber(value: unknown): boolean {
 
 function isAttachedMoveDestination(area: number): boolean {
   return area === CabtAreaType.DISCARD
-    || area === CabtAreaType.HAND
     || area === CabtAreaType.DECK;
 }
 
 function isAttachedCardArea(area: number): boolean {
   return area === CabtAreaType.ENERGY
-    || area === CabtAreaType.TOOL
-    || area === CabtAreaType.PRE_EVOLUTION;
+    || area === CabtAreaType.TOOL;
 }

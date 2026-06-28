@@ -75,6 +75,27 @@ system or smoothly transition between the hand and board transforms. Avoid end
 snaps, duplicate cards, and placeholder overlays that visibly change badges,
 card aspect ratios, or stack layout.
 
+Polished animation coverage requires a real visible source anchor and a matching
+motion component. Do not mark projected state changes as polished just because
+the replay state updates correctly; pre-evolution stack cards and other hidden
+sub-zones need explicit DOM anchors before they can claim motion coverage.
+
+Timer-driven animation components must be scoped to the replay phase. Any
+timeouts, sprite nodes, temporary CSS classes, and `data-*` hidden flags should
+be tracked centrally and cleared on replay-scope changes and component destroy.
+Stale timers that reveal or hide old DOM after scrubbing are a common source of
+flicker.
+
+For handoffs, keep exactly one visible owner. Hide the destination while the
+sprite is moving, keep the sprite visible at the destination, then reveal the
+real destination and remove the sprite in the same handoff moment. Avoid fading
+the sprite out before the destination appears.
+
+Board-plane animations and viewport/hand animations are different coordinate
+spaces. A card that starts and ends on the tilted board should stay inside the
+board plane. A card moving between the board and the hand needs an explicit
+cross-plane transition; do not fake a hand target inside the tilted board layer.
+
 ## Checks
 
 Do not run expensive checks reflexively after every small CSS tweak. Agents are
