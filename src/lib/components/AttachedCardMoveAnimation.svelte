@@ -1,7 +1,11 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { animationAnchorForElement } from '../animations/animationAnchors';
-  import { replayAnimationVisibility, type AnimationVisibilityToken, type AnimationVisibilityRole } from '../animations/animationVisibility';
+  import {
+    hideElementForAnimation,
+    releaseElementVisibilityClaim,
+    type ElementVisibilityClaim,
+  } from '../animations/animationVisibilityClaims';
+  import type { AnimationVisibilityRole } from '../animations/animationVisibility';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -38,8 +42,7 @@
 
   type ActiveAttachedMoveSprite = AttachedMoveSprite & {
     element: HTMLElement;
-    visibilityTokens: AnimationVisibilityToken[];
-    legacyHiddenElements: Array<{ element: HTMLElement; attribute: string }>;
+    visibilityClaims: ElementVisibilityClaim[];
   };
 
   type AttachedMoveSource = {
@@ -108,6 +111,7 @@
     const currentScopeKey = scopeKey;
     const scopeChanged = initialized && currentScopeKey !== lastScopeKey;
     if (scopeChanged && replayMode) {
+      clearSprites();
       lastAnimatedReplayScopeKey = '';
     }
     lastScopeKey = currentScopeKey;
@@ -163,16 +167,15 @@
       const activeSprite: ActiveAttachedMoveSprite = {
         ...sprite,
         element,
-        visibilityTokens: [],
-        legacyHiddenElements: [],
+        visibilityClaims: [],
       };
       activeSprites = [...activeSprites, activeSprite];
       const startTimer = setTimeout(() => {
         if (activeSprite.hiddenElement) {
-          hideActiveElement(activeSprite, activeSprite.hiddenElement, 'source', 'attachedMoveAnimationHidden');
+          hideActiveElement(activeSprite, activeSprite.hiddenElement, 'source', 'data-attached-move-animation-hidden');
         }
         if (activeSprite.destinationCardElement) {
-          hideActiveElement(activeSprite, activeSprite.destinationCardElement, 'destination', 'attachedMoveDestinationCardHidden');
+          hideActiveElement(activeSprite, activeSprite.destinationCardElement, 'destination', 'data-attached-move-destination-card-hidden');
         }
       }, sprite.delayMs);
       const cleanupTimer = setTimeout(() => {
@@ -358,35 +361,20 @@
     activeSprites = [];
   }
 
-  function hideActiveElement(
-    sprite: ActiveAttachedMoveSprite,
-    element: HTMLElement,
-    role: AnimationVisibilityRole,
-    legacyAttribute: string,
-  ) {
-    const anchor = animationAnchorForElement(element);
-    if (anchor) {
-      sprite.visibilityTokens.push(replayAnimationVisibility.hide({
-        scopeKey: String(scopeKey),
-        anchor: anchor.anchor,
-        identity: anchor.identity,
-        role,
-      }));
-      return;
-    }
-    element.dataset[legacyAttribute] = 'true';
-    sprite.legacyHiddenElements.push({ element, attribute: legacyAttribute });
+  function hideActiveElement(sprite: ActiveAttachedMoveSprite, element: HTMLElement, role: AnimationVisibilityRole, fallbackAttribute: string) {
+    sprite.visibilityClaims.push(hideElementForAnimation({
+      element,
+      scopeKey,
+      role,
+      fallbackAttribute,
+    }));
   }
 
   function releaseActiveSprite(sprite: ActiveAttachedMoveSprite) {
-    for (const token of sprite.visibilityTokens) {
-      replayAnimationVisibility.release(token);
+    for (const claim of sprite.visibilityClaims) {
+      releaseElementVisibilityClaim(claim);
     }
-    sprite.visibilityTokens = [];
-    for (const hidden of sprite.legacyHiddenElements) {
-      delete hidden.element.dataset[hidden.attribute];
-    }
-    sprite.legacyHiddenElements = [];
+    sprite.visibilityClaims = [];
   }
 
   function snapshotAttachedRects(): Map<number, RectSnapshot> {
@@ -512,6 +500,8 @@
       image.src = sprite.imageUrl;
       image.alt = '';
       image.draggable = false;
+      image.loading = 'eager';
+      image.decoding = 'sync';
       card.appendChild(image);
     } else {
       const fallback = document.createElement('span');

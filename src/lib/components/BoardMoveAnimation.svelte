@@ -1,8 +1,11 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
-  import { animationAnchorForElement } from '../animations/animationAnchors';
-  import { replayAnimationVisibility, type AnimationVisibilityToken } from '../animations/animationVisibility';
+  import {
+    hideElementForAnimation,
+    releaseElementVisibilityClaim,
+    type ElementVisibilityClaim,
+  } from '../animations/animationVisibilityClaims';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
   import { cardBackCssVar } from '../game/cardAssets';
@@ -51,11 +54,7 @@
     key: string;
   };
 
-  type HiddenBoardMoveElement = {
-    element: HTMLElement;
-    token?: AnimationVisibilityToken;
-    fallbackCount?: number;
-  };
+  type HiddenBoardMoveElement = ElementVisibilityClaim;
 
   const boardMoveHandoffPollMs = 16;
   const boardMoveHandoffMaxWaitMs = 300;
@@ -513,26 +512,14 @@
   }
 
   function hideBoardMoveElement(element: HTMLElement) {
-    const anchor = animationAnchorForElement(element);
-    const hidden = anchor
-      ? {
-          element,
-          token: replayAnimationVisibility.hide({
-            scopeKey: String(scopeKey),
-            anchor: anchor.anchor,
-            identity: anchor.identity,
-            role: 'handoff',
-          }),
-        }
-      : {
-          element,
-          fallbackCount: 1,
-        };
+    const hidden = hideElementForAnimation({
+      element,
+      scopeKey,
+      role: 'handoff',
+      fallbackAttribute: 'data-board-move-animation-hidden',
+    });
     const existing = hiddenElements.get(element) ?? [];
     hiddenElements.set(element, [...existing, hidden]);
-    if (!anchor) {
-      element.dataset.boardMoveAnimationHidden = 'true';
-    }
   }
 
   function showBoardMoveElement(hidden: HiddenBoardMoveElement) {
@@ -544,15 +531,12 @@
     if (index >= 0) {
       entries.splice(index, 1);
     }
-    if (hidden.token) {
-      replayAnimationVisibility.release(hidden.token);
-    }
+    releaseElementVisibilityClaim(hidden);
     if (entries.length) {
       hiddenElements.set(hidden.element, entries);
       return;
     }
     hiddenElements.delete(hidden.element);
-    delete hidden.element.dataset.boardMoveAnimationHidden;
   }
 
   function removeSpritesAfterPrepaint(spriteIdsToClear: Set<string>, generation: number) {

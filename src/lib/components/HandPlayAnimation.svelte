@@ -1,7 +1,10 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { animationAnchorForElement } from '../animations/animationAnchors';
-  import { replayAnimationVisibility, type AnimationVisibilityToken } from '../animations/animationVisibility';
+  import {
+    hideElementForAnimation,
+    releaseElementVisibilityClaim,
+    type ElementVisibilityClaim,
+  } from '../animations/animationVisibilityClaims';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -76,7 +79,7 @@
   let previousCardRects = new Map<number, RectSnapshot>();
   let activePlays = $state<ActivePlay[]>([]);
   const activeTargetCounts = new WeakMap<HTMLElement, number>();
-  const hiddenContentClaims = new WeakMap<HTMLElement, Array<{ token?: AnimationVisibilityToken; legacy?: boolean }>>();
+  const hiddenContentClaims = new WeakMap<HTMLElement, ElementVisibilityClaim[]>();
   let activeTargets: HTMLElement[] = [];
 
   onMount(() => {
@@ -376,33 +379,22 @@
   }
 
   function hideTargetContents(target: HTMLElement) {
-    const anchor = animationAnchorForElement(target);
     const claims = hiddenContentClaims.get(target) ?? [];
-    if (anchor) {
-      claims.push({
-        token: replayAnimationVisibility.hide({
-          scopeKey: String(scopeKey),
-          anchor: anchor.anchor,
-          identity: anchor.identity,
-          role: 'destination',
-        }),
-      });
-    } else {
-      target.dataset.handPlayAnimationHideContents = 'true';
-      claims.push({ legacy: true });
-    }
+    claims.push(hideElementForAnimation({
+      element: target,
+      scopeKey,
+      role: 'destination',
+      fallbackAttribute: 'data-hand-play-animation-hide-contents',
+    }));
     hiddenContentClaims.set(target, claims);
   }
 
   function showTargetContents(target: HTMLElement) {
     const claims = hiddenContentClaims.get(target) ?? [];
     for (const claim of claims) {
-      if (claim.token) {
-        replayAnimationVisibility.release(claim.token);
-      }
+      releaseElementVisibilityClaim(claim);
     }
     hiddenContentClaims.delete(target);
-    delete target.dataset.handPlayAnimationHideContents;
   }
 
   function animationTotalMs(animation: TargetAnimation): number {

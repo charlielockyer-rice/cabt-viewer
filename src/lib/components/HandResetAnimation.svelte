@@ -1,8 +1,11 @@
 <script lang="ts">
   import { cardBackCssVar, cardFaceImageUrl } from '../game/cardAssets';
   import { onDestroy, onMount } from 'svelte';
-  import { animationAnchorForElement } from '../animations/animationAnchors';
-  import { replayAnimationVisibility, type AnimationVisibilityToken } from '../animations/animationVisibility';
+  import {
+    hideElementForAnimation,
+    releaseElementVisibilityClaim,
+    type ElementVisibilityClaim,
+  } from '../animations/animationVisibilityClaims';
   import { actionAnimationBatchEvents, actionAnimationStartMs } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -54,12 +57,7 @@
     sprites: ResetSprite[];
   };
 
-  type HiddenResetSource = {
-    element: HTMLElement;
-    token?: AnimationVisibilityToken;
-    legacy?: boolean;
-    released?: boolean;
-  };
+  type HiddenResetSource = ElementVisibilityClaim;
 
   type ClearOptions = {
     restoreSources?: boolean;
@@ -318,21 +316,12 @@
   function hideSources(sources: HTMLElement[]) {
     const hidden: HiddenResetSource[] = [];
     for (const source of sources) {
-      const anchor = animationAnchorForElement(source);
-      if (anchor) {
-        hidden.push({
-          element: source,
-          token: replayAnimationVisibility.hide({
-            scopeKey: String(scopeKey),
-            anchor: anchor.anchor,
-            identity: anchor.identity,
-            role: 'source',
-          }),
-        });
-      } else {
-        source.dataset.handResetAnimationHidden = 'true';
-        hidden.push({ element: source, legacy: true });
-      }
+      hidden.push(hideElementForAnimation({
+        element: source,
+        scopeKey,
+        role: 'source',
+        fallbackAttribute: 'data-hand-reset-animation-hidden',
+      }));
     }
     hiddenSources = [...hiddenSources, ...hidden];
     return hidden;
@@ -341,16 +330,7 @@
   function showSources(sources: HiddenResetSource[]) {
     const nextHiddenSources = new Set(hiddenSources);
     for (const source of sources) {
-      if (source.released) {
-        continue;
-      }
-      source.released = true;
-      if (source.token) {
-        replayAnimationVisibility.release(source.token);
-      }
-      if (source.legacy) {
-        delete source.element.dataset.handResetAnimationHidden;
-      }
+      releaseElementVisibilityClaim(source);
       nextHiddenSources.delete(source);
     }
     hiddenSources = [...nextHiddenSources];

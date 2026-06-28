@@ -51,6 +51,9 @@
   let reduceMotion = $state(false);
   let damageSprites = $state<DamageSprite[]>([]);
   let knockOutSprites = $state<KnockOutSprite[]>([]);
+  const activeAttackAnnouncements = new Set<HTMLElement>();
+  const activeAttackLunges = new Set<HTMLElement>();
+  const activeKnockOutSources = new Set<HTMLElement>();
   const knockOutTiltDeg = 22;
   const knockOutSpritePadPx = 10;
 
@@ -68,9 +71,7 @@
   });
 
   onDestroy(() => {
-    for (const timer of timers) {
-      clearTimeout(timer);
-    }
+    clearAttackAnimations();
   });
 
   $effect(() => {
@@ -85,6 +86,10 @@
       }
       initialized = true;
       return;
+    }
+
+    if (scopeChanged && replayMode) {
+      clearAttackAnimations();
     }
 
     const animationEvents = actionAnimationBatchEvents(currentEvents, seenEventIds, replayMode, scopeChanged);
@@ -108,11 +113,11 @@
       }
       const delayMs = actionAnimationStartMs(animationEvents, event);
       const timer = setTimeout(() => {
+        activeAttackAnnouncements.add(attacker);
         attacker.dataset.attackAnnounceActive = 'true';
         attacker.style.setProperty('--attack-name', JSON.stringify(attackNameForEvent(event)));
         const cleanup = setTimeout(() => {
-          delete attacker.dataset.attackAnnounceActive;
-          attacker.style.removeProperty('--attack-name');
+          clearAttackAnnouncement(attacker);
         }, actionAnimationTiming.attackAnnounceMs);
         timers.push(cleanup);
       }, delayMs);
@@ -140,12 +145,10 @@
         attacker.style.setProperty('--attack-lunge-x', `${(dx / distance * 22).toFixed(1)}px`);
         attacker.style.setProperty('--attack-lunge-y', `${(dy / distance * 22).toFixed(1)}px`);
         const lungeTimer = setTimeout(() => {
+          activeAttackLunges.add(attacker);
           attacker.dataset.attackLungeActive = 'true';
           const cleanup = setTimeout(() => {
-            delete attacker.dataset.attackLungeActive;
-            attacker.style.removeProperty('--attack-lunge-x');
-            attacker.style.removeProperty('--attack-lunge-y');
-            attacker.style.removeProperty('--damage-visual-ms');
+            clearAttackLunge(attacker);
           }, actionAnimationTiming.damageVisualMs);
           timers.push(cleanup);
         }, delayMs);
@@ -206,16 +209,54 @@
         delayMs,
       };
       const startTimer = setTimeout(() => {
+        activeKnockOutSources.add(source);
         source.dataset.attackKnockOutHidden = 'true';
         knockOutSprites = [...knockOutSprites, sprite];
         const cleanup = setTimeout(() => {
-          delete source.dataset.attackKnockOutHidden;
+          clearKnockOutSource(source);
           knockOutSprites = knockOutSprites.filter((item) => item.id !== sprite.id);
         }, actionAnimationTiming.knockOutMs + replayAnimationPhaseGapMs);
         timers.push(cleanup);
       }, delayMs);
       timers.push(startTimer);
     }
+  }
+
+  function clearAttackAnimations() {
+    for (const timer of timers) {
+      clearTimeout(timer);
+    }
+    timers.length = 0;
+    for (const element of activeAttackAnnouncements) {
+      clearAttackAnnouncement(element);
+    }
+    for (const element of activeAttackLunges) {
+      clearAttackLunge(element);
+    }
+    for (const element of activeKnockOutSources) {
+      clearKnockOutSource(element);
+    }
+    damageSprites = [];
+    knockOutSprites = [];
+  }
+
+  function clearAttackAnnouncement(element: HTMLElement) {
+    delete element.dataset.attackAnnounceActive;
+    element.style.removeProperty('--attack-name');
+    activeAttackAnnouncements.delete(element);
+  }
+
+  function clearAttackLunge(element: HTMLElement) {
+    delete element.dataset.attackLungeActive;
+    element.style.removeProperty('--attack-lunge-x');
+    element.style.removeProperty('--attack-lunge-y');
+    element.style.removeProperty('--damage-visual-ms');
+    activeAttackLunges.delete(element);
+  }
+
+  function clearKnockOutSource(element: HTMLElement) {
+    delete element.dataset.attackKnockOutHidden;
+    activeKnockOutSources.delete(element);
   }
 
   function isDamageEvent(event: ActionTimelineEvent) {

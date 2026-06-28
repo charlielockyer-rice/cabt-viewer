@@ -1,8 +1,11 @@
 <script lang="ts">
   import { cardBackCssVar, cardFaceImageUrl } from '../game/cardAssets';
   import { onDestroy } from 'svelte';
-  import { animationAnchorForElement } from '../animations/animationAnchors';
-  import { replayAnimationVisibility, type AnimationVisibilityToken } from '../animations/animationVisibility';
+  import {
+    hideElementForAnimation,
+    releaseElementVisibilityClaim,
+    type ElementVisibilityClaim,
+  } from '../animations/animationVisibilityClaims';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -47,12 +50,7 @@
     sprites: RevealSprite[];
   };
 
-  type HiddenRevealTarget = {
-    element: HTMLElement;
-    token?: AnimationVisibilityToken;
-    legacy?: boolean;
-    released?: boolean;
-  };
+  type HiddenRevealTarget = ElementVisibilityClaim;
 
   let {
     events = [],
@@ -658,21 +656,12 @@
   function hideTargets(targets: HTMLElement[]) {
     const hidden: HiddenRevealTarget[] = [];
     for (const target of targets) {
-      const anchor = animationAnchorForElement(target);
-      if (anchor) {
-        hidden.push({
-          element: target,
-          token: replayAnimationVisibility.hide({
-            scopeKey: String(scopeKey),
-            anchor: anchor.anchor,
-            identity: anchor.identity,
-            role: 'destination',
-          }),
-        });
-      } else {
-        target.dataset.revealAnimationHidden = 'true';
-        hidden.push({ element: target, legacy: true });
-      }
+      hidden.push(hideElementForAnimation({
+        element: target,
+        scopeKey,
+        role: 'destination',
+        fallbackAttribute: 'data-reveal-animation-hidden',
+      }));
     }
     hiddenTargets = [...hiddenTargets, ...hidden];
     return hidden;
@@ -681,16 +670,7 @@
   function showTargets(targets: HiddenRevealTarget[]) {
     const nextHiddenTargets = new Set(hiddenTargets);
     for (const target of targets) {
-      if (target.released) {
-        continue;
-      }
-      target.released = true;
-      if (target.token) {
-        replayAnimationVisibility.release(target.token);
-      }
-      if (target.legacy) {
-        delete target.element.dataset.revealAnimationHidden;
-      }
+      releaseElementVisibilityClaim(target);
       nextHiddenTargets.delete(target);
     }
     hiddenTargets = [...nextHiddenTargets];

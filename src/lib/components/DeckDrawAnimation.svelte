@@ -1,8 +1,11 @@
 <script lang="ts">
   import { cardBackCssVar, cardFaceImageUrl } from '../game/cardAssets';
   import { onDestroy, onMount } from 'svelte';
-  import { animationAnchorForElement } from '../animations/animationAnchors';
-  import { replayAnimationVisibility, type AnimationVisibilityToken } from '../animations/animationVisibility';
+  import {
+    hideElementForAnimation,
+    releaseElementVisibilityClaim,
+    type ElementVisibilityClaim,
+  } from '../animations/animationVisibilityClaims';
   import { actionAnimationBatchEvents, actionAnimationStartMs } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -43,12 +46,7 @@
     hiddenTargets: HTMLElement[];
   };
 
-  type HiddenDrawTarget = {
-    element: HTMLElement;
-    token?: AnimationVisibilityToken;
-    legacy?: boolean;
-    released?: boolean;
-  };
+  type HiddenDrawTarget = ElementVisibilityClaim;
 
   let {
     events = [],
@@ -253,37 +251,19 @@
   function hideTargets(targets: HTMLElement[]) {
     const hiddenTargets: HiddenDrawTarget[] = [];
     for (const target of targets) {
-      const anchor = animationAnchorForElement(target);
-      if (anchor) {
-        hiddenTargets.push({
-          element: target,
-          token: replayAnimationVisibility.hide({
-            scopeKey: String(scopeKey),
-            anchor: anchor.anchor,
-            identity: anchor.identity,
-            role: 'destination',
-          }),
-        });
-      } else {
-        target.dataset.drawAnimationHidden = 'true';
-        hiddenTargets.push({ element: target, legacy: true });
-      }
+      hiddenTargets.push(hideElementForAnimation({
+        element: target,
+        scopeKey,
+        role: 'destination',
+        fallbackAttribute: 'data-draw-animation-hidden',
+      }));
     }
     return hiddenTargets;
   }
 
   function showTargets(targets: HiddenDrawTarget[]) {
     for (const target of targets) {
-      if (target.released) {
-        continue;
-      }
-      target.released = true;
-      if (target.token) {
-        replayAnimationVisibility.release(target.token);
-      }
-      if (target.legacy) {
-        delete target.element.dataset.drawAnimationHidden;
-      }
+      releaseElementVisibilityClaim(target);
     }
   }
 

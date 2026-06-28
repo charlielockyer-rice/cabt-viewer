@@ -1,8 +1,11 @@
 <script lang="ts">
   import { cardBackCssVar, cardFaceImageUrl } from '../game/cardAssets';
   import { onDestroy, onMount } from 'svelte';
-  import { animationAnchorForElement } from '../animations/animationAnchors';
-  import { replayAnimationVisibility, type AnimationVisibilityToken } from '../animations/animationVisibility';
+  import {
+    hideElementForAnimation,
+    releaseElementVisibilityClaims,
+    type ElementVisibilityClaim,
+  } from '../animations/animationVisibilityClaims';
   import { actionAnimationBatchEvents, actionAnimationStartMs } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -34,7 +37,7 @@
   type DiscardAnimation = {
     id: number;
     sprites: DiscardSprite[];
-    destinationTokens: AnimationVisibilityToken[];
+    destinationClaims: ElementVisibilityClaim[];
   };
 
   let {
@@ -70,12 +73,7 @@
   });
 
   onDestroy(() => {
-    for (const timer of timers) {
-      clearTimeout(timer);
-    }
-    for (const discard of discards) {
-      releaseDestinationTokens(discard);
-    }
+    clearDiscards();
   });
 
   $effect(() => {
@@ -90,6 +88,10 @@
       }
       initialized = true;
       return;
+    }
+
+    if (scopeChanged && replayMode) {
+      clearDiscards();
     }
 
     const animationEvents = actionAnimationBatchEvents(currentEvents, seenEventIds, replayMode, scopeChanged);
@@ -159,31 +161,41 @@
     const animation: DiscardAnimation = {
       id: nextAnimationId++,
       sprites,
-      destinationTokens: discardEvents.flatMap((event) => destinationTokenForEvent(event)),
+      destinationClaims: discardEvents.flatMap((event) => destinationClaimsForEvent(event)),
     };
 
     discards = [...discards, animation];
     const timer = setTimeout(() => {
-      releaseDestinationTokens(animation);
+      releaseDestinationClaims(animation);
       discards = discards.filter((item) => item.id !== animation.id);
+      const timerIndex = timers.indexOf(timer);
+      if (timerIndex >= 0) {
+        timers.splice(timerIndex, 1);
+      }
     }, Math.max(...sprites.map((sprite) => sprite.delayMs)) + cardMoveDurationMs + 120);
     timers.push(timer);
   }
 
-  function destinationTokenForEvent(event: ActionTimelineEvent): AnimationVisibilityToken[] {
+  function clearDiscards() {
+    for (const timer of timers) {
+      clearTimeout(timer);
+    }
+    timers.length = 0;
+    for (const discard of discards) {
+      releaseDestinationClaims(discard);
+    }
+    discards = [];
+  }
+
+  function destinationClaimsForEvent(event: ActionTimelineEvent): ElementVisibilityClaim[] {
     const params = event.params as Record<string, unknown> | undefined;
     const target = discardDestinationElement(Number(params?.serial), Number(params?.cardId));
     if (!target) {
       return [];
     }
-    const anchor = animationAnchorForElement(target);
-    if (!anchor) {
-      return [];
-    }
-    return [replayAnimationVisibility.hide({
-      scopeKey: String(scopeKey),
-      anchor: anchor.anchor,
-      identity: anchor.identity,
+    return [hideElementForAnimation({
+      element: target,
+      scopeKey,
       role: 'destination',
     })];
   }
@@ -200,11 +212,9 @@
     return target instanceof HTMLElement ? target : null;
   }
 
-  function releaseDestinationTokens(animation: DiscardAnimation) {
-    for (const token of animation.destinationTokens) {
-      replayAnimationVisibility.release(token);
-    }
-    animation.destinationTokens = [];
+  function releaseDestinationClaims(animation: DiscardAnimation) {
+    releaseElementVisibilityClaims(animation.destinationClaims);
+    animation.destinationClaims = [];
   }
 
   function spriteStyle(sprite: DiscardSprite) {

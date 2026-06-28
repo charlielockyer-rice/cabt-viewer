@@ -22,6 +22,7 @@
   import PromptGallery from './lib/components/prompt-gallery/PromptGallery.svelte';
   import PromptDock from './lib/components/prompts/PromptDock.svelte';
   import PromptHost from './lib/components/prompts/PromptHost.svelte';
+  import ReplayAnimationLifecycle from './lib/components/ReplayAnimationLifecycle.svelte';
   import ReplayTimeline from './lib/components/ReplayTimeline.svelte';
   import SetupDock from './lib/components/SetupDock.svelte';
   import TableShell from './lib/components/TableShell.svelte';
@@ -126,6 +127,9 @@
   let animationStepEvents = $derived(replayMode
     ? (replayStore.currentStep?.actionTimeline ?? [])
     : (game?.actionTimeline ?? []));
+  let replayAnimationPlan = $derived(replayMode
+    ? replayStore.currentStep?.animationPhases?.[replayStore.animationPhaseIndex]?.animationPlan
+    : undefined);
   let finalEvolutionEvents = $derived(replayMode ? replayFinalEvolutionEvents() : []);
   let error = $derived(homeMode === 'logs' ? replayStore.error : gameStore.error);
   let busy = $derived(replayMode ? replayStore.loading : gameStore.busy);
@@ -1334,6 +1338,12 @@
           {/key}
         </PromptDock>
       {/if}
+
+      <ReplayAnimationLifecycle
+        active={replayMode}
+        scopeKey={animationScopeKey}
+        animationPlan={replayAnimationPlan}
+      />
 
       <BoardLayer>
         <PlayerPanel side="top">
