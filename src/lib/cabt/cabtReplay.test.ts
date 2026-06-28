@@ -1654,6 +1654,81 @@ describe('cabtReplayToSnapshot', () => {
     expect(snapshot.views[snapshot.steps[1].stateIndex].players[0].bench[0].pokemon?.serial).toBe(7);
   });
 
+  it('keeps repeated hand-to-bench placements as distinct replay steps', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 53,
+            prize: [],
+          }, {
+            active: [{ id: 304, serial: 79, hp: 180, maxHp: 180 }],
+            bench: [],
+            benchMax: 5,
+            hand: [
+              { id: 65, serial: 75 },
+              { id: 65, serial: 73 },
+            ],
+            deckCount: 47,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'MoveCard', playerIndex: 1, cardId: 65, serial: 75, fromArea: CabtAreaType.HAND, toArea: CabtAreaType.BENCH },
+          { type: 'MoveCard', playerIndex: 1, cardId: 65, serial: 73, fromArea: CabtAreaType.HAND, toArea: CabtAreaType.BENCH },
+        ],
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 53,
+            prize: [],
+          }, {
+            active: [{ id: 304, serial: 79, hp: 180, maxHp: 180 }],
+            bench: [
+              { id: 65, serial: 75, hp: 60, maxHp: 60 },
+              { id: 65, serial: 73, hp: 60, maxHp: 60 },
+            ],
+            benchMax: 5,
+            hand: [],
+            deckCount: 47,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    const benchSteps = snapshot.steps.filter((step) => {
+      const params = step.actionTimeline?.[0]?.params as Record<string, unknown> | undefined;
+      return step.actionTimeline?.length === 1
+        && Number(params?.fromArea) === CabtAreaType.HAND
+        && Number(params?.toArea) === CabtAreaType.BENCH;
+    });
+    expect(benchSteps.map((step) => {
+      const params = step.actionTimeline?.[0]?.params as Record<string, unknown>;
+      return params.serial;
+    })).toEqual([75, 73]);
+    expect(benchSteps[0].displayView?.players[1].bench
+      .filter((slot) => !slot.empty)
+      .map((slot) => slot.pokemon?.serial)).toEqual([75]);
+    expect(benchSteps[1].displayView?.players[1].bench
+      .filter((slot) => !slot.empty)
+      .map((slot) => slot.pokemon?.serial)).toEqual([75, 73]);
+  });
+
   it('labels mulligan hand returns without revealing returned card names', () => {
     const snapshot = cabtReplayToSnapshot({
       visualize: [{

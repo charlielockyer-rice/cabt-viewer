@@ -1062,9 +1062,16 @@ function isMoveCardKind(kind: string | undefined): boolean {
 function sameMoveCardBatch(previous: ActionTimelineEvent | undefined, next: ActionTimelineEvent): boolean {
   const previousParams = previous?.params as Record<string, unknown> | undefined;
   const nextParams = next.params as Record<string, unknown> | undefined;
+  const fromArea = Number(nextParams?.fromArea);
+  const toArea = Number(nextParams?.toArea);
   return previous?.playerIndex === next.playerIndex
-    && Number(previousParams?.fromArea) === Number(nextParams?.fromArea)
-    && Number(previousParams?.toArea) === Number(nextParams?.toArea);
+    && Number(previousParams?.fromArea) === fromArea
+    && Number(previousParams?.toArea) === toArea
+    && isBatchedMoveDestination(fromArea, toArea);
+}
+
+function isBatchedMoveDestination(fromArea: number, toArea: number): boolean {
+  return toArea !== CabtAreaType.ACTIVE && toArea !== CabtAreaType.BENCH && !isBoardPositionMove(fromArea, toArea);
 }
 
 function sameBoardPositionMoveBatch(previous: ActionTimelineEvent | undefined, next: ActionTimelineEvent): boolean {
@@ -2299,7 +2306,7 @@ function applyReplayAreaDelta(
     return;
   }
   if (area === CabtAreaType.BENCH) {
-    player.bench = currentPlayer.bench;
+    player.bench = delta > 0 ? addCardToBench(player, currentPlayer, event) : currentPlayer.bench;
     return;
   }
   if (area === CabtAreaType.DISCARD) {
@@ -2370,6 +2377,34 @@ function addCardToDiscard(player: PlayerView, currentPlayer: PlayerView, event: 
     return player.discard;
   }
   return [...player.discard, nextCard];
+}
+
+function addCardToBench(player: PlayerView, currentPlayer: PlayerView, event: ActionTimelineEvent | undefined): PokemonSlotView[] {
+  const params = event?.params as Record<string, unknown> | undefined;
+  const explicitIndex = Number(params?.toIndex ?? params?.index ?? params?.benchIndex);
+  const currentSlot = currentPlayer.bench.find((slot) => slot.pokemon && event && eventCardMatches(slot.pokemon, event));
+  if (!currentSlot) {
+    return player.bench;
+  }
+
+  const index = Number.isInteger(explicitIndex)
+    ? explicitIndex
+    : Number.isInteger(currentSlot.index)
+      ? currentSlot.index
+      : player.bench.findIndex((slot) => slot.empty);
+  if (!Number.isInteger(index) || index < 0) {
+    return player.bench;
+  }
+
+  const bench = player.bench.length ? [...player.bench] : currentPlayer.bench.map((slot) => ({ ...slot }));
+  while (bench.length <= index && currentPlayer.bench[bench.length]) {
+    bench.push(currentPlayer.bench[bench.length]);
+  }
+  if (!bench[index]) {
+    return bench;
+  }
+  bench[index] = currentSlot;
+  return bench;
 }
 
 function cardViewFromEvent(event: ActionTimelineEvent): CardView | undefined {

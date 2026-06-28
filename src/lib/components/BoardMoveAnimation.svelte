@@ -356,6 +356,10 @@
       return pairedBenchSourceElement(event, moveEvents);
     }
     if (toArea === CabtAreaType.DISCARD && Number(params?.fromArea) === CabtAreaType.STADIUM) {
+      const discardCard = discardCardElement(playerIndex, Number(params?.serial), Number(params?.cardId));
+      if (discardCard) {
+        return discardCard;
+      }
       const discard = document.querySelector(`[data-card-anchor="player:${playerIndex}:discard"]`);
       return discard instanceof HTMLElement ? discard : null;
     }
@@ -380,6 +384,19 @@
         && Number(candidateParams?.toArea) === CabtAreaType.ACTIVE;
     });
     return pairedEvent ? sourceElementForEvent(pairedEvent) : null;
+  }
+
+  function discardCardElement(playerIndex: number, serial: number, cardId: number): HTMLElement | null {
+    const pile = document.querySelector(`[data-card-anchor="player:${playerIndex}:discard"]`);
+    if (!(pile instanceof HTMLElement)) {
+      return null;
+    }
+    const card = Number.isFinite(serial)
+      ? pile.querySelector(`.card-tile[data-card-serial="${serial}"]`)
+      : Number.isFinite(cardId)
+        ? pile.querySelector(`.card-tile[data-card-id="${cardId}"]`)
+        : null;
+    return card instanceof HTMLElement ? card : null;
   }
 
   function boardAnchor(playerIndex: number, slot: 'active' | 'bench', index: number): HTMLElement | null {
@@ -555,7 +572,7 @@
     const selector = sprite.destinationSerial !== undefined
       ? `.card-tile[data-card-serial="${sprite.destinationSerial}"]`
       : `.card-tile[data-card-id="${sprite.destinationCardId}"]`;
-    return !!target.querySelector(selector);
+    return target.matches(selector) || !!target.querySelector(selector);
   }
 
   function spriteStyle(sprite: BoardMoveSprite) {
@@ -733,6 +750,10 @@
   }
 
   :global(.stadium-card[data-board-move-animation-hidden="true"]) {
+    opacity: 0;
+  }
+
+  :global(.discard-pile .card-tile[data-board-move-animation-hidden="true"]) {
     opacity: 0;
   }
 

@@ -784,7 +784,7 @@
     position: absolute;
     left: 50%;
     top: 50%;
-    z-index: 3;
+    z-index: 35;
     min-width: 24px;
     min-height: 24px;
     display: grid;
