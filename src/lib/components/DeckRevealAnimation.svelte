@@ -1,6 +1,8 @@
 <script lang="ts">
   import { cardBackCssVar, cardFaceImageUrl } from '../game/cardAssets';
   import { onDestroy } from 'svelte';
+  import { animationAnchorForElement } from '../animations/animationAnchors';
+  import { replayAnimationVisibility, type AnimationVisibilityToken } from '../animations/animationVisibility';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -45,6 +47,13 @@
     sprites: RevealSprite[];
   };
 
+  type HiddenRevealTarget = {
+    element: HTMLElement;
+    token?: AnimationVisibilityToken;
+    legacy?: boolean;
+    released?: boolean;
+  };
+
   let {
     events = [],
     scopeKey = '',
@@ -60,7 +69,7 @@
   let lastScopeKey: string | number = '';
   let nextAnimationId = 1;
   const activeAttachElements = new Set<HTMLElement>();
-  const hiddenTargetCounts = new Map<HTMLElement, number>();
+  let hiddenTargets: HiddenRevealTarget[] = [];
 
   onDestroy(() => {
     clearReveals();
@@ -169,7 +178,7 @@
     const hiddenTargets = sprites
       .filter((sprite) => sprite.mode === 'searching' && sprite.targetElement)
       .map((sprite) => sprite.targetElement!);
-    hideTargets(hiddenTargets);
+    const hiddenSearchTargets = hideTargets(hiddenTargets);
     const animation: RevealAnimation = {
       id: nextAnimationId++,
       sprites,
@@ -184,7 +193,7 @@
       const target = sprite.targetElement;
       const handoffTimer = setTimeout(() => {
         if (target) {
-          showTargets([target]);
+          showTargets(hiddenSearchTargets.filter((hidden) => hidden.element === target));
         }
         removeSprites((item) => item.id === sprite.id);
       }, sprite.delayMs + revealMs + handoffSettleMs);
@@ -244,9 +253,7 @@
       const takeSource = normalizedSpriteForTake(sprite);
       const sourceCenter = spriteCenter(takeSource);
       const delayMs = actionAnimationStartMs(animationEvents, event);
-      if (target.element) {
-        hideTargets([target.element]);
-      }
+      const hiddenTakeTargets = target.element ? hideTargets([target.element]) : [];
       updateSprites((item) => item.serial === serial
         ? {
             ...normalizedSpriteForTake(item),
@@ -259,7 +266,7 @@
         : item);
       const timer = setTimeout(() => {
         if (target.element) {
-          showTargets([target.element]);
+          showTargets(hiddenTakeTargets);
         }
         removeSprites((item) => item.serial === serial);
       }, delayMs + actionAnimationTiming.handMoveMs + handoffSettleMs);
@@ -649,30 +656,48 @@
   }
 
   function hideTargets(targets: HTMLElement[]) {
+    const hidden: HiddenRevealTarget[] = [];
     for (const target of targets) {
-      const count = hiddenTargetCounts.get(target) ?? 0;
-      hiddenTargetCounts.set(target, count + 1);
-      target.dataset.revealAnimationHidden = 'true';
+      const anchor = animationAnchorForElement(target);
+      if (anchor) {
+        hidden.push({
+          element: target,
+          token: replayAnimationVisibility.hide({
+            scopeKey: String(scopeKey),
+            anchor: anchor.anchor,
+            identity: anchor.identity,
+            role: 'destination',
+          }),
+        });
+      } else {
+        target.dataset.revealAnimationHidden = 'true';
+        hidden.push({ element: target, legacy: true });
+      }
     }
+    hiddenTargets = [...hiddenTargets, ...hidden];
+    return hidden;
   }
 
-  function showTargets(targets: HTMLElement[]) {
+  function showTargets(targets: HiddenRevealTarget[]) {
+    const nextHiddenTargets = new Set(hiddenTargets);
     for (const target of targets) {
-      const count = (hiddenTargetCounts.get(target) ?? 1) - 1;
-      if (count > 0) {
-        hiddenTargetCounts.set(target, count);
+      if (target.released) {
         continue;
       }
-      hiddenTargetCounts.delete(target);
-      delete target.dataset.revealAnimationHidden;
+      target.released = true;
+      if (target.token) {
+        replayAnimationVisibility.release(target.token);
+      }
+      if (target.legacy) {
+        delete target.element.dataset.revealAnimationHidden;
+      }
+      nextHiddenTargets.delete(target);
     }
+    hiddenTargets = [...nextHiddenTargets];
   }
 
   function clearHiddenTargets() {
-    for (const target of hiddenTargetCounts.keys()) {
-      delete target.dataset.revealAnimationHidden;
-    }
-    hiddenTargetCounts.clear();
+    showTargets([...hiddenTargets]);
   }
 
   function motionDurationMs(durationMs: number): number {

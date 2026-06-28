@@ -205,6 +205,10 @@
     will-change: transform;
   }
 
+  :global(.hand-card-frame[data-animation-visibility-hidden='true']) {
+    visibility: hidden;
+  }
+
   .hand-card-content {
     display: grid;
     place-items: center;

@@ -1,6 +1,8 @@
 <script lang="ts">
   import { cardBackCssVar, cardFaceImageUrl } from '../game/cardAssets';
   import { onDestroy, onMount } from 'svelte';
+  import { animationAnchorForElement } from '../animations/animationAnchors';
+  import { replayAnimationVisibility, type AnimationVisibilityToken } from '../animations/animationVisibility';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -51,7 +53,14 @@
   type PrizeTakeAnimation = {
     id: number;
     sprites: PrizeTakeSprite[];
-    hiddenTargets: HTMLElement[];
+    hiddenTargets: HiddenPrizeTarget[];
+  };
+
+  type HiddenPrizeTarget = {
+    element: HTMLElement;
+    token?: AnimationVisibilityToken;
+    legacy?: boolean;
+    released?: boolean;
   };
 
   let {
@@ -76,7 +85,7 @@
   let anchorElement = $state<HTMLElement>();
   let prizeTakes = $state<PrizeTakeAnimation[]>([]);
   const activeTargetCounts = new WeakMap<HTMLElement, number>();
-  const hiddenTargetCounts = new Map<HTMLElement, number>();
+  let hiddenTargets: HiddenPrizeTarget[] = [];
   let activeTargets: HTMLElement[] = [];
 
   onMount(() => {
@@ -219,17 +228,17 @@
     const hiddenTargets = sprites
       .map((sprite) => sprite.targetElement)
       .filter((target): target is HTMLElement => target instanceof HTMLElement);
-    hideTargets(hiddenTargets);
+    const hiddenPrizeTargets = hideTargets(hiddenTargets);
 
     const animation: PrizeTakeAnimation = {
       id: nextAnimationId++,
       sprites,
-      hiddenTargets,
+      hiddenTargets: hiddenPrizeTargets,
     };
     prizeTakes = [...prizeTakes, animation];
 
     const timer = setTimeout(() => {
-      showTargets(hiddenTargets);
+      showTargets(hiddenPrizeTargets);
       prizeTakes = prizeTakes.filter((item) => item.id !== animation.id);
     }, Math.max(...sprites.map((sprite) => sprite.delayMs + prizeTakeDurationMs(sprite))) + 20);
     timers.push(timer);
@@ -380,30 +389,48 @@
   }
 
   function hideTargets(targets: HTMLElement[]) {
+    const hidden: HiddenPrizeTarget[] = [];
     for (const target of targets) {
-      const count = hiddenTargetCounts.get(target) ?? 0;
-      hiddenTargetCounts.set(target, count + 1);
-      target.dataset.prizeTakeAnimationHidden = 'true';
+      const anchor = animationAnchorForElement(target);
+      if (anchor) {
+        hidden.push({
+          element: target,
+          token: replayAnimationVisibility.hide({
+            scopeKey: String(scopeKey),
+            anchor: anchor.anchor,
+            identity: anchor.identity,
+            role: 'destination',
+          }),
+        });
+      } else {
+        target.dataset.prizeTakeAnimationHidden = 'true';
+        hidden.push({ element: target, legacy: true });
+      }
     }
+    hiddenTargets = [...hiddenTargets, ...hidden];
+    return hidden;
   }
 
-  function showTargets(targets: HTMLElement[]) {
+  function showTargets(targets: HiddenPrizeTarget[]) {
+    const nextHiddenTargets = new Set(hiddenTargets);
     for (const target of targets) {
-      const count = (hiddenTargetCounts.get(target) ?? 1) - 1;
-      if (count > 0) {
-        hiddenTargetCounts.set(target, count);
+      if (target.released) {
         continue;
       }
-      hiddenTargetCounts.delete(target);
-      delete target.dataset.prizeTakeAnimationHidden;
+      target.released = true;
+      if (target.token) {
+        replayAnimationVisibility.release(target.token);
+      }
+      if (target.legacy) {
+        delete target.element.dataset.prizeTakeAnimationHidden;
+      }
+      nextHiddenTargets.delete(target);
     }
+    hiddenTargets = [...nextHiddenTargets];
   }
 
   function clearHiddenTargets() {
-    for (const target of hiddenTargetCounts.keys()) {
-      delete target.dataset.prizeTakeAnimationHidden;
-    }
-    hiddenTargetCounts.clear();
+    showTargets([...hiddenTargets]);
   }
 
   function deckTopElement(playerIndex: number): HTMLElement | null {

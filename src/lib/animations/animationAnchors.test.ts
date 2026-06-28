@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   animationAnchorAttributes,
   animationAnchorSelector,
+  animationIdentityKindForAnchor,
   parseAnimationAnchor,
   parseAnimationIdentity,
   serializeAnimationAnchor,
@@ -57,5 +58,15 @@ describe('animation anchors', () => {
     expect(attrs['data-animation-card-serial']).toBe(7);
     expect(attrs['data-animation-card-id']).toBe(143);
     expect(animationAnchorSelector(anchor, { kind: 'pokemon', serial: 7 })).toContain('data-animation-card-serial="7"');
+  });
+
+  it('infers identity kinds from anchor kinds', () => {
+    expect(animationIdentityKindForAnchor('pokemon-card')).toBe('pokemon');
+    expect(animationIdentityKindForAnchor('attached-energy')).toBe('energy');
+    expect(animationIdentityKindForAnchor('attached-tool')).toBe('tool');
+    expect(animationIdentityKindForAnchor('stadium-card')).toBe('stadium');
+    expect(animationIdentityKindForAnchor('prize-card')).toBe('prize');
+    expect(animationIdentityKindForAnchor('discard-card')).toBe('card');
+    expect(animationIdentityKindForAnchor('board-slot')).toBeNull();
   });
 });

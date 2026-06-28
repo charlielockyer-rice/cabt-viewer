@@ -1,6 +1,8 @@
 <script lang="ts">
   import { cardBackCssVar, cardFaceImageUrl } from '../game/cardAssets';
   import { onDestroy, onMount } from 'svelte';
+  import { animationAnchorForElement } from '../animations/animationAnchors';
+  import { replayAnimationVisibility, type AnimationVisibilityToken } from '../animations/animationVisibility';
   import { actionAnimationBatchEvents, actionAnimationStartMs } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -52,6 +54,13 @@
     sprites: ResetSprite[];
   };
 
+  type HiddenResetSource = {
+    element: HTMLElement;
+    token?: AnimationVisibilityToken;
+    legacy?: boolean;
+    released?: boolean;
+  };
+
   type ClearOptions = {
     restoreSources?: boolean;
     restoreConnectedSourcesAfterMs?: number;
@@ -73,8 +82,7 @@
   let reduceMotion = $state(false);
   let nextAnimationId = 1;
   let resets = $state<ResetAnimation[]>([]);
-  const hiddenSourceCounts = new WeakMap<HTMLElement, number>();
-  let hiddenSources: HTMLElement[] = [];
+  let hiddenSources: HiddenResetSource[] = [];
 
   onMount(() => {
     if (typeof window.matchMedia !== 'function') {
@@ -150,11 +158,11 @@
       id: nextAnimationId++,
       sprites,
     };
-    hideSources(sprites.map((sprite) => sprite.sourceElement));
+    const animationSources = hideSources(sprites.map((sprite) => sprite.sourceElement));
     resets = [...resets, animation];
     const timer = setTimeout(() => {
       if (!replayMode) {
-        showSources(sprites.map((sprite) => sprite.sourceElement));
+        showSources(animationSources);
       }
       resets = resets.filter((item) => item.id !== animation.id);
     }, Math.max(...sprites.map((sprite) => sprite.delayMs)) + cardMoveDurationMs + 120);
@@ -174,7 +182,7 @@
       showSources(sourcesToRestore);
     } else if (restoreConnectedSourcesAfterMs !== undefined && sourcesToRestore.length) {
       const timer = setTimeout(() => {
-        showSources(sourcesToRestore.filter((source) => source.isConnected));
+        showSources(sourcesToRestore.filter((source) => source.element.isConnected));
         const timerIndex = sourceRestoreTimers.indexOf(timer);
         if (timerIndex >= 0) {
           sourceRestoreTimers.splice(timerIndex, 1);
@@ -255,11 +263,13 @@
       }
       const handRect = handElement.getBoundingClientRect();
       const cards: HandCardSnapshot[] = [];
-      for (const element of handElement.querySelectorAll('.hand-card-frame[data-card-serial]')) {
-        if (!(element instanceof HTMLElement) || element.dataset.drawAnimationHidden === 'true') {
+      for (const element of handElement.querySelectorAll('.hand-card-frame[data-animation-card-serial]')) {
+        if (!(element instanceof HTMLElement)
+          || element.dataset.drawAnimationHidden === 'true'
+          || element.dataset.animationVisibilityHidden === 'true') {
           continue;
         }
-        const serial = Number(element.dataset.cardSerial);
+        const serial = Number(element.dataset.animationCardSerial);
         if (!Number.isFinite(serial)) {
           continue;
         }
@@ -306,24 +316,41 @@
   }
 
   function hideSources(sources: HTMLElement[]) {
+    const hidden: HiddenResetSource[] = [];
     for (const source of sources) {
-      const count = hiddenSourceCounts.get(source) ?? 0;
-      hiddenSourceCounts.set(source, count + 1);
-      source.dataset.handResetAnimationHidden = 'true';
-      hiddenSources = [...hiddenSources, source];
+      const anchor = animationAnchorForElement(source);
+      if (anchor) {
+        hidden.push({
+          element: source,
+          token: replayAnimationVisibility.hide({
+            scopeKey: String(scopeKey),
+            anchor: anchor.anchor,
+            identity: anchor.identity,
+            role: 'source',
+          }),
+        });
+      } else {
+        source.dataset.handResetAnimationHidden = 'true';
+        hidden.push({ element: source, legacy: true });
+      }
     }
+    hiddenSources = [...hiddenSources, ...hidden];
+    return hidden;
   }
 
-  function showSources(sources: HTMLElement[]) {
+  function showSources(sources: HiddenResetSource[]) {
     const nextHiddenSources = new Set(hiddenSources);
     for (const source of sources) {
-      const count = (hiddenSourceCounts.get(source) ?? 1) - 1;
-      if (count > 0) {
-        hiddenSourceCounts.set(source, count);
+      if (source.released) {
         continue;
       }
-      hiddenSourceCounts.delete(source);
-      delete source.dataset.handResetAnimationHidden;
+      source.released = true;
+      if (source.token) {
+        replayAnimationVisibility.release(source.token);
+      }
+      if (source.legacy) {
+        delete source.element.dataset.handResetAnimationHidden;
+      }
       nextHiddenSources.delete(source);
     }
     hiddenSources = [...nextHiddenSources];

@@ -1,6 +1,8 @@
 <script lang="ts">
   import { cardBackCssVar, cardFaceImageUrl } from '../game/cardAssets';
   import { onDestroy, onMount } from 'svelte';
+  import { animationAnchorForElement } from '../animations/animationAnchors';
+  import { replayAnimationVisibility, type AnimationVisibilityToken } from '../animations/animationVisibility';
   import { actionAnimationBatchEvents, actionAnimationStartMs } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -33,12 +35,19 @@
   type DrawAnimation = {
     id: number;
     sprites: DrawSprite[];
-    hiddenTargets: HTMLElement[];
+    hiddenTargets: HiddenDrawTarget[];
   };
 
   type PlayerDrawSprites = {
     sprites: DrawSprite[];
     hiddenTargets: HTMLElement[];
+  };
+
+  type HiddenDrawTarget = {
+    element: HTMLElement;
+    token?: AnimationVisibilityToken;
+    legacy?: boolean;
+    released?: boolean;
   };
 
   let {
@@ -57,7 +66,6 @@
   let nextAnimationId = 1;
   let reduceMotion = $state(false);
   let lastScopeKey: string | number = '';
-  const hiddenTargetCounts = new WeakMap<HTMLElement, number>();
 
   onMount(() => {
     if (typeof window.matchMedia !== 'function') {
@@ -137,11 +145,11 @@
       spritesForPlayer(playerIndex, playerEvents, animationEvents),
     );
     const sprites = playerDraws.flatMap((draw) => draw.sprites);
-    const hiddenTargets = playerDraws.flatMap((draw) => draw.hiddenTargets);
+    const targetElements = playerDraws.flatMap((draw) => draw.hiddenTargets);
     if (!sprites.length) {
       return;
     }
-    hideTargets(hiddenTargets);
+    const hiddenTargets = hideTargets(targetElements);
 
     const animation: DrawAnimation = {
       id: nextAnimationId++,
@@ -154,7 +162,7 @@
         continue;
       }
       const timer = setTimeout(() => {
-        showTargets([sprite.targetElement!]);
+        showTargets(hiddenTargets.filter((target) => target.element === sprite.targetElement));
       }, sprite.delayMs + cardHandoffMs);
       timers.push(timer);
     }
@@ -243,22 +251,39 @@
   }
 
   function hideTargets(targets: HTMLElement[]) {
+    const hiddenTargets: HiddenDrawTarget[] = [];
     for (const target of targets) {
-      const count = hiddenTargetCounts.get(target) ?? 0;
-      hiddenTargetCounts.set(target, count + 1);
-      target.dataset.drawAnimationHidden = 'true';
+      const anchor = animationAnchorForElement(target);
+      if (anchor) {
+        hiddenTargets.push({
+          element: target,
+          token: replayAnimationVisibility.hide({
+            scopeKey: String(scopeKey),
+            anchor: anchor.anchor,
+            identity: anchor.identity,
+            role: 'destination',
+          }),
+        });
+      } else {
+        target.dataset.drawAnimationHidden = 'true';
+        hiddenTargets.push({ element: target, legacy: true });
+      }
     }
+    return hiddenTargets;
   }
 
-  function showTargets(targets: HTMLElement[]) {
+  function showTargets(targets: HiddenDrawTarget[]) {
     for (const target of targets) {
-      const count = (hiddenTargetCounts.get(target) ?? 1) - 1;
-      if (count > 0) {
-        hiddenTargetCounts.set(target, count);
+      if (target.released) {
         continue;
       }
-      hiddenTargetCounts.delete(target);
-      delete target.dataset.drawAnimationHidden;
+      target.released = true;
+      if (target.token) {
+        replayAnimationVisibility.release(target.token);
+      }
+      if (target.legacy) {
+        delete target.element.dataset.drawAnimationHidden;
+      }
     }
   }
 

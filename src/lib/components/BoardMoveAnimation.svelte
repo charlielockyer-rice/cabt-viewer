@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
-  import { parseAnimationAnchor, parseAnimationIdentity, type AnimationAnchorRef, type AnimationIdentity } from '../animations/animationAnchors';
+  import { animationAnchorForElement } from '../animations/animationAnchors';
   import { replayAnimationVisibility, type AnimationVisibilityToken } from '../animations/animationVisibility';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -673,67 +673,6 @@
       handOffWhenDestinationReady(source, target, sprite, startTime, generation);
     }, boardMoveHandoffPollMs);
     timers.push(retry);
-  }
-
-  function animationAnchorForElement(element: HTMLElement): { anchor: AnimationAnchorRef; identity?: AnimationIdentity } | null {
-    const anchoredElement = element.closest('[data-animation-anchor-key]');
-    if (!(anchoredElement instanceof HTMLElement)) {
-      return null;
-    }
-    const anchorKey = anchoredElement.dataset.animationAnchorKey;
-    if (!anchorKey) {
-      return null;
-    }
-    const anchor = parseAnimationAnchor(anchorKey);
-    if (!anchor) {
-      return null;
-    }
-    return {
-      anchor,
-      identity: animationIdentityForElement(anchoredElement),
-    };
-  }
-
-  function animationIdentityForElement(element: HTMLElement): AnimationIdentity | undefined {
-    const parsed = parseAnimationIdentity(element.dataset.animationIdentity ?? '');
-    if (parsed) {
-      return parsed;
-    }
-    const kind = animationIdentityKindForAnchor(element.dataset.animationAnchor);
-    if (!kind) {
-      return undefined;
-    }
-    const serial = Number(element.dataset.animationCardSerial);
-    const cardId = Number(element.dataset.animationCardId);
-    return {
-      kind,
-      serial: Number.isFinite(serial) ? serial : undefined,
-      cardId: Number.isFinite(cardId) ? cardId : undefined,
-    };
-  }
-
-  function animationIdentityKindForAnchor(anchorKind: string | undefined): AnimationIdentity['kind'] | null {
-    if (anchorKind === 'pokemon-card') {
-      return 'pokemon';
-    }
-    if (anchorKind === 'attached-energy') {
-      return 'energy';
-    }
-    if (anchorKind === 'attached-tool') {
-      return 'tool';
-    }
-    if (anchorKind === 'stadium-card') {
-      return 'stadium';
-    }
-    if (anchorKind === 'prize-card') {
-      return 'prize';
-    }
-    if (anchorKind === 'hand-card'
-      || anchorKind === 'discard-card'
-      || anchorKind === 'play-zone-card') {
-      return 'card';
-    }
-    return null;
   }
 
   function destinationContainsCard(target: HTMLElement, sprite: BoardMoveSprite) {

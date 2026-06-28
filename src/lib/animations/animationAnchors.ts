@@ -32,6 +32,12 @@ export type AnimationAnchorResolveOptions = {
 
 export type AnimationAnchorAttributes = Record<string, string | number | undefined>;
 
+export type ResolvedAnimationAnchor = {
+  element: HTMLElement;
+  anchor: AnimationAnchorRef;
+  identity?: AnimationIdentity;
+};
+
 const anchorKinds = new Set<AnimationAnchorRef['kind']>([
   'hand',
   'hand-slot',
@@ -261,6 +267,68 @@ export function resolveAnimationAnchorElements(
   }
   return Array.from(resolvedRoot.querySelectorAll(animationAnchorSelector(anchor, identity)))
     .filter((element): element is HTMLElement => element instanceof HTMLElement);
+}
+
+export function animationAnchorForElement(element: Element): ResolvedAnimationAnchor | null {
+  const anchoredElement = element.closest('[data-animation-anchor-key]');
+  if (!(anchoredElement instanceof HTMLElement)) {
+    return null;
+  }
+  const anchorKey = anchoredElement.dataset.animationAnchorKey;
+  if (!anchorKey) {
+    return null;
+  }
+  const anchor = parseAnimationAnchor(anchorKey);
+  if (!anchor) {
+    return null;
+  }
+  return {
+    element: anchoredElement,
+    anchor,
+    identity: animationIdentityForElement(anchoredElement),
+  };
+}
+
+export function animationIdentityForElement(element: HTMLElement): AnimationIdentity | undefined {
+  const parsed = parseAnimationIdentity(element.dataset.animationIdentity ?? '');
+  if (parsed) {
+    return parsed;
+  }
+  const kind = animationIdentityKindForAnchor(element.dataset.animationAnchor);
+  if (!kind) {
+    return undefined;
+  }
+  const serial = Number(element.dataset.animationCardSerial);
+  const cardId = Number(element.dataset.animationCardId);
+  return compact({
+    kind,
+    serial: Number.isFinite(serial) ? serial : undefined,
+    cardId: Number.isFinite(cardId) ? cardId : undefined,
+  });
+}
+
+export function animationIdentityKindForAnchor(anchorKind: string | undefined): AnimationIdentityKind | null {
+  if (anchorKind === 'pokemon-card') {
+    return 'pokemon';
+  }
+  if (anchorKind === 'attached-energy') {
+    return 'energy';
+  }
+  if (anchorKind === 'attached-tool') {
+    return 'tool';
+  }
+  if (anchorKind === 'stadium-card') {
+    return 'stadium';
+  }
+  if (anchorKind === 'prize-card') {
+    return 'prize';
+  }
+  if (anchorKind === 'hand-card'
+    || anchorKind === 'discard-card'
+    || anchorKind === 'play-zone-card') {
+    return 'card';
+  }
+  return null;
 }
 
 export function animationClaimKey(parts: {
