@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
+  import { parseAnimationAnchor, parseAnimationIdentity, type AnimationAnchorRef, type AnimationIdentity } from '../animations/animationAnchors';
+  import { replayAnimationVisibility, type AnimationVisibilityToken } from '../animations/animationVisibility';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
   import { cardBackCssVar } from '../game/cardAssets';
@@ -49,6 +51,12 @@
     key: string;
   };
 
+  type HiddenBoardMoveElement = {
+    element: HTMLElement;
+    token?: AnimationVisibilityToken;
+    fallbackCount?: number;
+  };
+
   const boardMoveHandoffPollMs = 16;
   const boardMoveHandoffMaxWaitMs = 300;
   const replayHandoffSettleMs = 40;
@@ -69,7 +77,7 @@
   let reduceMotion = $state(false);
   let sprites = $state<BoardMoveSprite[]>([]);
   let animationGeneration = 0;
-  const hiddenElementCounts = new Map<HTMLElement, number>();
+  const hiddenElements = new Map<HTMLElement, HiddenBoardMoveElement[]>();
 
   onMount(() => {
     if (typeof window.matchMedia !== 'function') {
@@ -495,28 +503,56 @@
   }
 
   function hiddenElementSnapshots() {
-    return [...hiddenElementCounts.entries()].map(([element, count]) => ({ element, count }));
+    return [...hiddenElements.values()].flat();
   }
 
-  function restoreBoardMoveElements(elements: Array<{ element: HTMLElement; count: number }>) {
-    for (const { element, count } of elements) {
-      showBoardMoveElement(element, { releaseCount: count });
+  function restoreBoardMoveElements(elements: HiddenBoardMoveElement[]) {
+    for (const hidden of elements) {
+      showBoardMoveElement(hidden);
     }
   }
 
   function hideBoardMoveElement(element: HTMLElement) {
-    hiddenElementCounts.set(element, (hiddenElementCounts.get(element) ?? 0) + 1);
-    element.dataset.boardMoveAnimationHidden = 'true';
+    const anchor = animationAnchorForElement(element);
+    const hidden = anchor
+      ? {
+          element,
+          token: replayAnimationVisibility.hide({
+            scopeKey: String(scopeKey),
+            anchor: anchor.anchor,
+            identity: anchor.identity,
+            role: 'handoff',
+          }),
+        }
+      : {
+          element,
+          fallbackCount: 1,
+        };
+    const existing = hiddenElements.get(element) ?? [];
+    hiddenElements.set(element, [...existing, hidden]);
+    if (!anchor) {
+      element.dataset.boardMoveAnimationHidden = 'true';
+    }
   }
 
-  function showBoardMoveElement(element: HTMLElement, { releaseCount = 1 }: { releaseCount?: number } = {}) {
-    const count = (hiddenElementCounts.get(element) ?? releaseCount) - releaseCount;
-    if (count > 0) {
-      hiddenElementCounts.set(element, count);
+  function showBoardMoveElement(hidden: HiddenBoardMoveElement) {
+    const entries = hiddenElements.get(hidden.element);
+    if (!entries?.length) {
       return;
     }
-    hiddenElementCounts.delete(element);
-    delete element.dataset.boardMoveAnimationHidden;
+    const index = entries.indexOf(hidden);
+    if (index >= 0) {
+      entries.splice(index, 1);
+    }
+    if (hidden.token) {
+      replayAnimationVisibility.release(hidden.token);
+    }
+    if (entries.length) {
+      hiddenElements.set(hidden.element, entries);
+      return;
+    }
+    hiddenElements.delete(hidden.element);
+    delete hidden.element.dataset.boardMoveAnimationHidden;
   }
 
   function removeSpritesAfterPrepaint(spriteIdsToClear: Set<string>, generation: number) {
@@ -584,8 +620,22 @@
     clone.removeAttribute('title');
     clone.removeAttribute('data-board-move-animation-hidden');
     clone.removeAttribute('data-reveal-animation-hidden');
+    stripAnimationAttributes(clone);
     prepareCloneImages(clone);
     return clone.outerHTML;
+  }
+
+  function stripAnimationAttributes(clone: HTMLElement) {
+    for (const element of [clone, ...clone.querySelectorAll('*')]) {
+      if (!(element instanceof HTMLElement)) {
+        continue;
+      }
+      for (const attribute of Array.from(element.attributes)) {
+        if (attribute.name.startsWith('data-animation-')) {
+          element.removeAttribute(attribute.name);
+        }
+      }
+    }
   }
 
   function prepareCloneImages(clone: HTMLElement) {
@@ -623,6 +673,67 @@
       handOffWhenDestinationReady(source, target, sprite, startTime, generation);
     }, boardMoveHandoffPollMs);
     timers.push(retry);
+  }
+
+  function animationAnchorForElement(element: HTMLElement): { anchor: AnimationAnchorRef; identity?: AnimationIdentity } | null {
+    const anchoredElement = element.closest('[data-animation-anchor-key]');
+    if (!(anchoredElement instanceof HTMLElement)) {
+      return null;
+    }
+    const anchorKey = anchoredElement.dataset.animationAnchorKey;
+    if (!anchorKey) {
+      return null;
+    }
+    const anchor = parseAnimationAnchor(anchorKey);
+    if (!anchor) {
+      return null;
+    }
+    return {
+      anchor,
+      identity: animationIdentityForElement(anchoredElement),
+    };
+  }
+
+  function animationIdentityForElement(element: HTMLElement): AnimationIdentity | undefined {
+    const parsed = parseAnimationIdentity(element.dataset.animationIdentity ?? '');
+    if (parsed) {
+      return parsed;
+    }
+    const kind = animationIdentityKindForAnchor(element.dataset.animationAnchor);
+    if (!kind) {
+      return undefined;
+    }
+    const serial = Number(element.dataset.animationCardSerial);
+    const cardId = Number(element.dataset.animationCardId);
+    return {
+      kind,
+      serial: Number.isFinite(serial) ? serial : undefined,
+      cardId: Number.isFinite(cardId) ? cardId : undefined,
+    };
+  }
+
+  function animationIdentityKindForAnchor(anchorKind: string | undefined): AnimationIdentity['kind'] | null {
+    if (anchorKind === 'pokemon-card') {
+      return 'pokemon';
+    }
+    if (anchorKind === 'attached-energy') {
+      return 'energy';
+    }
+    if (anchorKind === 'attached-tool') {
+      return 'tool';
+    }
+    if (anchorKind === 'stadium-card') {
+      return 'stadium';
+    }
+    if (anchorKind === 'prize-card') {
+      return 'prize';
+    }
+    if (anchorKind === 'hand-card'
+      || anchorKind === 'discard-card'
+      || anchorKind === 'play-zone-card') {
+      return 'card';
+    }
+    return null;
   }
 
   function destinationContainsCard(target: HTMLElement, sprite: BoardMoveSprite) {
@@ -793,7 +904,16 @@
     background: transparent !important;
   }
 
+  :global(.board-slot.empty[data-animation-visibility-hidden="true"]) {
+    border-color: transparent !important;
+    background: transparent !important;
+  }
+
   :global(.board-slot[data-board-move-animation-hidden="true"]) {
+    transition: none !important;
+  }
+
+  :global(.board-slot[data-animation-visibility-hidden="true"]) {
     transition: none !important;
   }
 
@@ -806,11 +926,29 @@
     opacity: 0;
   }
 
+  :global(.board-slot[data-animation-visibility-hidden="true"] > .card-tile),
+  :global(.board-slot[data-animation-visibility-hidden="true"] > .pokemon-status),
+  :global(.board-slot[data-animation-visibility-hidden="true"] > .energy-badges),
+  :global(.board-slot[data-animation-visibility-hidden="true"] > .tool-card-preview),
+  :global(.board-slot[data-animation-visibility-hidden="true"] > .slot-badges),
+  :global(.board-slot[data-animation-visibility-hidden="true"] > .empty-zone) {
+    opacity: 0;
+  }
+
   :global(.stadium-card[data-board-move-animation-hidden="true"]) {
     opacity: 0;
   }
 
+  :global(.stadium-card[data-animation-visibility-hidden="true"]) {
+    opacity: 0;
+  }
+
   :global(.discard-pile .card-tile[data-board-move-animation-hidden="true"]) {
+    opacity: 0;
+  }
+
+  :global(.discard-pile [data-animation-visibility-hidden="true"] .card-tile),
+  :global(.discard-pile .card-tile[data-animation-visibility-hidden="true"]) {
     opacity: 0;
   }
 
