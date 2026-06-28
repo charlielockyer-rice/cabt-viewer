@@ -67,6 +67,7 @@
   let lastScopeKey: string | number = '';
   let nextAnimationId = 1;
   const activeAttachElements = new Set<HTMLElement>();
+  let activeAttachClaims: ElementVisibilityClaim[] = [];
   let hiddenTargets: HiddenRevealTarget[] = [];
 
   onDestroy(() => {
@@ -403,11 +404,26 @@
   }
 
   function markAttachTarget(target: HTMLElement, serial: number, delayMs: number) {
+    const immediateBadge = attachedEnergyElement(target, serial);
+    const immediateClaim = immediateBadge
+      ? hideElementForAnimation({
+          element: immediateBadge,
+          scopeKey,
+          role: 'destination',
+          fallbackAttribute: 'data-reveal-animation-hidden',
+        })
+      : undefined;
+    if (immediateClaim) {
+      activeAttachClaims = [...activeAttachClaims, immediateClaim];
+    }
     const startTimer = setTimeout(() => {
       const energyBadge = attachedEnergyElement(target, serial);
       energyBadge?.classList.add('reveal-attach-handoff-energy');
       if (energyBadge) {
         activeAttachElements.add(energyBadge);
+      }
+      if (immediateClaim) {
+        releaseAttachClaim(immediateClaim);
       }
     }, delayMs);
     const endTimer = setTimeout(() => {
@@ -425,6 +441,15 @@
       element.classList.remove('reveal-attach-handoff-energy');
     }
     activeAttachElements.clear();
+    for (const claim of activeAttachClaims) {
+      releaseElementVisibilityClaim(claim);
+    }
+    activeAttachClaims = [];
+  }
+
+  function releaseAttachClaim(claim: ElementVisibilityClaim) {
+    releaseElementVisibilityClaim(claim);
+    activeAttachClaims = activeAttachClaims.filter((item) => item !== claim);
   }
 
   function attachedEnergyElement(target: HTMLElement, serial: number): HTMLElement | null {

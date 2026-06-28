@@ -1,6 +1,11 @@
 <script lang="ts">
   import { cardFaceImageUrl } from '../game/cardAssets';
   import { onDestroy, onMount } from 'svelte';
+  import {
+    hideElementForAnimation,
+    releaseElementVisibilityClaim,
+    type ElementVisibilityClaim,
+  } from '../animations/animationVisibilityClaims';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -51,9 +56,10 @@
   let reduceMotion = $state(false);
   let damageSprites = $state<DamageSprite[]>([]);
   let knockOutSprites = $state<KnockOutSprite[]>([]);
+  let animationGeneration = 0;
   const activeAttackAnnouncements = new Set<HTMLElement>();
   const activeAttackLunges = new Set<HTMLElement>();
-  const activeKnockOutSources = new Set<HTMLElement>();
+  const knockOutVisibilityClaims = new Map<string, ElementVisibilityClaim[]>();
   const knockOutTiltDeg = 22;
   const knockOutSpritePadPx = 10;
 
@@ -88,7 +94,7 @@
       return;
     }
 
-    if (scopeChanged && replayMode) {
+    if (scopeChanged) {
       clearAttackAnimations();
     }
 
@@ -178,6 +184,7 @@
     if (!koEvents.length) {
       return;
     }
+    const generation = animationGeneration;
     for (const event of koEvents) {
       const source = slotElementForEvent(event);
       const discard = discardElementForPlayer(event.playerIndex);
@@ -209,12 +216,17 @@
         delayMs,
       };
       const startTimer = setTimeout(() => {
-        activeKnockOutSources.add(source);
-        source.dataset.attackKnockOutHidden = 'true';
+        if (generation !== animationGeneration || !document.body.contains(source) || !document.body.contains(discard)) {
+          return;
+        }
+        hideKnockOutElement(sprite.id, source, 'source');
+        const destination = discardCardElement(event.playerIndex, Number(params?.serial), cardId);
+        if (destination) {
+          hideKnockOutElement(sprite.id, destination, 'destination');
+        }
         knockOutSprites = [...knockOutSprites, sprite];
         const cleanup = setTimeout(() => {
-          clearKnockOutSource(source);
-          knockOutSprites = knockOutSprites.filter((item) => item.id !== sprite.id);
+          releaseKnockOutSprite(sprite.id);
         }, actionAnimationTiming.knockOutMs + replayAnimationPhaseGapMs);
         timers.push(cleanup);
       }, delayMs);
@@ -223,6 +235,7 @@
   }
 
   function clearAttackAnimations() {
+    animationGeneration += 1;
     for (const timer of timers) {
       clearTimeout(timer);
     }
@@ -233,8 +246,8 @@
     for (const element of activeAttackLunges) {
       clearAttackLunge(element);
     }
-    for (const element of activeKnockOutSources) {
-      clearKnockOutSource(element);
+    for (const spriteId of Array.from(knockOutVisibilityClaims.keys())) {
+      releaseKnockOutSprite(spriteId);
     }
     damageSprites = [];
     knockOutSprites = [];
@@ -254,9 +267,25 @@
     activeAttackLunges.delete(element);
   }
 
-  function clearKnockOutSource(element: HTMLElement) {
-    delete element.dataset.attackKnockOutHidden;
-    activeKnockOutSources.delete(element);
+  function hideKnockOutElement(spriteId: string, element: HTMLElement, role: 'source' | 'destination') {
+    const claim = hideElementForAnimation({
+      element,
+      scopeKey,
+      role,
+      fallbackAttribute: 'data-attack-knock-out-hidden',
+    });
+    const claims = knockOutVisibilityClaims.get(spriteId) ?? [];
+    claims.push(claim);
+    knockOutVisibilityClaims.set(spriteId, claims);
+  }
+
+  function releaseKnockOutSprite(spriteId: string) {
+    const claims = knockOutVisibilityClaims.get(spriteId) ?? [];
+    for (const claim of claims) {
+      releaseElementVisibilityClaim(claim);
+    }
+    knockOutVisibilityClaims.delete(spriteId);
+    knockOutSprites = knockOutSprites.filter((item) => item.id !== spriteId);
   }
 
   function isDamageEvent(event: ActionTimelineEvent) {
@@ -297,6 +326,19 @@
     }
     const element = document.querySelector(`[data-card-anchor="player:${playerIndex}:discard"]`);
     return element instanceof HTMLElement ? element : null;
+  }
+
+  function discardCardElement(playerIndex: number | undefined, serial: number, cardId: number): HTMLElement | null {
+    const discard = discardElementForPlayer(playerIndex);
+    if (!discard) {
+      return null;
+    }
+    const card = Number.isFinite(serial)
+      ? discard.querySelector(`.card-tile[data-card-serial="${serial}"]`)
+      : Number.isFinite(cardId)
+        ? discard.querySelector(`.card-tile[data-card-id="${cardId}"]`)
+        : null;
+    return card instanceof HTMLElement ? card : null;
   }
 
   function attackNameForEvent(event: ActionTimelineEvent): string {
@@ -355,6 +397,10 @@
 </span>
 
 <style>
+  /* TODO: Move KO board-to-discard motion into the board/replay motion owner when
+     that orchestrator covers attack KOs. This component is mounted outside
+     .game-board-plane, so a true board-plane sprite would need cross-component
+     DOM ownership or a portal instead of a local coordinate change. */
   .attack-animation-layer {
     position: fixed;
     inset: 0;
