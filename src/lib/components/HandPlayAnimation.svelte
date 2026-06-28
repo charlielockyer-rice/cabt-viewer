@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import { animationAnchorForElement } from '../animations/animationAnchors';
+  import { replayAnimationVisibility, type AnimationVisibilityToken } from '../animations/animationVisibility';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -74,6 +76,7 @@
   let previousCardRects = new Map<number, RectSnapshot>();
   let activePlays = $state<ActivePlay[]>([]);
   const activeTargetCounts = new WeakMap<HTMLElement, number>();
+  const hiddenContentClaims = new WeakMap<HTMLElement, Array<{ token?: AnimationVisibilityToken; legacy?: boolean }>>();
   let activeTargets: HTMLElement[] = [];
 
   onMount(() => {
@@ -341,7 +344,7 @@
       animation.target.style.setProperty('--hand-evolve-visible-ms', `${evolveVisibleDurationMs}ms`);
     }
     if (animation.hideContents) {
-      animation.target.dataset.handPlayAnimationHideContents = 'true';
+      hideTargetContents(animation.target);
     }
     activeTargets = [...activeTargets, animation.target];
   }
@@ -357,7 +360,7 @@
       activeTargetCounts.delete(target);
       nextActiveTargets.delete(target);
       delete target.dataset.handPlayAnimationActive;
-      delete target.dataset.handPlayAnimationHideContents;
+      showTargetContents(target);
       delete target.dataset.handAttachAnimationActive;
       delete target.dataset.handEvolveAnimationActive;
       target.style.removeProperty('--hand-attach-card-image');
@@ -370,6 +373,36 @@
       target.style.removeProperty('--hand-evolve-visible-ms');
     }
     activeTargets = [...nextActiveTargets];
+  }
+
+  function hideTargetContents(target: HTMLElement) {
+    const anchor = animationAnchorForElement(target);
+    const claims = hiddenContentClaims.get(target) ?? [];
+    if (anchor) {
+      claims.push({
+        token: replayAnimationVisibility.hide({
+          scopeKey: String(scopeKey),
+          anchor: anchor.anchor,
+          identity: anchor.identity,
+          role: 'destination',
+        }),
+      });
+    } else {
+      target.dataset.handPlayAnimationHideContents = 'true';
+      claims.push({ legacy: true });
+    }
+    hiddenContentClaims.set(target, claims);
+  }
+
+  function showTargetContents(target: HTMLElement) {
+    const claims = hiddenContentClaims.get(target) ?? [];
+    for (const claim of claims) {
+      if (claim.token) {
+        replayAnimationVisibility.release(claim.token);
+      }
+    }
+    hiddenContentClaims.delete(target);
+    delete target.dataset.handPlayAnimationHideContents;
   }
 
   function animationTotalMs(animation: TargetAnimation): number {

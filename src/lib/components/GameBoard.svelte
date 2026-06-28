@@ -390,4 +390,31 @@
     box-shadow: var(--board-play-shadow);
   }
 
+  :global(.board-slot.empty[data-animation-visibility-hidden="true"]) {
+    border-color: transparent !important;
+    background: transparent !important;
+  }
+
+  :global(.board-slot[data-animation-visibility-hidden="true"]) {
+    transition: none !important;
+  }
+
+  :global(.board-slot[data-animation-visibility-hidden="true"] > .card-tile),
+  :global(.board-slot[data-animation-visibility-hidden="true"] > .pokemon-status),
+  :global(.board-slot[data-animation-visibility-hidden="true"] > .energy-badges),
+  :global(.board-slot[data-animation-visibility-hidden="true"] > .tool-card-preview),
+  :global(.board-slot[data-animation-visibility-hidden="true"] > .slot-badges),
+  :global(.board-slot[data-animation-visibility-hidden="true"] > .empty-zone),
+  :global(.stadium-card[data-animation-visibility-hidden="true"]),
+  :global(.discard-pile [data-animation-visibility-hidden="true"] .card-tile),
+  :global(.discard-pile .card-tile[data-animation-visibility-hidden="true"]),
+  :global([data-animation-anchor="attached-energy"][data-animation-visibility-hidden="true"]),
+  :global([data-animation-anchor="attached-tool"][data-animation-visibility-hidden="true"]) {
+    opacity: 0;
+  }
+
+  :global(.resolving-zone[data-animation-visibility-hidden="true"]) {
+    visibility: hidden;
+  }
+
 </style>

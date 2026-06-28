@@ -843,16 +843,7 @@
     background: transparent !important;
   }
 
-  :global(.board-slot.empty[data-animation-visibility-hidden="true"]) {
-    border-color: transparent !important;
-    background: transparent !important;
-  }
-
   :global(.board-slot[data-board-move-animation-hidden="true"]) {
-    transition: none !important;
-  }
-
-  :global(.board-slot[data-animation-visibility-hidden="true"]) {
     transition: none !important;
   }
 
@@ -865,29 +856,11 @@
     opacity: 0;
   }
 
-  :global(.board-slot[data-animation-visibility-hidden="true"] > .card-tile),
-  :global(.board-slot[data-animation-visibility-hidden="true"] > .pokemon-status),
-  :global(.board-slot[data-animation-visibility-hidden="true"] > .energy-badges),
-  :global(.board-slot[data-animation-visibility-hidden="true"] > .tool-card-preview),
-  :global(.board-slot[data-animation-visibility-hidden="true"] > .slot-badges),
-  :global(.board-slot[data-animation-visibility-hidden="true"] > .empty-zone) {
-    opacity: 0;
-  }
-
   :global(.stadium-card[data-board-move-animation-hidden="true"]) {
     opacity: 0;
   }
 
-  :global(.stadium-card[data-animation-visibility-hidden="true"]) {
-    opacity: 0;
-  }
-
   :global(.discard-pile .card-tile[data-board-move-animation-hidden="true"]) {
-    opacity: 0;
-  }
-
-  :global(.discard-pile [data-animation-visibility-hidden="true"] .card-tile),
-  :global(.discard-pile .card-tile[data-animation-visibility-hidden="true"]) {
     opacity: 0;
   }
 

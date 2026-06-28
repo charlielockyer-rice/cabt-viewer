@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import { animationAnchorForElement } from '../animations/animationAnchors';
+  import { replayAnimationVisibility, type AnimationVisibilityToken, type AnimationVisibilityRole } from '../animations/animationVisibility';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -36,6 +38,8 @@
 
   type ActiveAttachedMoveSprite = AttachedMoveSprite & {
     element: HTMLElement;
+    visibilityTokens: AnimationVisibilityToken[];
+    legacyHiddenElements: Array<{ element: HTMLElement; attribute: string }>;
   };
 
   type AttachedMoveSource = {
@@ -156,22 +160,23 @@
     for (const sprite of nextSprites) {
       const element = renderSprite(sprite);
       motionLayer?.appendChild(element);
-      activeSprites = [...activeSprites, { ...sprite, element }];
+      const activeSprite: ActiveAttachedMoveSprite = {
+        ...sprite,
+        element,
+        visibilityTokens: [],
+        legacyHiddenElements: [],
+      };
+      activeSprites = [...activeSprites, activeSprite];
       const startTimer = setTimeout(() => {
-        if (sprite.hiddenElement) {
-          sprite.hiddenElement.dataset.attachedMoveAnimationHidden = 'true';
+        if (activeSprite.hiddenElement) {
+          hideActiveElement(activeSprite, activeSprite.hiddenElement, 'source', 'attachedMoveAnimationHidden');
         }
-        if (sprite.destinationCardElement) {
-          sprite.destinationCardElement.dataset.attachedMoveDestinationCardHidden = 'true';
+        if (activeSprite.destinationCardElement) {
+          hideActiveElement(activeSprite, activeSprite.destinationCardElement, 'destination', 'attachedMoveDestinationCardHidden');
         }
       }, sprite.delayMs);
       const cleanupTimer = setTimeout(() => {
-        if (sprite.hiddenElement) {
-          delete sprite.hiddenElement.dataset.attachedMoveAnimationHidden;
-        }
-        if (sprite.destinationCardElement) {
-          delete sprite.destinationCardElement.dataset.attachedMoveDestinationCardHidden;
-        }
+        releaseActiveSprite(activeSprite);
         element.remove();
         activeSprites = activeSprites.filter((item) => item.element !== element);
       }, sprite.delayMs + actionAnimationTiming.handMoveMs + replayHandoffHoldMs());
@@ -347,15 +352,41 @@
     }
     timers.length = 0;
     for (const sprite of activeSprites) {
-      if (sprite.hiddenElement) {
-        delete sprite.hiddenElement.dataset.attachedMoveAnimationHidden;
-      }
-      if (sprite.destinationCardElement) {
-        delete sprite.destinationCardElement.dataset.attachedMoveDestinationCardHidden;
-      }
+      releaseActiveSprite(sprite);
       sprite.element.remove();
     }
     activeSprites = [];
+  }
+
+  function hideActiveElement(
+    sprite: ActiveAttachedMoveSprite,
+    element: HTMLElement,
+    role: AnimationVisibilityRole,
+    legacyAttribute: string,
+  ) {
+    const anchor = animationAnchorForElement(element);
+    if (anchor) {
+      sprite.visibilityTokens.push(replayAnimationVisibility.hide({
+        scopeKey: String(scopeKey),
+        anchor: anchor.anchor,
+        identity: anchor.identity,
+        role,
+      }));
+      return;
+    }
+    element.dataset[legacyAttribute] = 'true';
+    sprite.legacyHiddenElements.push({ element, attribute: legacyAttribute });
+  }
+
+  function releaseActiveSprite(sprite: ActiveAttachedMoveSprite) {
+    for (const token of sprite.visibilityTokens) {
+      replayAnimationVisibility.release(token);
+    }
+    sprite.visibilityTokens = [];
+    for (const hidden of sprite.legacyHiddenElements) {
+      delete hidden.element.dataset[hidden.attribute];
+    }
+    sprite.legacyHiddenElements = [];
   }
 
   function snapshotAttachedRects(): Map<number, RectSnapshot> {
@@ -439,6 +470,9 @@
         : '';
     if (!selector) {
       return undefined;
+    }
+    if (target.matches(selector)) {
+      return target;
     }
     const card = target.querySelector(selector);
     return card instanceof HTMLElement ? card : undefined;

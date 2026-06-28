@@ -3,6 +3,8 @@
   import CardTile from './CardTile.svelte';
   import DeckDiscardAnimation from './DeckDiscardAnimation.svelte';
   import DeckShuffleAnimation from './DeckShuffleAnimation.svelte';
+  import { animationAnchorForElement } from '../animations/animationAnchors';
+  import { replayAnimationVisibility, type AnimationVisibilityToken } from '../animations/animationVisibility';
   import { cardBackCssVar } from '../game/cardAssets';
   import type { CardView, PlayerView } from '../game/types';
   import type { ActionTimelineEvent } from '../game/types';
@@ -61,11 +63,16 @@
     moveX: number;
     moveY: number;
     scale: number;
+    targetToken?: AnimationVisibilityToken;
+    legacyTargetHide?: boolean;
   };
 
   onDestroy(() => {
     for (const timer of resolvingDiscardTimers) {
       clearTimeout(timer);
+    }
+    for (const animation of resolvingDiscardAnimations) {
+      releaseResolvingDiscardTarget(animation);
     }
   });
 
@@ -185,12 +192,39 @@
       moveX: targetBox.left + targetBox.width / 2 - snapshot.left - snapshot.width / 2,
       moveY: targetBox.top + targetBox.height / 2 - snapshot.top - snapshot.height / 2,
       scale: Math.max(0.45, Math.min(1.1, targetBox.width / snapshot.width)),
+      targetToken: resolvingDiscardTargetClaim(snapshot.playerIndex, snapshot.card),
     };
+    animation.legacyTargetHide = !animation.targetToken;
     resolvingDiscardAnimations = [...resolvingDiscardAnimations, animation];
     const timer = setTimeout(() => {
+      releaseResolvingDiscardTarget(animation);
       resolvingDiscardAnimations = resolvingDiscardAnimations.filter((item) => item.id !== animation.id);
     }, 420);
     resolvingDiscardTimers.push(timer);
+  }
+
+  function resolvingDiscardTargetClaim(playerIndex: number, card: CardView): AnimationVisibilityToken | undefined {
+    const target = discardCardElement(playerIndex, card);
+    if (!(target instanceof HTMLElement)) {
+      return undefined;
+    }
+    const anchor = animationAnchorForElement(target);
+    if (!anchor) {
+      return undefined;
+    }
+    return replayAnimationVisibility.hide({
+      scopeKey: String(animationScopeKey),
+      anchor: anchor.anchor,
+      identity: anchor.identity,
+      role: 'destination',
+    });
+  }
+
+  function releaseResolvingDiscardTarget(animation: ResolvingDiscardAnimation) {
+    if (animation.targetToken) {
+      replayAnimationVisibility.release(animation.targetToken);
+      animation.targetToken = undefined;
+    }
   }
 
   function discardCardElement(playerIndex: number, card: CardView): Element | null {
@@ -248,9 +282,9 @@
     ].join('; ');
   }
 
-  function isResolvingDiscardTarget(playerIndex: number, card: CardView): boolean {
+  function isLegacyResolvingDiscardTarget(playerIndex: number, card: CardView): boolean {
     return resolvingDiscardAnimations.some((animation) =>
-      animation.playerIndex === playerIndex && sameKnownCard(animation.card, card));
+      animation.legacyTargetHide && animation.playerIndex === playerIndex && sameKnownCard(animation.card, card));
   }
 
   function sameKnownCard(left: CardView, right: CardView): boolean {
@@ -341,7 +375,7 @@
                 <span
                   class:discard-card-under={entry.layer === 'under'}
                   class:discard-card-top={entry.layer === 'top'}
-                  class:resolving-discard-target={entry.layer === 'top' && isResolvingDiscardTarget(topPlayer.index, entry.card)}
+                  class:resolving-discard-target={entry.layer === 'top' && isLegacyResolvingDiscardTarget(topPlayer.index, entry.card)}
                   data-animation-anchor="discard-card"
                   data-animation-anchor-key={`player:${topPlayer.index}:discard-card${entry.card.serial !== undefined ? `:serial:${entry.card.serial}` : ''}`}
                   data-animation-player={topPlayer.index}
@@ -477,7 +511,7 @@
                 <span
                   class:discard-card-under={entry.layer === 'under'}
                   class:discard-card-top={entry.layer === 'top'}
-                  class:resolving-discard-target={entry.layer === 'top' && isResolvingDiscardTarget(bottomPlayer.index, entry.card)}
+                  class:resolving-discard-target={entry.layer === 'top' && isLegacyResolvingDiscardTarget(bottomPlayer.index, entry.card)}
                   data-animation-anchor="discard-card"
                   data-animation-anchor-key={`player:${bottomPlayer.index}:discard-card${entry.card.serial !== undefined ? `:serial:${entry.card.serial}` : ''}`}
                   data-animation-player={bottomPlayer.index}

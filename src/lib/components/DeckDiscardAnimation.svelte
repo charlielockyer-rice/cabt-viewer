@@ -1,6 +1,8 @@
 <script lang="ts">
   import { cardBackCssVar, cardFaceImageUrl } from '../game/cardAssets';
   import { onDestroy, onMount } from 'svelte';
+  import { animationAnchorForElement } from '../animations/animationAnchors';
+  import { replayAnimationVisibility, type AnimationVisibilityToken } from '../animations/animationVisibility';
   import { actionAnimationBatchEvents, actionAnimationStartMs } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -32,6 +34,7 @@
   type DiscardAnimation = {
     id: number;
     sprites: DiscardSprite[];
+    destinationTokens: AnimationVisibilityToken[];
   };
 
   let {
@@ -69,6 +72,9 @@
   onDestroy(() => {
     for (const timer of timers) {
       clearTimeout(timer);
+    }
+    for (const discard of discards) {
+      releaseDestinationTokens(discard);
     }
   });
 
@@ -153,13 +159,52 @@
     const animation: DiscardAnimation = {
       id: nextAnimationId++,
       sprites,
+      destinationTokens: discardEvents.flatMap((event) => destinationTokenForEvent(event)),
     };
 
     discards = [...discards, animation];
     const timer = setTimeout(() => {
+      releaseDestinationTokens(animation);
       discards = discards.filter((item) => item.id !== animation.id);
     }, Math.max(...sprites.map((sprite) => sprite.delayMs)) + cardMoveDurationMs + 120);
     timers.push(timer);
+  }
+
+  function destinationTokenForEvent(event: ActionTimelineEvent): AnimationVisibilityToken[] {
+    const params = event.params as Record<string, unknown> | undefined;
+    const target = discardDestinationElement(Number(params?.serial), Number(params?.cardId));
+    if (!target) {
+      return [];
+    }
+    const anchor = animationAnchorForElement(target);
+    if (!anchor) {
+      return [];
+    }
+    return [replayAnimationVisibility.hide({
+      scopeKey: String(scopeKey),
+      anchor: anchor.anchor,
+      identity: anchor.identity,
+      role: 'destination',
+    })];
+  }
+
+  function discardDestinationElement(serial: number, cardId: number): HTMLElement | null {
+    if (!discardElement) {
+      return null;
+    }
+    const target = Number.isFinite(serial)
+      ? discardElement.querySelector(`[data-card-serial="${serial}"]`)
+      : Number.isFinite(cardId)
+        ? discardElement.querySelector(`[data-card-id="${cardId}"]`)
+        : null;
+    return target instanceof HTMLElement ? target : null;
+  }
+
+  function releaseDestinationTokens(animation: DiscardAnimation) {
+    for (const token of animation.destinationTokens) {
+      replayAnimationVisibility.release(token);
+    }
+    animation.destinationTokens = [];
   }
 
   function spriteStyle(sprite: DiscardSprite) {
