@@ -6,6 +6,7 @@ import type { ActionTimelineEvent } from '../game/types';
 type CardRow = {
   id: number;
   name: string;
+  skills?: Array<{ name: string; text?: string }>;
 };
 
 type AttackRow = {
@@ -73,6 +74,8 @@ export function formatCabtLog(log: Record<string, unknown>): string {
       return `${actor} devolved ${card}.`;
     case 'Attack':
       return `${actor} used ${attackName(Number(log.attackId))} with ${card}.`;
+    case 'Ability':
+      return `${actor} used ${abilityName(log)} with ${card}.`;
     case 'MoveCard':
       return moveCardMessage(actor, card, log);
     case 'MoveCardReverse':
@@ -182,6 +185,16 @@ function attackName(id: number): string {
     return displayName(attack.name);
   }
   return Number.isFinite(id) ? `attack ${id}` : 'an attack';
+}
+
+function abilityName(log: Record<string, unknown>): string {
+  const explicit = typeof log.abilityName === 'string' ? log.abilityName.trim() : '';
+  if (explicit) {
+    return displayName(explicit);
+  }
+  const card = cardDatabase.get(Number(log.cardId));
+  const skillName = card?.skills?.find((skill) => skill.name.trim())?.name.trim();
+  return skillName ? displayName(skillName) : 'an Ability';
 }
 
 function displayName(name: string): string {

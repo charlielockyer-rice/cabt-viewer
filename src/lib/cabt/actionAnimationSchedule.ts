@@ -18,6 +18,7 @@ export const actionAnimationTiming = {
   prizeTakeStepMs: 45,
   evolveMs: 680,
   attackAnnounceMs: 520,
+  abilityAnnounceMs: 560,
   damageMs: 320,
   damageVisualMs: 560,
   knockOutMs: 620,
@@ -100,6 +101,14 @@ function animationPhaseForEvent(event: ActionTimelineEvent): AnimationPhase | nu
     };
   }
 
+  if (event.kind === 'Ability') {
+    return {
+      key: `Ability:${playerKey}`,
+      durationMs: actionAnimationTiming.abilityAnnounceMs,
+      stepMs: actionAnimationTiming.abilityAnnounceMs,
+    };
+  }
+
   if (event.kind === 'Switch') {
     return {
       key: `BoardMove:${playerKey}`,
@@ -122,6 +131,13 @@ function animationPhaseForEvent(event: ActionTimelineEvent): AnimationPhase | nu
         key: `BoardMove:${playerKey}`,
         durationMs: actionAnimationTiming.boardMoveMs,
         stepMs: 0,
+      };
+    }
+    if (isBoardToDeckMove(fromArea, toArea)) {
+      return {
+        key: `BoardToDeck:${playerKey}`,
+        durationMs: actionAnimationTiming.boardMoveMs,
+        stepMs: actionAnimationTiming.handMoveStepMs,
       };
     }
     if (isKnockOutMove(fromArea, toArea)) {
@@ -241,6 +257,11 @@ function isKnockOutMove(fromArea: number, toArea: number): boolean {
 function isBoardPositionMove(fromArea: number, toArea: number): boolean {
   return (fromArea === CabtAreaType.ACTIVE && toArea === CabtAreaType.BENCH)
     || (fromArea === CabtAreaType.BENCH && toArea === CabtAreaType.ACTIVE);
+}
+
+function isBoardToDeckMove(fromArea: number, toArea: number): boolean {
+  return toArea === CabtAreaType.DECK
+    && (fromArea === CabtAreaType.ACTIVE || fromArea === CabtAreaType.BENCH);
 }
 
 function isAttachedCardArea(area: number): boolean {

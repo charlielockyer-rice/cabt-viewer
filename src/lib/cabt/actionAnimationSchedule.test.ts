@@ -74,6 +74,30 @@ describe('actionAnimationStartMs', () => {
     expect(actionAnimationStartMs(events, events[1])).toBe(actionAnimationTiming.evolveMs);
   });
 
+  it('announces abilities before their follow-up effects', () => {
+    const events: ActionTimelineEvent[] = [
+      event(1, 'Ability', { cardId: 66, serial: 14, abilityName: 'Run Away Draw' }),
+      event(2, 'Draw', { cardId: 3, serial: 12 }),
+      event(3, 'Shuffle', {}),
+    ];
+
+    expect(actionAnimationStartMs(events, events[0])).toBe(0);
+    expect(actionAnimationStartMs(events, events[1])).toBe(actionAnimationTiming.abilityAnnounceMs);
+    expect(actionAnimationStartMs(events, events[2])).toBe(
+      actionAnimationTiming.abilityAnnounceMs + actionAnimationTiming.deckDrawMs,
+    );
+  });
+
+  it('sequences board Pokemon returning to deck before follow-up effects', () => {
+    const events: ActionTimelineEvent[] = [
+      event(1, 'MoveCard', { cardId: 66, serial: 14, fromArea: CabtAreaType.ACTIVE, toArea: CabtAreaType.DECK }),
+      event(2, 'Shuffle', {}),
+    ];
+
+    expect(actionAnimationStartMs(events, events[0])).toBe(0);
+    expect(actionAnimationStartMs(events, events[1])).toBe(actionAnimationTiming.boardMoveMs);
+  });
+
   it('animates board position moves without staggering paired moves', () => {
     const events: ActionTimelineEvent[] = [
       event(1, 'MoveCard', { cardId: 722, serial: 10, fromArea: CabtAreaType.BENCH, toArea: CabtAreaType.ACTIVE }),

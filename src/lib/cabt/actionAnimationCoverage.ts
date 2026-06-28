@@ -30,9 +30,14 @@ const polishedMoveAreas = new Set([
   moveKey(CabtAreaType.TOOL, CabtAreaType.DISCARD),
   moveKey(CabtAreaType.TOOL, CabtAreaType.HAND),
   moveKey(CabtAreaType.TOOL, CabtAreaType.DECK),
+  moveKey(CabtAreaType.PRE_EVOLUTION, CabtAreaType.DISCARD),
+  moveKey(CabtAreaType.PRE_EVOLUTION, CabtAreaType.HAND),
+  moveKey(CabtAreaType.PRE_EVOLUTION, CabtAreaType.DECK),
   moveKey(CabtAreaType.STADIUM, CabtAreaType.DISCARD),
   moveKey(CabtAreaType.ACTIVE, CabtAreaType.BENCH),
   moveKey(CabtAreaType.BENCH, CabtAreaType.ACTIVE),
+  moveKey(CabtAreaType.ACTIVE, CabtAreaType.DECK),
+  moveKey(CabtAreaType.BENCH, CabtAreaType.DECK),
   moveKey(CabtAreaType.ACTIVE, CabtAreaType.DISCARD),
   moveKey(CabtAreaType.BENCH, CabtAreaType.DISCARD),
 ]);
@@ -100,7 +105,7 @@ export function classifyAnimationCoverage(
       return { key, level: 'polished', label: 'Deck Pokemon placement to board', notes };
     }
 
-    if ((fromArea === CabtAreaType.ENERGY || fromArea === CabtAreaType.TOOL) && isAttachedMoveDestination(toArea)) {
+    if (isAttachedCardArea(fromArea) && isAttachedMoveDestination(toArea)) {
       if (!hasFiniteNumber(params?.serial)) {
         notes.push('Attached-card moves need serials to find the visible source badge or tool preview.');
         return { key, level: 'conditional', label: 'Attached card move', notes };
@@ -114,6 +119,10 @@ export function classifyAnimationCoverage(
         return { key, level: 'conditional', label: 'Board Pokemon to discard / knockout', notes };
       }
       return { key, level: 'polished', label: 'Attack knockout to discard', notes };
+    }
+
+    if (toArea === CabtAreaType.DECK && (fromArea === CabtAreaType.ACTIVE || fromArea === CabtAreaType.BENCH)) {
+      return { key, level: 'polished', label: 'Board Pokemon return to deck', notes };
     }
 
     if (fromArea === CabtAreaType.HAND && !hasFiniteNumber(params?.serial)) {
@@ -159,6 +168,14 @@ export function classifyAnimationCoverage(
       return { key: kind, level: 'conditional', label: 'Attack announcement', notes };
     }
     return { key: kind, level: 'polished', label: 'Attack announcement and lunge', notes };
+  }
+
+  if (kind === 'Ability') {
+    if (!hasFiniteNumber(params?.serial) && !hasFiniteNumber(params?.cardId)) {
+      notes.push('Ability announcement needs source identity to find the board slot.');
+      return { key: kind, level: 'conditional', label: 'Ability announcement', notes };
+    }
+    return { key: kind, level: 'polished', label: 'Ability announcement', notes };
   }
 
   if (kind === 'Switch') {
@@ -260,6 +277,7 @@ function moveLabel(fromArea: number, toArea: number): string {
   if (fromArea === CabtAreaType.HAND && toArea === CabtAreaType.DECK) return 'Hand reset to deck';
   if (fromArea === CabtAreaType.ACTIVE && toArea === CabtAreaType.BENCH) return 'Active to bench board move';
   if (fromArea === CabtAreaType.BENCH && toArea === CabtAreaType.ACTIVE) return 'Bench to active board move';
+  if (toArea === CabtAreaType.DECK && (fromArea === CabtAreaType.ACTIVE || fromArea === CabtAreaType.BENCH)) return 'Board Pokemon return to deck';
   if (fromArea === CabtAreaType.HAND) return 'Hand card move';
   return 'Animated zone move';
 }
@@ -276,4 +294,10 @@ function isAttachedMoveDestination(area: number): boolean {
   return area === CabtAreaType.DISCARD
     || area === CabtAreaType.HAND
     || area === CabtAreaType.DECK;
+}
+
+function isAttachedCardArea(area: number): boolean {
+  return area === CabtAreaType.ENERGY
+    || area === CabtAreaType.TOOL
+    || area === CabtAreaType.PRE_EVOLUTION;
 }

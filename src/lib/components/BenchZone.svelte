@@ -64,10 +64,7 @@
   }
 
   function benchSlotKey(slot: PokemonSlotView) {
-    const rootPokemon = slot.cards.at(-1) ?? slot.pokemon;
-    return rootPokemon?.serial !== undefined
-      ? `pokemon:${rootPokemon.serial}`
-      : `slot:${slot.ownerIndex}:${slot.slot}:${slot.index}`;
+    return `slot:${slot.ownerIndex}:${slot.slot}:${slot.index}`;
   }
 </script>
 

@@ -3,6 +3,7 @@
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
+  import { cardBackCssVar } from '../game/cardAssets';
   import { replayAnimationPhaseGapMs } from '../game/replay';
   import type { ActionTimelineEvent } from '../game/types';
 
@@ -28,6 +29,8 @@
     destinationCardId: number;
     destinationSerial?: number;
     waitForDestinationCard: boolean;
+    toDeck: boolean;
+    fromDeck: boolean;
     opponentSide: boolean;
     delayMs: number;
     measuring: boolean;
@@ -40,11 +43,14 @@
     cardId: number;
     serial?: number;
     waitForDestinationCard: boolean;
+    toDeck: boolean;
+    fromDeck: boolean;
     key: string;
   };
 
   const boardMoveHandoffPollMs = 16;
   const boardMoveHandoffMaxWaitMs = 300;
+  const replayHandoffSettleMs = 40;
 
   let {
     events = [],
@@ -122,7 +128,7 @@
       const delayMs = actionAnimationStartMs(animationEvents, instruction.event);
       const sprite: BoardMoveSprite = {
         id: `${instruction.event.id}-${instruction.key}`,
-        html: spriteHtml(sourceElement, targetElement),
+        html: spriteHtml(sourceElement, targetElement, instruction.fromDeck),
         fallbackName: cabtCardToView(instruction.cardId).name,
         left: targetRect.left,
         top: targetRect.top,
@@ -136,6 +142,8 @@
         destinationCardId: instruction.cardId,
         destinationSerial: instruction.serial,
         waitForDestinationCard: instruction.waitForDestinationCard,
+        toDeck: instruction.toDeck,
+        fromDeck: instruction.fromDeck,
         opponentSide: isOpponentSide(sourceElement) || isOpponentSide(targetElement),
         delayMs,
         measuring: true,
@@ -162,15 +170,34 @@
           : item);
         const finishTimer = setTimeout(() => {
           handOffWhenDestinationReady(sourceElement, targetElement, sprite, Date.now());
-        }, actionAnimationTiming.boardMoveMs + replayHandoffHoldMs());
+        }, boardMoveHandoffDelayMs(animationEvents, instruction, delayMs));
         timers.push(finishTimer);
       }, delayMs);
       timers.push(startTimer);
     }
   }
 
+  function boardMoveHandoffDelayMs(
+    animationEvents: ActionTimelineEvent[],
+    instruction: BoardMoveInstruction,
+    delayMs: number,
+  ) {
+    if (!instruction.fromDeck) {
+      return actionAnimationTiming.boardMoveMs + replayHandoffHoldMs();
+    }
+    const latestDeckPlacementStartMs = Math.max(
+      0,
+      ...animationEvents
+        .filter(isDeckBoardPlacementEvent)
+        .map((event) => actionAnimationStartMs(animationEvents, event)),
+    );
+    return actionAnimationTiming.boardMoveMs
+      + Math.max(0, latestDeckPlacementStartMs - delayMs)
+      + replayHandoffHoldMs();
+  }
+
   function replayHandoffHoldMs() {
-    return replayMode ? replayAnimationPhaseGapMs : 0;
+    return replayMode ? replayAnimationPhaseGapMs + replayHandoffSettleMs : 0;
   }
 
   function isBoardMoveEvent(event: ActionTimelineEvent) {
@@ -183,9 +210,20 @@
         && (
           (fromArea === CabtAreaType.BENCH && toArea === CabtAreaType.ACTIVE)
           || (fromArea === CabtAreaType.ACTIVE && toArea === CabtAreaType.BENCH)
+          || (fromArea === CabtAreaType.DECK && (toArea === CabtAreaType.ACTIVE || toArea === CabtAreaType.BENCH))
+          || ((fromArea === CabtAreaType.ACTIVE || fromArea === CabtAreaType.BENCH) && toArea === CabtAreaType.DECK)
           || (fromArea === CabtAreaType.STADIUM && toArea === CabtAreaType.DISCARD)
         )
       );
+  }
+
+  function isDeckBoardPlacementEvent(event: ActionTimelineEvent) {
+    const params = event.params as Record<string, unknown> | undefined;
+    const fromArea = Number(params?.fromArea);
+    const toArea = Number(params?.toArea);
+    return event.kind === 'MoveCard'
+      && fromArea === CabtAreaType.DECK
+      && (toArea === CabtAreaType.ACTIVE || toArea === CabtAreaType.BENCH);
   }
 
   function moveInstructionsForEvent(event: ActionTimelineEvent, moveEvents: ActionTimelineEvent[]): BoardMoveInstruction[] {
@@ -207,6 +245,8 @@
       cardId,
       serial: Number.isFinite(Number(params?.serial)) ? Number(params?.serial) : undefined,
       waitForDestinationCard: Number(params?.toArea) === CabtAreaType.DISCARD,
+      toDeck: Number(params?.toArea) === CabtAreaType.DECK,
+      fromDeck: Number(params?.fromArea) === CabtAreaType.DECK,
       key: `${params?.serial ?? cardId}`,
     }];
   }
@@ -228,6 +268,8 @@
         cardId: activeCardId,
         serial: Number.isFinite(Number(params?.serialActive)) ? Number(params?.serialActive) : undefined,
         waitForDestinationCard: false,
+        toDeck: false,
+        fromDeck: false,
         key: `active-${params?.serialActive ?? activeCardId}`,
       },
       {
@@ -237,6 +279,8 @@
         cardId: benchCardId,
         serial: Number.isFinite(Number(params?.serialBench)) ? Number(params?.serialBench) : undefined,
         waitForDestinationCard: false,
+        toDeck: false,
+        fromDeck: false,
         key: `bench-${params?.serialBench ?? benchCardId}`,
       },
     ];
@@ -247,6 +291,9 @@
     if (Number(params?.fromArea) === CabtAreaType.STADIUM && event.playerIndex !== undefined) {
       const stadium = document.querySelector(`[data-card-anchor="player:${event.playerIndex}:stadium"][data-card-serial="${Number(params?.serial)}"]`);
       return stadium instanceof HTMLElement ? stadium : null;
+    }
+    if (Number(params?.fromArea) === CabtAreaType.DECK && event.playerIndex !== undefined) {
+      return deckTopElement(event.playerIndex);
     }
     const cardId = Number(params?.cardId);
     return pokemonElementForIdentity(Number(params?.serial), cardId, event.playerIndex);
@@ -260,9 +307,17 @@
     }
     const toArea = Number(params?.toArea);
     if (toArea === CabtAreaType.ACTIVE) {
+      const destination = pokemonElementForIdentity(Number(params?.serial), Number(params?.cardId), playerIndex);
+      if (destination) {
+        return destination;
+      }
       return boardAnchor(playerIndex, 'active', 0);
     }
     if (toArea === CabtAreaType.BENCH) {
+      const destination = pokemonElementForIdentity(Number(params?.serial), Number(params?.cardId), playerIndex);
+      if (destination) {
+        return destination;
+      }
       const benchIndex = Number(params?.toIndex ?? params?.index ?? params?.benchIndex);
       if (Number.isInteger(benchIndex)) {
         return boardAnchor(playerIndex, 'bench', benchIndex);
@@ -272,6 +327,9 @@
     if (toArea === CabtAreaType.DISCARD && Number(params?.fromArea) === CabtAreaType.STADIUM) {
       const discard = document.querySelector(`[data-card-anchor="player:${playerIndex}:discard"]`);
       return discard instanceof HTMLElement ? discard : null;
+    }
+    if (toArea === CabtAreaType.DECK) {
+      return deckTopElement(playerIndex);
     }
     return null;
   }
@@ -296,6 +354,12 @@
   function boardAnchor(playerIndex: number, slot: 'active' | 'bench', index: number): HTMLElement | null {
     const element = document.querySelector(`[data-card-anchor="player:${playerIndex}:${slot}:${index}"]`);
     return element instanceof HTMLElement ? element : null;
+  }
+
+  function deckTopElement(playerIndex: number): HTMLElement | null {
+    const anchor = document.querySelector(`[data-card-anchor="player:${playerIndex}:deck"]`);
+    const pile = anchor?.closest('.deck-pile') as HTMLElement | null;
+    return pile?.querySelector('.deck-card-face') ?? pile;
   }
 
   function pokemonElementForIdentity(serial: number, cardId: number, playerIndex: number | undefined): HTMLElement | null {
@@ -365,18 +429,19 @@
     };
   }
 
-  function spriteHtml(source: HTMLElement, target: HTMLElement) {
-    const clone = source.cloneNode(true);
+  function spriteHtml(source: HTMLElement, target: HTMLElement, fromDeck = false) {
+    const cloneSource = fromDeck ? target : source;
+    const clone = cloneSource.cloneNode(true);
     if (!(clone instanceof HTMLElement)) {
-      return source.outerHTML;
+      return cloneSource.outerHTML;
     }
 
-    if (source.classList.contains('stadium-card')) {
-      const cardTile = source.querySelector('.card-tile');
-      return cardTile instanceof HTMLElement ? cardTile.outerHTML : source.outerHTML;
+    if (cloneSource.classList.contains('stadium-card')) {
+      const cardTile = cloneSource.querySelector('.card-tile');
+      return cardTile instanceof HTMLElement ? cardTile.outerHTML : cloneSource.outerHTML;
     }
 
-    clone.className = target.className;
+    clone.className = target.classList.contains('board-slot') ? target.className : source.className;
     clone.classList.remove('empty');
     clone.classList.add('board-slot');
     clone.removeAttribute('id');
@@ -389,6 +454,7 @@
     clone.removeAttribute('data-pokemon-serial');
     clone.removeAttribute('title');
     clone.removeAttribute('data-board-move-animation-hidden');
+    clone.removeAttribute('data-reveal-animation-hidden');
     return clone.outerHTML;
   }
 
@@ -400,6 +466,8 @@
   ) {
     const destinationReady = sprite.waitForDestinationCard
       ? destinationContainsCard(target, sprite)
+      : sprite.toDeck
+        ? true
       : !!target.querySelector('.card-tile');
     const timedOut = Date.now() - startTime >= boardMoveHandoffMaxWaitMs;
     const detached = !document.body.contains(source) || !document.body.contains(target);
@@ -440,12 +508,13 @@
 
 </script>
 
-<span class="board-move-animation-layer" bind:this={motionLayer} aria-hidden="true">
+<span class="board-move-animation-layer" style={cardBackCssVar()} bind:this={motionLayer} aria-hidden="true">
   {#each sprites as sprite (sprite.id)}
     <span
       class="board-move-card"
       class:opponent-side={sprite.opponentSide}
       class:measuring={sprite.measuring}
+      class:to-deck={sprite.toDeck}
       data-board-move-id={sprite.id}
       style={spriteStyle(sprite)}
     >
@@ -487,9 +556,39 @@
   }
 
   .board-move-card-inner {
+    position: relative;
     display: block;
     width: 100%;
     height: 100%;
+    transform-style: preserve-3d;
+  }
+
+  .board-move-card.to-deck .board-move-card-inner {
+    animation: board-card-flip-to-back 520ms ease-in-out both;
+  }
+
+  .board-move-card.to-deck .board-move-card-inner::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 5px;
+    background:
+      var(--card-back-image),
+      radial-gradient(circle at 50% 45%, rgba(255, 255, 255, 0.9) 0 14%, rgba(255, 255, 255, 0) 15%),
+      linear-gradient(145deg, #2563eb 0%, #1d4ed8 46%, #f59e0b 47%, #f59e0b 53%, #1d4ed8 54%, #1e3a8a 100%);
+    background-size: cover;
+    background-position: center;
+    box-shadow: 0 3px 8px rgba(23, 30, 38, 0.28);
+    backface-visibility: hidden;
+    transform: rotateY(180deg) rotate(var(--board-move-back-rotation, 0deg));
+  }
+
+  .board-move-card.to-deck.opponent-side {
+    --board-move-back-rotation: 180deg;
+  }
+
+  .board-move-card.to-deck .board-move-card-inner > :global(*) {
+    backface-visibility: hidden;
   }
 
   .board-move-card :global(.card-tile) {
@@ -584,6 +683,16 @@
       transform:
         translate3d(var(--board-move-correction-x), var(--board-move-correction-y), 0)
         scale(1);
+    }
+  }
+
+  @keyframes board-card-flip-to-back {
+    0%,
+    36% {
+      transform: rotateY(0deg);
+    }
+    100% {
+      transform: rotateY(180deg);
     }
   }
 

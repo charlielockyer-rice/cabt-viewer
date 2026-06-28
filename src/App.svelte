@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import ActiveFocus from './lib/components/ActiveFocus.svelte';
+  import AbilityAnimation from './lib/components/AbilityAnimation.svelte';
   import AppHeader from './lib/components/AppHeader.svelte';
   import AttachedCardMoveAnimation from './lib/components/AttachedCardMoveAnimation.svelte';
   import AttackAnimation from './lib/components/AttackAnimation.svelte';
@@ -277,7 +278,8 @@
     if (!step || replayStore.animationPhaseIndex < phases.length) {
       return [];
     }
-    if (!phases.some((phase) => phase.key.startsWith('Evolve:'))) {
+    const evolvePhaseIndex = phases.findIndex((phase) => phase.key.startsWith('Evolve:'));
+    if (evolvePhaseIndex === -1 || phases.length > evolvePhaseIndex + 1) {
       return [];
     }
     return step.actionTimeline?.filter((event) => event.kind === 'Evolve') ?? [];
@@ -1418,6 +1420,12 @@
         />
 
         <AttachedCardMoveAnimation
+          events={game.actionTimeline ?? []}
+          scopeKey={animationScopeKey}
+          {replayMode}
+        />
+
+        <AbilityAnimation
           events={game.actionTimeline ?? []}
           scopeKey={animationScopeKey}
           {replayMode}

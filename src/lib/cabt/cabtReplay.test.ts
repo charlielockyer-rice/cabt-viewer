@@ -150,6 +150,93 @@ describe('cabtReplayToSnapshot', () => {
     expect(snapshot.views[0].players[1].stadium.map((card) => card.serial)).toEqual([62]);
   });
 
+  it('synthesizes selected ability usage before its logged effects', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        select: {
+          type: 'Main',
+          option: [
+            { type: 'Ability', area: CabtAreaType.ACTIVE, index: 0 },
+            { type: 'End' },
+          ],
+        },
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 66, serial: 14, hp: 140, maxHp: 140 }],
+            bench: [],
+            benchMax: 5,
+            hand: [],
+            deckCount: 40,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 60,
+            prize: [],
+          }],
+        },
+      }, {
+        action: [[0], []],
+        logs: [
+          { type: 'Draw', playerIndex: 0, cardId: 3, serial: 101 },
+          { type: 'Draw', playerIndex: 0, cardId: 4, serial: 102 },
+          { type: 'MoveCard', playerIndex: 0, cardId: 66, serial: 14, fromArea: CabtAreaType.ACTIVE, toArea: CabtAreaType.DECK },
+          { type: 'Shuffle', playerIndex: 0 },
+        ],
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [],
+            benchMax: 5,
+            hand: [
+              { id: 3, serial: 101 },
+              { id: 4, serial: 102 },
+            ],
+            deckCount: 39,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 60,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    const step = snapshot.steps[1];
+    expect(snapshot.views[0].players[0].active.cards[0].powers?.[0].name).toBe('Run Away Draw');
+    expect(step.label).toBe('Player 1 used Run Away Draw with Dudunsparce.');
+    expect(step.actionTimeline?.map((event) => event.kind)).toEqual(['Ability', 'Draw', 'Draw', 'MoveCard', 'Shuffle']);
+    expect(step.actionTimeline?.[0].params).toMatchObject({
+      type: 'Ability',
+      playerIndex: 0,
+      cardId: 66,
+      serial: 14,
+      abilityName: 'Run Away Draw',
+      area: CabtAreaType.ACTIVE,
+      index: 0,
+    });
+    expect(step.animationPhases?.map((phase) => phase.key)).toEqual(['Ability:0', 'Draw:0', 'BoardToDeck:0', 'Shuffle:0']);
+    expect(step.animationPhases?.[0].view.players[0].active.pokemon?.serial).toBe(14);
+    expect(step.animationPhases?.[2].view.players[0].active.pokemon?.serial).toBe(14);
+    expect(step.animationPhases?.[2].view.players[0].deckCount).toBe(38);
+    expect(snapshot.views[step.stateIndex].players[0].active.empty).toBe(true);
+    expect(snapshot.views[step.stateIndex].players[0].deckCount).toBe(39);
+  });
+
   it('keeps played Stadium cards in the stadium zone instead of the resolving discard path', () => {
     const snapshot = cabtReplayToSnapshot({
       visualize: [{
@@ -827,6 +914,139 @@ describe('cabtReplayToSnapshot', () => {
     expect(step.displayView?.players[0].playZone).toHaveLength(0);
     expect(step.displayView?.players[0].discard.map((card) => card.serial)).toEqual([32]);
     expect(snapshot.views[step.stateIndex].players[0].active.pokemon?.serial).toBe(13);
+  });
+
+  it('coalesces evolution-triggered abilities with the evolution action', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 741, serial: 20, hp: 50, maxHp: 50 }],
+            bench: [],
+            benchMax: 5,
+            hand: [
+              { id: 1079, serial: 32 },
+              { id: 743, serial: 28 },
+            ],
+            deckCount: 46,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 53,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'Play', playerIndex: 0, cardId: 1079, serial: 32 },
+        ],
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 741, serial: 20, hp: 50, maxHp: 50 }],
+            bench: [],
+            benchMax: 5,
+            hand: [
+              { id: 743, serial: 28 },
+            ],
+            deckCount: 46,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 53,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'Evolve', playerIndex: 0, cardId: 743, serial: 28, cardIdTarget: 741, serialTarget: 20 },
+        ],
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 743, serial: 28, hp: 140, maxHp: 140, preEvolution: [{ id: 741, serial: 20 }] }],
+            bench: [],
+            benchMax: 5,
+            hand: [],
+            deckCount: 46,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 53,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'Draw', playerIndex: 0, cardId: 66, serial: 12 },
+          { type: 'Draw', playerIndex: 0, cardId: 743, serial: 27 },
+          { type: 'Draw', playerIndex: 0, cardId: 1225, serial: 54 },
+        ],
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 743, serial: 28, hp: 140, maxHp: 140, preEvolution: [{ id: 741, serial: 20 }] }],
+            bench: [],
+            benchMax: 5,
+            hand: [
+              { id: 66, serial: 12 },
+              { id: 743, serial: 27 },
+              { id: 1225, serial: 54 },
+            ],
+            deckCount: 43,
+            discard: [{ id: 1079, serial: 32 }],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 53,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    const step = snapshot.steps[1];
+    expect(step.stateIndex).toBe(3);
+    expect(step.actionTimeline?.map((event) => event.kind)).toEqual(['Play', 'Evolve', 'Ability', 'Draw', 'Draw', 'Draw']);
+    expect(step.actionTimeline?.[2].message).toBe('Player 1 used Psychic Draw with Alakazam.');
+    expect(step.actionTimeline?.[2].params).toMatchObject({
+      type: 'Ability',
+      playerIndex: 0,
+      cardId: 743,
+      serial: 28,
+      abilityName: 'Psychic Draw',
+      trigger: 'Evolve',
+      area: CabtAreaType.ACTIVE,
+      index: 0,
+    });
+    expect(step.animationPhases?.map((phase) => phase.key)).toEqual(['Play:0', 'Evolve:0', 'Ability:0', 'Draw:0']);
+    expect(step.animationPhases?.[2].view.players[0].active.pokemon?.serial).toBe(28);
+    expect(step.animationPhases?.[2].view.players[0].hand).toHaveLength(0);
+    expect(step.displayView?.players[0].hand.map((card) => card.serial)).toEqual([12, 27, 54]);
   });
 
   it('coalesces a played trainer with an attached-card discard animation', () => {
@@ -1753,8 +1973,10 @@ describe('cabtReplayToSnapshot', () => {
       'Shuffle',
     ]);
     expect(step.animationPhases?.[0].view.players[0].bench[0].pokemon?.serial).toBe(6);
+    expect(step.animationPhases?.[0].view.players[0].bench[0].pokemon?.animationHidden).toBe(true);
     expect(step.animationPhases?.[0].view.players[0].deckCount).toBe(49);
     expect(step.animationPhases?.[1].view.players[0].bench[0].pokemon?.serial).toBe(6);
+    expect(step.animationPhases?.[1].view.players[0].bench[0].pokemon?.animationHidden).toBeUndefined();
   });
 
   it('coalesces Waitress-style reveal, attach, return, and shuffle into one replay step', () => {
@@ -1922,6 +2144,178 @@ describe('cabtReplayToSnapshot', () => {
       'Player 1 returned 2 revealed cards to their deck.',
       'Player 1 shuffled their deck.',
     ]);
+  });
+
+  it('coalesces reveal selection, return, take, and shuffle into one replay step', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 2,
+          yourIndex: 1,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 46,
+            prize: [],
+          }, {
+            active: [{ id: 304, serial: 79 }],
+            bench: [],
+            benchMax: 5,
+            hand: [{ id: 1122, serial: 99 }],
+            deckCount: 46,
+            discard: [],
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'Play', playerIndex: 1, cardId: 1122, serial: 99 },
+          { type: 'MoveCard', playerIndex: 1, cardId: 19, serial: 71, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.LOOKING },
+          { type: 'MoveCard', playerIndex: 1, cardId: 1152, serial: 102, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.LOOKING },
+          { type: 'MoveCard', playerIndex: 1, cardId: 1086, serial: 90, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.LOOKING },
+          { type: 'MoveCard', playerIndex: 1, cardId: 66, serial: 76, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.LOOKING },
+          { type: 'MoveCard', playerIndex: 1, cardId: 1227, serial: 117, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.LOOKING },
+          { type: 'MoveCard', playerIndex: 1, cardId: 1255, serial: 121, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.LOOKING },
+          { type: 'MoveCard', playerIndex: 1, cardId: 878, serial: 82, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.LOOKING },
+        ],
+        select: {
+          type: 'Card',
+          context: CabtAreaType.LOOKING,
+        },
+        current: {
+          turn: 2,
+          yourIndex: 1,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 46,
+            prize: [],
+          }, {
+            active: [{ id: 304, serial: 79 }],
+            bench: [],
+            benchMax: 5,
+            hand: [],
+            deckCount: 39,
+            discard: [],
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'MoveCard', playerIndex: 1, cardId: 1227, serial: 117, fromArea: CabtAreaType.LOOKING, toArea: CabtAreaType.HAND },
+        ],
+        current: {
+          turn: 2,
+          yourIndex: 1,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 46,
+            prize: [],
+          }, {
+            active: [{ id: 304, serial: 79 }],
+            bench: [],
+            benchMax: 5,
+            hand: [{ id: 1227, serial: 117 }],
+            deckCount: 39,
+            discard: [],
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'MoveCard', playerIndex: 1, cardId: 19, serial: 71, fromArea: CabtAreaType.LOOKING, toArea: CabtAreaType.DECK },
+          { type: 'MoveCard', playerIndex: 1, cardId: 1152, serial: 102, fromArea: CabtAreaType.LOOKING, toArea: CabtAreaType.DECK },
+          { type: 'MoveCard', playerIndex: 1, cardId: 1086, serial: 90, fromArea: CabtAreaType.LOOKING, toArea: CabtAreaType.DECK },
+          { type: 'MoveCard', playerIndex: 1, cardId: 66, serial: 76, fromArea: CabtAreaType.LOOKING, toArea: CabtAreaType.DECK },
+          { type: 'MoveCard', playerIndex: 1, cardId: 1255, serial: 121, fromArea: CabtAreaType.LOOKING, toArea: CabtAreaType.DECK },
+          { type: 'MoveCard', playerIndex: 1, cardId: 878, serial: 82, fromArea: CabtAreaType.LOOKING, toArea: CabtAreaType.DECK },
+          { type: 'Shuffle', playerIndex: 1 },
+        ],
+        current: {
+          turn: 2,
+          yourIndex: 1,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 46,
+            prize: [],
+          }, {
+            active: [{ id: 304, serial: 79 }],
+            bench: [],
+            benchMax: 5,
+            hand: [{ id: 1227, serial: 117 }],
+            deckCount: 45,
+            discard: [{ id: 1122, serial: 99 }],
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    expect(snapshot.steps).toHaveLength(2);
+    const step = snapshot.steps[1];
+    expect(step.stateIndex).toBe(3);
+    expect(step.actionTimeline?.map((event) => event.kind)).toEqual([
+      'Play',
+      'MoveCard',
+      'MoveCard',
+      'MoveCard',
+      'MoveCard',
+      'MoveCard',
+      'MoveCard',
+      'MoveCard',
+      'MoveCard',
+      'MoveCard',
+      'MoveCard',
+      'MoveCard',
+      'MoveCard',
+      'MoveCard',
+      'MoveCard',
+      'Shuffle',
+    ]);
+    expect(step.actionTimeline?.slice(8, 15).map((event) => {
+      const params = event.params as Record<string, unknown>;
+      return [event.kind, params?.serial, params?.toArea];
+    })).toEqual([
+      ['MoveCard', 71, CabtAreaType.DECK],
+      ['MoveCard', 102, CabtAreaType.DECK],
+      ['MoveCard', 90, CabtAreaType.DECK],
+      ['MoveCard', 76, CabtAreaType.DECK],
+      ['MoveCard', 121, CabtAreaType.DECK],
+      ['MoveCard', 82, CabtAreaType.DECK],
+      ['MoveCard', 117, CabtAreaType.HAND],
+    ]);
+    expect(step.animationPhases?.map((phase) => phase.key.replace(/:\d+$/, ''))).toEqual([
+      'Play',
+      'DeckReveal',
+      'DeckRevealReturn',
+      'DeckRevealTake',
+      'Shuffle',
+    ]);
+    expect(step.animationPhases?.[2].view.players[1].hand.map((card) => card.serial)).toEqual([]);
+    expect(step.animationPhases?.[3].view.players[1].hand.map((card) => card.serial)).toEqual([117]);
+    expect(step.animationPhases?.[3].view.players[1].hand[0].animationHidden).toBe(true);
+    expect(step.animationPhases?.map((phase) => phase.view.players[1].playZone.map((card) => card.serial))).toEqual([
+      [99],
+      [99],
+      [99],
+      [99],
+      [99],
+    ]);
+    expect(step.displayView?.players[1].discard.map((card) => card.serial)).toEqual([99]);
   });
 
   it('exposes per-frame action timeline events for replay animations', () => {

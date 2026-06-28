@@ -2,7 +2,7 @@ import cardRows from './cardData.generated.json';
 import attackRows from './attackData.generated.json';
 import { actionAnimationTiming } from './actionAnimationSchedule';
 import { cabtLogsToTimeline } from './logFormat';
-import { CabtAreaType, CabtSelectContext } from './types';
+import { CabtAreaType, CabtOptionType, CabtSelectContext } from './types';
 import { resolveCardImageUrl } from '../game/cardImages';
 import { SlotType, targetFor, type ActionTimelineEvent, type CardView, type GameView, type LogView, type PlayerView, type PokemonSlotView } from '../game/types';
 import type { ReplayAnimationPhase, ReplaySnapshot, ReplayStep } from '../game/replay';
@@ -23,6 +23,7 @@ type CardRow = {
   attackDamage: string;
   attackText: string;
   retreatCost?: number;
+  skills?: Array<{ name: string; text?: string }>;
   attacks?: number[];
 };
 
@@ -128,7 +129,7 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
   const frameEntries: ReplayFrameEntry[] = [];
 
   visualFrames.forEach((frame, index) => {
-    const frameLogs = frame.logs ?? [];
+    const frameLogs = logsWithSynthesizedAbility(visualFrames[index - 1], frame);
     const timeline = cabtLogsToTimeline(frameLogs, { nextId: timelineId });
     timelineId = timeline.nextId;
     for (const entry of frameLogs) {
@@ -240,9 +241,240 @@ type CardEffectContinuation = {
   group: ReplayActionGroup;
 };
 
+function logsWithSynthesizedAbility(
+  previousFrame: CabtVisualizeFrame | undefined,
+  frame: CabtVisualizeFrame,
+): Array<Record<string, unknown>> {
+  const logs = frame.logs ?? [];
+  if (!previousFrame || logs.some((log) => normalizedFrameLogType(log.type) === 'Ability')) {
+    return logs;
+  }
+  const abilityLog = abilityLogForSelectedOption(previousFrame, frame)
+    ?? abilityLogForTriggeredEvolution(previousFrame, logs);
+  return abilityLog ? [abilityLog, ...logs] : logs;
+}
+
+function abilityLogForSelectedOption(
+  previousFrame: CabtVisualizeFrame,
+  frame: CabtVisualizeFrame,
+): Record<string, unknown> | null {
+  const selected = selectedOptionFromAction(previousFrame.select, frame.action);
+  const option = selected?.option;
+  if (!option || normalizedOptionType(option.type) !== 'Ability') {
+    return null;
+  }
+  const playerIndex = numberField(option.playerIndex) ?? selected.playerIndex;
+  if (playerIndex === undefined) {
+    return null;
+  }
+  const area = numberField(option.area);
+  const index = numberField(option.index) ?? 0;
+  const source = abilitySourceCard(previousFrame, playerIndex, area, index);
+  const cardId = source?.id ?? numberField(option.cardId);
+  if (cardId === undefined) {
+    return null;
+  }
+  const data = cardDatabase.get(cardId);
+  const abilityName = abilityNameForCard(data);
+  return {
+    type: 'Ability',
+    playerIndex,
+    cardId,
+    serial: source?.serial ?? numberField(option.serial),
+    abilityName,
+    area,
+    index,
+  };
+}
+
+type TriggeredEvolutionAbility = {
+  playerIndex: number;
+  cardId: number;
+  serial?: number;
+  abilityName: string;
+  drawCount: number;
+  area?: number;
+  index?: number;
+};
+
+function abilityLogForTriggeredEvolution(
+  previousFrame: CabtVisualizeFrame,
+  logs: Array<Record<string, unknown>>,
+): Record<string, unknown> | null {
+  const trigger = triggeredEvolutionAbility(previousFrame);
+  if (!trigger || !logsAreMatchingTriggeredDraws(logs, trigger)) {
+    return null;
+  }
+  return {
+    type: 'Ability',
+    playerIndex: trigger.playerIndex,
+    cardId: trigger.cardId,
+    serial: trigger.serial,
+    abilityName: trigger.abilityName,
+    area: trigger.area,
+    index: trigger.index,
+    trigger: 'Evolve',
+  };
+}
+
+function triggeredEvolutionAbility(frame: CabtVisualizeFrame): TriggeredEvolutionAbility | null {
+  const evolveLog = [...(frame.logs ?? [])].reverse().find((log) => normalizedFrameLogType(log.type) === 'Evolve');
+  const playerIndex = typeof evolveLog?.playerIndex === 'number' ? evolveLog.playerIndex : undefined;
+  const cardId = Number(evolveLog?.cardId);
+  if (playerIndex === undefined || !Number.isFinite(cardId)) {
+    return null;
+  }
+  const skill = evolutionTriggeredDrawSkill(cardDatabase.get(cardId));
+  if (!skill) {
+    return null;
+  }
+  const serial = numberField(evolveLog?.serial);
+  const source = evolvedPokemonSource(frame, playerIndex, cardId, serial);
+  return {
+    playerIndex,
+    cardId,
+    serial,
+    abilityName: displayName(skill.name.trim()),
+    drawCount: skill.drawCount,
+    area: source?.area,
+    index: source?.index,
+  };
+}
+
+function evolutionTriggeredDrawSkill(data: CardRow | undefined): { name: string; drawCount: number } | null {
+  for (const skill of data?.skills ?? []) {
+    const text = normalizedAbilityText(skill.text);
+    if (!text.includes('when you play this pokemon from your hand to evolve')) {
+      continue;
+    }
+    const drawCount = Number(text.match(/\bdraw\s+(\d+)\s+cards?\b/)?.[1]);
+    if (Number.isFinite(drawCount) && drawCount > 0 && skill.name.trim()) {
+      return { name: skill.name, drawCount };
+    }
+  }
+  return null;
+}
+
+function normalizedAbilityText(text: string | undefined): string {
+  return (text ?? '')
+    .toLowerCase()
+    .replaceAll('é', 'e')
+    .replaceAll(/\s+/g, ' ')
+    .trim();
+}
+
+function evolvedPokemonSource(
+  frame: CabtVisualizeFrame,
+  playerIndex: number,
+  cardId: number,
+  serial: number | undefined,
+): { area: number; index: number } | undefined {
+  const player = frame.current.players[playerIndex];
+  if (!player) {
+    return undefined;
+  }
+  const activeIndex = (player.active ?? []).findIndex((pokemon) => pokemonRefMatches(pokemon, cardId, serial));
+  if (activeIndex >= 0) {
+    return { area: CabtAreaType.ACTIVE, index: activeIndex };
+  }
+  const benchIndex = (player.bench ?? []).findIndex((pokemon) => pokemonRefMatches(pokemon, cardId, serial));
+  if (benchIndex >= 0) {
+    return { area: CabtAreaType.BENCH, index: benchIndex };
+  }
+  return undefined;
+}
+
+function pokemonRefMatches(pokemon: CabtPokemonRef | undefined, cardId: number, serial: number | undefined): boolean {
+  if (!pokemon) {
+    return false;
+  }
+  if (serial !== undefined) {
+    return pokemon.serial === serial;
+  }
+  return pokemon.id === cardId;
+}
+
+function logsAreMatchingTriggeredDraws(logs: Array<Record<string, unknown>>, trigger: TriggeredEvolutionAbility): boolean {
+  if (logs.length !== trigger.drawCount) {
+    return false;
+  }
+  return logs.every((log) => {
+    const type = normalizedFrameLogType(log.type);
+    return (type === 'Draw' || type === 'DrawReverse')
+      && log.playerIndex === trigger.playerIndex;
+  });
+}
+
+function selectedOptionFromAction(
+  select: Record<string, unknown> | null | undefined,
+  action: unknown,
+): { playerIndex: number; option: Record<string, unknown> } | null {
+  const options = Array.isArray(select?.option) ? select.option : [];
+  if (!options.length || !Array.isArray(action)) {
+    return null;
+  }
+  for (const [playerIndex, playerAction] of action.entries()) {
+    const selectedIndex = selectedOptionIndex(playerAction);
+    const option = selectedIndex === undefined ? undefined : options[selectedIndex];
+    if (option && typeof option === 'object') {
+      return { playerIndex, option: option as Record<string, unknown> };
+    }
+  }
+  return null;
+}
+
+function selectedOptionIndex(playerAction: unknown): number | undefined {
+  if (Array.isArray(playerAction)) {
+    return numberField(playerAction[0]);
+  }
+  return numberField(playerAction);
+}
+
+function abilitySourceCard(
+  frame: CabtVisualizeFrame,
+  playerIndex: number,
+  area: number | undefined,
+  index: number,
+): CabtPokemonRef | undefined {
+  const player = frame.current.players[playerIndex];
+  if (!player) {
+    return undefined;
+  }
+  if (area === CabtAreaType.ACTIVE) {
+    return player.active?.[index] ?? player.active?.[0];
+  }
+  if (area === CabtAreaType.BENCH) {
+    return player.bench?.[index];
+  }
+  return undefined;
+}
+
+function normalizedOptionType(type: unknown): string {
+  if (type === CabtOptionType.ABILITY) {
+    return 'Ability';
+  }
+  return String(type ?? '');
+}
+
+function normalizedFrameLogType(type: unknown): string {
+  return String(type ?? 'Event');
+}
+
+function numberField(value: unknown): number | undefined {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
+}
+
 function cardEffectContinuation(entries: ReplayFrameEntry[], startIndex: number): CardEffectContinuation | null {
   const firstGroup = entries[startIndex].groups[0];
-  if (!firstGroup || entries[startIndex].groups.length !== 1 || !isCardEffectStartGroup(firstGroup)) {
+  if (!firstGroup || entries[startIndex].groups.length !== 1) {
+    return null;
+  }
+  const triggeredEvolutionContinuation = triggeredEvolutionAbilityContinuationFrom(entries, startIndex, firstGroup);
+  if (triggeredEvolutionContinuation) {
+    return triggeredEvolutionContinuation;
+  }
+  if (!isCardEffectStartGroup(firstGroup)) {
     return null;
   }
   const playEvent = resolvingTrainerPlayEvent(firstGroup);
@@ -264,9 +496,15 @@ function cardEffectContinuation(entries: ReplayFrameEntry[], startIndex: number)
     return deckSearchContinuation;
   }
 
+  const deckRevealContinuation = deckRevealContinuationFrom(entries, startIndex, firstGroup, playerIndex);
+  if (deckRevealContinuation) {
+    return deckRevealContinuation;
+  }
+
   const resolvingContinuation = resolvingTrainerContinuationFrom(entries, startIndex, firstGroup, playEvent);
   if (resolvingContinuation) {
-    return resolvingContinuation;
+    return triggeredEvolutionAbilityContinuationFrom(entries, resolvingContinuation.endIndex, resolvingContinuation.group)
+      ?? resolvingContinuation;
   }
 
   for (let index = startIndex + 1; index < entries.length; index += 1) {
@@ -286,6 +524,59 @@ function cardEffectContinuation(entries: ReplayFrameEntry[], startIndex: number)
     return null;
   }
   return null;
+}
+
+function triggeredEvolutionAbilityContinuationFrom(
+  entries: ReplayFrameEntry[],
+  startIndex: number,
+  startGroup: ReplayActionGroup,
+): CardEffectContinuation | null {
+  const evolveEvent = [...startGroup.events].reverse().find(isTriggeredAbilityEvolveEvent);
+  if (!evolveEvent || evolveEvent.playerIndex === undefined) {
+    return null;
+  }
+  for (let index = startIndex + 1; index < entries.length; index += 1) {
+    const groups = entries[index].groups;
+    if (!groups.length) {
+      continue;
+    }
+    if (groups.length !== 1 || !isTriggeredEvolutionAbilityGroup(groups[0], evolveEvent)) {
+      return null;
+    }
+    return {
+      endIndex: index,
+      group: {
+        ...startGroup,
+        events: [...startGroup.events, ...groups[0].events],
+      },
+    };
+  }
+  return null;
+}
+
+function isTriggeredAbilityEvolveEvent(event: ActionTimelineEvent): boolean {
+  const params = event.params as Record<string, unknown> | undefined;
+  const cardId = Number(params?.cardId);
+  return event.kind === 'Evolve'
+    && event.playerIndex !== undefined
+    && Number.isFinite(cardId)
+    && !!evolutionTriggeredDrawSkill(cardDatabase.get(cardId));
+}
+
+function isTriggeredEvolutionAbilityGroup(group: ReplayActionGroup, evolveEvent: ActionTimelineEvent): boolean {
+  const ability = group.events[0];
+  const abilityParams = ability?.params as Record<string, unknown> | undefined;
+  const evolveParams = evolveEvent.params as Record<string, unknown> | undefined;
+  const expectedSerial = Number(evolveParams?.serial);
+  return ability?.kind === 'Ability'
+    && ability.playerIndex === evolveEvent.playerIndex
+    && abilityParams?.trigger === 'Evolve'
+    && Number(abilityParams?.cardId) === Number(evolveParams?.cardId)
+    && (!Number.isFinite(expectedSerial) || Number(abilityParams?.serial) === expectedSerial)
+    && group.events.slice(1).length > 0
+    && group.events.slice(1).every((event) =>
+      (event.kind === 'Draw' || event.kind === 'DrawReverse')
+      && event.playerIndex === evolveEvent.playerIndex);
 }
 
 function isCardEffectStartGroup(group: ReplayActionGroup): boolean {
@@ -487,6 +778,122 @@ function deckSearchContinuationFrom(
   return null;
 }
 
+function deckRevealContinuationFrom(
+  entries: ReplayFrameEntry[],
+  startIndex: number,
+  startGroup: ReplayActionGroup,
+  playerIndex: number,
+): CardEffectContinuation | null {
+  if (!startGroup.events.some((event) => isMoveBetween(event, CabtAreaType.DECK, CabtAreaType.LOOKING))) {
+    return null;
+  }
+
+  const revealedSerials = new Set(
+    startGroup.events
+      .filter((event) => isMoveBetween(event, CabtAreaType.DECK, CabtAreaType.LOOKING))
+      .map(eventSerial)
+      .filter((serial): serial is number => Number.isFinite(serial)),
+  );
+  if (!revealedSerials.size) {
+    return null;
+  }
+
+  const continuationEvents: ActionTimelineEvent[] = [];
+  for (let index = startIndex + 1; index < entries.length; index += 1) {
+    const groups = entries[index].groups;
+    if (!groups.length) {
+      continue;
+    }
+    if (!groups.every((group) => isDeckRevealContinuationGroup(group, playerIndex, revealedSerials))) {
+      return null;
+    }
+
+    continuationEvents.push(...groups.flatMap((group) => group.events));
+    const events = [...startGroup.events, ...continuationEvents];
+    if (isCompleteDeckRevealEffect(events, revealedSerials)) {
+      const orderedEvents = orderedDeckRevealResolutionEvents(startGroup.events, continuationEvents);
+      return {
+        endIndex: index,
+        group: {
+          ...startGroup,
+          events: orderedEvents,
+        },
+      };
+    }
+  }
+  return null;
+}
+
+function orderedDeckRevealResolutionEvents(
+  revealEvents: ActionTimelineEvent[],
+  continuationEvents: ActionTimelineEvent[],
+): ActionTimelineEvent[] {
+  const takeEvents = continuationEvents.filter((event) => isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.HAND));
+  if (!takeEvents.length || !continuationEvents.some((event) => isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.DECK))) {
+    return [...revealEvents, ...continuationEvents];
+  }
+
+  const shuffleEvents = continuationEvents.filter((event) => event.kind === 'Shuffle');
+  const beforeTakeEvents = continuationEvents.filter((event) =>
+    event.kind !== 'Shuffle' && !isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.HAND));
+  return [...revealEvents, ...beforeTakeEvents, ...takeEvents, ...shuffleEvents];
+}
+
+function isDeckRevealContinuationGroup(
+  group: ReplayActionGroup,
+  playerIndex: number,
+  revealedSerials: ReadonlySet<number>,
+): boolean {
+  return group.events.length > 0
+    && group.events.every((event) => {
+      if (event.playerIndex !== undefined && event.playerIndex !== playerIndex) {
+        return false;
+      }
+      if (event.kind === 'Shuffle') {
+        return true;
+      }
+      if (event.kind === 'Attach') {
+        const serial = eventSerial(event);
+        return serial !== undefined && revealedSerials.has(serial);
+      }
+      return isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.HAND)
+        || isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.DECK);
+    });
+}
+
+function isCompleteDeckRevealEffect(events: ActionTimelineEvent[], revealedSerials: ReadonlySet<number>): boolean {
+  const resolvedSerials = new Set<number>();
+  let returnedToDeck = false;
+  let shuffled = false;
+
+  for (const event of events) {
+    const serial = eventSerial(event);
+    if (event.kind === 'Shuffle') {
+      shuffled = true;
+      continue;
+    }
+    if (serial === undefined || !revealedSerials.has(serial)) {
+      continue;
+    }
+    if (event.kind === 'Attach'
+      || isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.HAND)
+      || isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.DECK)) {
+      resolvedSerials.add(serial);
+    }
+    if (isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.DECK)) {
+      returnedToDeck = true;
+    }
+  }
+
+  return resolvedSerials.size === revealedSerials.size && (!returnedToDeck || shuffled);
+}
+
+function eventSerial(event: ActionTimelineEvent): number | undefined {
+  const params = event.params as Record<string, unknown> | undefined;
+  const serial = Number(params?.serial);
+  return Number.isFinite(serial) ? serial : undefined;
+}
+
 function deckSearchContinuationOrderIsValid(events: ActionTimelineEvent[], sawDeckToHand: boolean): boolean {
   let hasSeenDeckToHand = sawDeckToHand;
   for (const event of events) {
@@ -623,6 +1030,7 @@ function isChoiceOrPhaseKind(kind: string): boolean {
     'Attach',
     'Evolve',
     'Devolve',
+    'Ability',
     'Attack',
     'TurnEnd',
     'TurnStart',
@@ -631,7 +1039,7 @@ function isChoiceOrPhaseKind(kind: string): boolean {
 }
 
 function isChoiceConsequenceGroup(type: string): boolean {
-  return ['Play', 'Attach', 'Evolve', 'Devolve', 'Attack'].includes(type);
+  return ['Play', 'Attach', 'Evolve', 'Devolve', 'Ability', 'Attack'].includes(type);
 }
 
 function isCheckupKind(kind: string | undefined): boolean {
@@ -968,9 +1376,15 @@ function groupedStepAnimationPhases(
   let phaseStartView = projectedViewForEvents(previousView, currentView, groups.slice(0, groupIndex).flatMap((item) => item.events));
   const phases: ReplayAnimationPhase[] = [];
   for (const phase of eventPhases) {
-    const phaseView = phase.usesSourceView
+    let phaseView = phase.usesSourceView
       ? animationSourceViewForPhase(phaseStartView, currentView, phase)
       : projectedViewForEvents(phaseStartView, currentView, phase.events);
+    if (phase.key.startsWith('DeckBoardPlace:')) {
+      phaseView = gameViewWithAnimationHiddenBoardCards(phaseView, phase.events);
+    }
+    if (phase.key.startsWith('DeckRevealTake:')) {
+      phaseView = gameViewWithAnimationHiddenHandCards(phaseView, phase.events);
+    }
     phases.push({
       key: phase.key,
       label: animationPhaseLabel(phase),
@@ -1109,6 +1523,9 @@ function animationPhaseKey(event: ActionTimelineEvent): string | null {
   if (event.kind === 'Attack') {
     return `Attack:${playerKey}`;
   }
+  if (event.kind === 'Ability') {
+    return `Ability:${playerKey}`;
+  }
   if (event.kind === 'Switch') {
     return `BoardMove:${playerKey}`;
   }
@@ -1118,6 +1535,9 @@ function animationPhaseKey(event: ActionTimelineEvent): string | null {
   if (event.kind === 'MoveCard') {
     if (isBoardPositionMove(fromArea, toArea)) {
       return `BoardMove:${playerKey}`;
+    }
+    if (isBoardToDeckMove(fromArea, toArea)) {
+      return `BoardToDeck:${playerKey}`;
     }
     if (isKnockOutMove(fromArea, toArea)) {
       return `KnockOut:${playerKey}`;
@@ -1165,9 +1585,11 @@ function animationPhaseKey(event: ActionTimelineEvent): string | null {
 function animationPhaseUsesSourceView(key: string): boolean {
   return key.startsWith('HandToDeck:')
     || key.startsWith('Evolve:')
+    || key.startsWith('Ability:')
     || key.startsWith('Attack:')
     || key.startsWith('Damage:')
     || key.startsWith('KnockOut:')
+    || key.startsWith('BoardToDeck:')
     || key.startsWith('BoardMove:')
     || key.startsWith('AttachedMove:')
     || key.startsWith('StadiumMove:');
@@ -1175,9 +1597,11 @@ function animationPhaseUsesSourceView(key: string): boolean {
 
 function animationPhaseNeedsDedicatedView(phase: AnimationEventPhase): boolean {
   return phase.key.startsWith('Evolve:')
+    || phase.key.startsWith('Ability:')
     || phase.key.startsWith('Attack:')
     || phase.key.startsWith('Damage:')
     || phase.key.startsWith('KnockOut:')
+    || phase.key.startsWith('BoardToDeck:')
     || phase.key.startsWith('BoardMove:')
     || phase.key.startsWith('AttachedMove:')
     || phase.key.startsWith('StadiumMove:');
@@ -1191,10 +1615,13 @@ function animationSourceViewForPhase(
   if (phase.key.startsWith('Evolve:')) {
     return projectedViewForEvents(phaseStartView, currentView, phase.events, { deferBoardStateEvents: true });
   }
-  if (phase.key.startsWith('Attack:') || phase.key.startsWith('Damage:')) {
+  if (phase.key.startsWith('Ability:') || phase.key.startsWith('Attack:') || phase.key.startsWith('Damage:')) {
     return projectedViewForEvents(phaseStartView, currentView, phase.events, { deferBoardStateEvents: true });
   }
   if (phase.key.startsWith('KnockOut:')) {
+    return projectedViewForEvents(phaseStartView, currentView, phase.events, { deferMoveCardEvents: true });
+  }
+  if (phase.key.startsWith('BoardToDeck:')) {
     return projectedViewForEvents(phaseStartView, currentView, phase.events, { deferMoveCardEvents: true });
   }
   if (phase.key.startsWith('BoardMove:')) {
@@ -1284,11 +1711,17 @@ function animationPhaseCardDurationMs(key: string): number {
   if (key.startsWith('Attack:')) {
     return actionAnimationTiming.attackAnnounceMs;
   }
+  if (key.startsWith('Ability:')) {
+    return actionAnimationTiming.abilityAnnounceMs;
+  }
   if (key.startsWith('Damage:')) {
     return actionAnimationTiming.damageMs;
   }
   if (key.startsWith('KnockOut:')) {
     return actionAnimationTiming.knockOutMs;
+  }
+  if (key.startsWith('BoardToDeck:')) {
+    return actionAnimationTiming.boardMoveMs;
   }
   if (key.startsWith('BoardMove:')) {
     return actionAnimationTiming.boardMoveMs;
@@ -1330,11 +1763,17 @@ function animationPhaseStepMs(key: string): number {
   if (key.startsWith('Attack:')) {
     return actionAnimationTiming.attackAnnounceMs;
   }
+  if (key.startsWith('Ability:')) {
+    return actionAnimationTiming.abilityAnnounceMs;
+  }
   if (key.startsWith('Damage:')) {
     return actionAnimationTiming.damageMs;
   }
   if (key.startsWith('KnockOut:')) {
     return actionAnimationTiming.knockOutMs;
+  }
+  if (key.startsWith('BoardToDeck:')) {
+    return actionAnimationTiming.handMoveStepMs;
   }
   if (key.startsWith('BoardMove:')) {
     return 0;
@@ -1370,6 +1809,78 @@ function projectedViewForEvents(
     applyReplayEvent(view, currentView, event, options);
   }
   return view;
+}
+
+function gameViewWithAnimationHiddenBoardCards(view: GameView, events: ActionTimelineEvent[]): GameView {
+  const moveEvents = events.filter((event) => {
+    const params = event.params as Record<string, unknown> | undefined;
+    const toArea = Number(params?.toArea);
+    return isMoveCardKind(event.kind)
+      && (toArea === CabtAreaType.ACTIVE || toArea === CabtAreaType.BENCH);
+  });
+  if (!moveEvents.length) {
+    return view;
+  }
+
+  return {
+    ...view,
+    players: view.players.map((player, playerIndex) => {
+      const playerEvents = moveEvents.filter((event) => event.playerIndex === playerIndex);
+      if (!playerEvents.length) {
+        return player;
+      }
+      return {
+        ...player,
+        active: pokemonSlotWithHiddenAnimationCard(player.active, playerEvents),
+        bench: player.bench.map((slot) => pokemonSlotWithHiddenAnimationCard(slot, playerEvents)),
+      };
+    }),
+  };
+}
+
+function gameViewWithAnimationHiddenHandCards(view: GameView, events: ActionTimelineEvent[]): GameView {
+  const moveEvents = events.filter((event) => {
+    const params = event.params as Record<string, unknown> | undefined;
+    return isMoveCardKind(event.kind)
+      && Number(params?.fromArea) === CabtAreaType.LOOKING
+      && Number(params?.toArea) === CabtAreaType.HAND;
+  });
+  if (!moveEvents.length) {
+    return view;
+  }
+
+  return {
+    ...view,
+    players: view.players.map((player, playerIndex) => {
+      const playerEvents = moveEvents.filter((event) => event.playerIndex === playerIndex);
+      if (!playerEvents.length) {
+        return player;
+      }
+      return {
+        ...player,
+        hand: player.hand.map((card) => eventMatchesAnyCard(card, playerEvents)
+          ? { ...card, animationHidden: true }
+          : card),
+      };
+    }),
+  };
+}
+
+function pokemonSlotWithHiddenAnimationCard(slot: PokemonSlotView, events: ActionTimelineEvent[]): PokemonSlotView {
+  if (!slot.pokemon || !events.some((event) => eventCardMatches(slot.pokemon!, event))) {
+    return slot;
+  }
+  return {
+    ...slot,
+    pokemon: {
+      ...slot.pokemon,
+      animationHidden: true,
+    },
+  };
+}
+
+function eventMatchesAnyCard(card: CardView, events: ActionTimelineEvent[]): boolean {
+  return events.some((event) => eventCardMatches(card, event));
 }
 
 type ResolvingPlayedCard = {
@@ -1695,6 +2206,11 @@ function isKnockOutMove(fromArea: number, toArea: number): boolean {
 function isBoardPositionMove(fromArea: number, toArea: number): boolean {
   return (fromArea === CabtAreaType.ACTIVE && toArea === CabtAreaType.BENCH)
     || (fromArea === CabtAreaType.BENCH && toArea === CabtAreaType.ACTIVE);
+}
+
+function isBoardToDeckMove(fromArea: number, toArea: number): boolean {
+  return toArea === CabtAreaType.DECK
+    && (fromArea === CabtAreaType.ACTIVE || fromArea === CabtAreaType.BENCH);
 }
 
 function isAttachedCardArea(area: number): boolean {
@@ -2084,6 +2600,7 @@ function cardToView(cardRef: CabtCardRef): CardView {
     evolvesFrom: data?.evolvesFrom || undefined,
     hp: data?.hp ?? undefined,
     retreat: Array.from({ length: retreatCostFor(data) }, () => 'Colorless'),
+    powers: powersForCard(data),
     attacks: attacksForCard(data),
   };
   return {
@@ -2144,6 +2661,8 @@ function formatLog(log: Record<string, unknown>): string {
       return `${actor} attached ${card}.`;
     case 'Attack':
       return `${actor} used ${attackNameForLog(log)} with ${card}.`;
+    case 'Ability':
+      return `${actor} used ${abilityNameForLog(log)} with ${card}.`;
     case 'MoveCard':
       if (Number(log.fromArea) === CabtAreaType.PRIZE && Number(log.toArea) === CabtAreaType.HAND) {
         return `${actor} took ${card} as a Prize card.`;
@@ -2214,6 +2733,30 @@ function attackNameForLog(log: Record<string, unknown>): string {
     return displayName(attack.name);
   }
   return Number.isFinite(Number(log.attackId)) ? `attack ${log.attackId}` : 'an attack';
+}
+
+function abilityNameForLog(log: Record<string, unknown>): string {
+  const explicit = typeof log.abilityName === 'string' ? log.abilityName.trim() : '';
+  if (explicit) {
+    return displayName(explicit);
+  }
+  return abilityNameForCard(cardDatabase.get(Number(log.cardId)));
+}
+
+function abilityNameForCard(data: CardRow | undefined): string {
+  const skillName = data?.skills?.find((skill) => skill.name.trim())?.name.trim();
+  return skillName ? displayName(skillName) : 'an Ability';
+}
+
+function powersForCard(data: CardRow | undefined): CardView['powers'] {
+  const skills = data?.skills?.filter((skill) => skill.name.trim());
+  if (!skills?.length) {
+    return undefined;
+  }
+  return skills.map((skill) => ({
+    name: displayName(skill.name.trim()),
+    text: skill.text ?? '',
+  }));
 }
 
 function attacksForCard(data: CardRow | undefined): CardView['attacks'] {

@@ -98,6 +98,41 @@ describe('classifyAnimationCoverage', () => {
     expect(coverage.label).toBe('Attached card move');
   });
 
+  it('recognizes ability announcements as polished when source identity is present', () => {
+    const coverage = classifyAnimationCoverage(event('Ability', {
+      cardId: 66,
+      serial: 14,
+      abilityName: 'Run Away Draw',
+    }));
+
+    expect(coverage.level).toBe('polished');
+    expect(coverage.label).toBe('Ability announcement');
+  });
+
+  it('recognizes board Pokemon returning to deck as polished', () => {
+    const coverage = classifyAnimationCoverage(event('MoveCard', {
+      fromArea: CabtAreaType.ACTIVE,
+      toArea: CabtAreaType.DECK,
+      cardId: 66,
+      serial: 14,
+    }));
+
+    expect(coverage.level).toBe('polished');
+    expect(coverage.label).toBe('Board Pokemon return to deck');
+  });
+
+  it('recognizes pre-evolution stack moves as attached-card moves', () => {
+    const coverage = classifyAnimationCoverage(event('MoveCard', {
+      fromArea: CabtAreaType.PRE_EVOLUTION,
+      toArea: CabtAreaType.DECK,
+      cardId: 65,
+      serial: 12,
+    }));
+
+    expect(coverage.level).toBe('polished');
+    expect(coverage.label).toBe('Attached card move');
+  });
+
   it('flags uncommon zone movements as static state changes', () => {
     const coverage = classifyAnimationCoverage(event('MoveCard', {
       fromArea: CabtAreaType.DISCARD,

@@ -12,7 +12,7 @@
     replayMode?: boolean;
   };
 
-  type RevealMode = 'revealing' | 'searching' | 'placing' | 'held' | 'attaching' | 'returning';
+  type RevealMode = 'revealing' | 'searching' | 'placing' | 'held' | 'selecting' | 'taking' | 'attaching' | 'returning';
 
   type RevealSprite = {
     id: string;
@@ -53,7 +53,7 @@
 
   const timers: ReturnType<typeof setTimeout>[] = [];
   const cardHeightToWidthRatio = 88 / 63;
-  const handoffOverlapMs = 48;
+  const handoffSettleMs = 48;
   let reveals = $state<RevealAnimation[]>([]);
   let seenEventIds = new Set<number>();
   let initialized = false;
@@ -82,12 +82,11 @@
 
     const animationEvents = actionAnimationBatchEvents(currentEvents, seenEventIds, replayMode, scopeChanged);
     const revealEvents = animationEvents.filter((event) => isDeckRevealEvent(event) && shouldAnimateEvent(event, scopeChanged));
-    const placementEvents = animationEvents.filter((event) => isDeckBoardPlacementEvent(event) && shouldAnimateEvent(event, scopeChanged));
     const attachEvents = animationEvents.filter((event) => isRevealAttachEvent(event) && shouldAnimateEvent(event, scopeChanged));
     const takeEvents = animationEvents.filter((event) => isRevealTakeEvent(event) && shouldAnimateEvent(event, scopeChanged));
     const returnEvents = animationEvents.filter((event) => isRevealReturnEvent(event) && shouldAnimateEvent(event, scopeChanged));
 
-    if (replayMode && scopeChanged && !revealEvents.length && !placementEvents.length && !attachEvents.length && !takeEvents.length && !returnEvents.length) {
+    if (replayMode && scopeChanged && !revealEvents.length && !attachEvents.length && !takeEvents.length && !returnEvents.length) {
       clearReveals();
     }
 
@@ -97,9 +96,6 @@
 
     if (revealEvents.length) {
       startReveal(revealEvents, animationEvents);
-    }
-    if (placementEvents.length) {
-      startReveal(placementEvents, animationEvents);
     }
     if (attachEvents.length) {
       attachRevealedCards(attachEvents, animationEvents);
@@ -123,17 +119,6 @@
       && (
         Number(params?.toArea) === CabtAreaType.LOOKING
         || Number(params?.toArea) === CabtAreaType.HAND
-      )
-      && Number.isFinite(Number(params?.cardId));
-  }
-
-  function isDeckBoardPlacementEvent(event: ActionTimelineEvent): boolean {
-    const params = event.params as Record<string, unknown> | undefined;
-    return event.kind === 'MoveCard'
-      && Number(params?.fromArea) === CabtAreaType.DECK
-      && (
-        Number(params?.toArea) === CabtAreaType.ACTIVE
-        || Number(params?.toArea) === CabtAreaType.BENCH
       )
       && Number.isFinite(Number(params?.cardId));
   }
@@ -196,17 +181,16 @@
         continue;
       }
       const revealMs = motionDurationMs(sprite.mode === 'placing' ? actionAnimationTiming.boardMoveMs : actionAnimationTiming.deckRevealMs);
-      const overlapMs = Math.min(handoffOverlapMs, revealMs);
       const target = sprite.targetElement;
       if (target) {
         const showTimer = setTimeout(() => {
           showTargets([target]);
-        }, sprite.delayMs + revealMs - overlapMs);
+        }, sprite.delayMs + revealMs);
         timers.push(showTimer);
       }
       const removeTimer = setTimeout(() => {
         removeSprites((item) => item.id === sprite.id);
-      }, sprite.delayMs + revealMs + overlapMs);
+      }, sprite.delayMs + revealMs + handoffSettleMs);
       timers.push(removeTimer);
     }
 
@@ -260,28 +244,29 @@
       if (!target) {
         continue;
       }
-      const sourceCenter = spriteCenter(sprite);
+      const takeSource = normalizedSpriteForTake(sprite);
+      const sourceCenter = spriteCenter(takeSource);
       const delayMs = actionAnimationStartMs(animationEvents, event);
       if (target.element) {
         const showTimer = setTimeout(() => {
           showTargets([target.element!]);
-        }, delayMs + actionAnimationTiming.handMoveMs - handoffOverlapMs);
+        }, delayMs + actionAnimationTiming.handMoveMs);
         timers.push(showTimer);
         hideTargets([target.element]);
       }
       updateSprites((item) => item.serial === serial
         ? {
-            ...item,
-            mode: 'attaching',
+            ...normalizedSpriteForTake(item),
+            mode: 'taking',
             delayMs,
             exitX: target.center.x - sourceCenter.x,
             exitY: target.center.y - sourceCenter.y,
-            exitScale: Math.max(0.32, Math.min(1.2, target.width / item.width)),
+            exitScale: Math.max(0.32, Math.min(1.2, target.width / takeSource.width)),
           }
         : item);
       const timer = setTimeout(() => {
         removeSprites((item) => item.serial === serial);
-      }, delayMs + actionAnimationTiming.handMoveMs + 80);
+      }, delayMs + actionAnimationTiming.handMoveMs + handoffSettleMs);
       timers.push(timer);
     }
   }
@@ -302,6 +287,12 @@
       if (!deckRect || deckRect.width <= 0 || deckRect.height <= 0) {
         continue;
       }
+      const returningSerials = new Set(
+        playerEvents
+          .map((event) => eventSerial(event))
+          .filter((serial): serial is number => Number.isFinite(serial)),
+      );
+      moveSelectedSpritesToReveal(playerIndex, returningSerials);
       const deckCenter = centerOf(deckRect);
       for (const event of playerEvents) {
         const params = event.params as Record<string, unknown> | undefined;
@@ -338,6 +329,52 @@
     clearHiddenTargets();
     reveals = [];
     clearAttachTargets();
+  }
+
+  function moveSelectedSpritesToReveal(playerIndex: number, returningSerials: ReadonlySet<number>) {
+    const selectedSprites = reveals
+      .flatMap((reveal) => reveal.sprites)
+      .filter((sprite) =>
+        sprite.card.playerIndex === playerIndex
+        && sprite.mode === 'held'
+        && !returningSerials.has(sprite.serial ?? Number.NaN));
+    if (!selectedSprites.length) {
+      return;
+    }
+
+    const layout = revealLayout(selectedSprites.length);
+    const selectedTargets = new Map<string, {
+      center: { x: number; y: number };
+      width: number;
+      height: number;
+    }>();
+    for (const [index, sprite] of selectedSprites.entries()) {
+      const target = layout.target(index);
+      selectedTargets.set(sprite.id, {
+        center: { x: target.x, y: target.y },
+        width: layout.cardWidth,
+        height: layout.cardHeight,
+      });
+    }
+
+    updateSprites((sprite) => {
+      const target = selectedTargets.get(sprite.id);
+      if (!target) {
+        return sprite;
+      }
+      const sourceCenter = spriteCenter(sprite);
+      return {
+        ...sprite,
+        mode: 'selecting',
+        delayMs: 0,
+        exitX: target.center.x - sourceCenter.x,
+        exitY: target.center.y - sourceCenter.y,
+        exitScale: Math.max(0.32, Math.min(1.6, target.width / sprite.width)),
+        rotation: 0,
+        order: 100 + sprite.order,
+      };
+    });
+
   }
 
   function markAttachTarget(target: HTMLElement, serial: number, delayMs: number) {
@@ -528,6 +565,12 @@
     return reveals.flatMap((reveal) => reveal.sprites).find((sprite) => sprite.serial === serial);
   }
 
+  function eventSerial(event: ActionTimelineEvent): number | undefined {
+    const params = event.params as Record<string, unknown> | undefined;
+    const serial = Number(params?.serial);
+    return Number.isFinite(serial) ? serial : undefined;
+  }
+
   function deckTopElement(playerIndex: number): HTMLElement | null {
     const anchor = document.querySelector(`[data-card-anchor="player:${playerIndex}:deck"]`);
     const pile = anchor?.closest('.deck-pile') as HTMLElement | null;
@@ -671,6 +714,35 @@
     };
   }
 
+  function normalizedSpriteForTake(sprite: RevealSprite): RevealSprite {
+    if (sprite.mode !== 'selecting') {
+      return sprite;
+    }
+    const center = {
+      x: sprite.left + sprite.width / 2 + sprite.revealX + sprite.exitX,
+      y: sprite.top + sprite.height / 2 + sprite.revealY + sprite.exitY,
+    };
+    const width = sprite.width * sprite.exitScale;
+    const height = sprite.height * sprite.exitScale;
+    return {
+      ...sprite,
+      left: center.x - width / 2,
+      top: center.y - height / 2,
+      width,
+      height,
+      revealX: 0,
+      revealY: 0,
+      takeX: 0,
+      takeY: 0,
+      takeScale: 1,
+      takeRotation: 0,
+      exitX: 0,
+      exitY: 0,
+      exitScale: 1,
+      rotation: 0,
+    };
+  }
+
   function centerOf(rect: DOMRect): { x: number; y: number } {
     return {
       x: rect.left + rect.width / 2,
@@ -756,6 +828,14 @@
 
   .reveal-card.held {
     transform: translate3d(var(--reveal-x), var(--reveal-y), 0) scale(1) rotate(var(--reveal-rotation));
+  }
+
+  .reveal-card.selecting {
+    animation: deck-reveal-select 420ms cubic-bezier(0.18, 0.86, 0.24, 1) var(--reveal-delay) both;
+  }
+
+  .reveal-card.taking {
+    animation: deck-reveal-take 360ms cubic-bezier(0.2, 0.82, 0.22, 1) var(--reveal-delay) both;
   }
 
   .reveal-card.attaching {
@@ -927,7 +1007,7 @@
         rotate(var(--take-rotation));
     }
     100% {
-      opacity: 0;
+      opacity: 1;
       transform:
         translate3d(var(--take-x), var(--take-y), 0)
         scale(var(--take-scale))
@@ -949,6 +1029,35 @@
     }
     100% {
       opacity: 0;
+      transform:
+        translate3d(calc(var(--reveal-x) + var(--exit-x)), calc(var(--reveal-y) + var(--exit-y)), 0)
+        scale(var(--exit-scale))
+        rotate(0deg);
+    }
+  }
+
+  @keyframes deck-reveal-take {
+    0% {
+      opacity: 1;
+      transform: translate3d(var(--reveal-x), var(--reveal-y), 0) scale(1) rotate(var(--reveal-rotation));
+    }
+    72%,
+    100% {
+      opacity: 1;
+      transform:
+        translate3d(calc(var(--reveal-x) + var(--exit-x)), calc(var(--reveal-y) + var(--exit-y)), 0)
+        scale(var(--exit-scale))
+        rotate(0deg);
+    }
+  }
+
+  @keyframes deck-reveal-select {
+    0% {
+      opacity: 1;
+      transform: translate3d(var(--reveal-x), var(--reveal-y), 0) scale(1) rotate(var(--reveal-rotation));
+    }
+    100% {
+      opacity: 1;
       transform:
         translate3d(calc(var(--reveal-x) + var(--exit-x)), calc(var(--reveal-y) + var(--exit-y)), 0)
         scale(var(--exit-scale))
@@ -1023,6 +1132,8 @@
   @media (prefers-reduced-motion: reduce) {
     .reveal-card.revealing,
     .reveal-card.searching,
+    .reveal-card.selecting,
+    .reveal-card.taking,
     .reveal-card.attaching,
     .reveal-card.returning,
     .reveal-card.revealing .reveal-card-inner,

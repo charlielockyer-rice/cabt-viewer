@@ -40,6 +40,7 @@ export type CardView = {
   retreat?: unknown[];
   attacks?: AttackView[];
   powers?: PowerView[];
+  animationHidden?: boolean;
 };
 
 export type AttackView = {
