@@ -1071,7 +1071,10 @@ function sameMoveCardBatch(previous: ActionTimelineEvent | undefined, next: Acti
 }
 
 function isBatchedMoveDestination(fromArea: number, toArea: number): boolean {
-  return toArea !== CabtAreaType.ACTIVE && toArea !== CabtAreaType.BENCH && !isBoardPositionMove(fromArea, toArea);
+  if (toArea === CabtAreaType.ACTIVE || toArea === CabtAreaType.BENCH) {
+    return fromArea === CabtAreaType.DECK;
+  }
+  return !isBoardPositionMove(fromArea, toArea);
 }
 
 function sameBoardPositionMoveBatch(previous: ActionTimelineEvent | undefined, next: ActionTimelineEvent): boolean {

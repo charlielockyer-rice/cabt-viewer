@@ -54,6 +54,7 @@
 
   type ClearOptions = {
     restoreSources?: boolean;
+    restoreConnectedSourcesAfterMs?: number;
   };
 
   let {
@@ -63,7 +64,9 @@
   }: Props = $props();
 
   const timers: ReturnType<typeof setTimeout>[] = [];
+  const sourceRestoreTimers: ReturnType<typeof setTimeout>[] = [];
   const cardMoveDurationMs = 360;
+  const handOutroSettleMs = 180;
   let seenEventIds = new Set<number>();
   let initialized = false;
   let lastScopeKey: string | number = '';
@@ -88,6 +91,10 @@
 
   onDestroy(() => {
     clearResets({ restoreSources: true });
+    for (const timer of sourceRestoreTimers) {
+      clearTimeout(timer);
+    }
+    sourceRestoreTimers.length = 0;
   });
 
   $effect(() => {
@@ -105,7 +112,7 @@
     }
 
     if (replayMode && scopeChanged) {
-      clearResets({ restoreSources: false });
+      clearResets({ restoreSources: false, restoreConnectedSourcesAfterMs: handOutroSettleMs });
     }
 
     const animationEvents = actionAnimationBatchEvents(currentEvents, seenEventIds, replayMode, scopeChanged);
@@ -154,13 +161,26 @@
     timers.push(timer);
   }
 
-  function clearResets({ restoreSources: shouldRestoreSources = true }: ClearOptions = {}) {
+  function clearResets({
+    restoreSources: shouldRestoreSources = true,
+    restoreConnectedSourcesAfterMs,
+  }: ClearOptions = {}) {
+    const sourcesToRestore = [...hiddenSources];
     for (const timer of timers) {
       clearTimeout(timer);
     }
     timers.length = 0;
     if (shouldRestoreSources) {
-      showSources(hiddenSources);
+      showSources(sourcesToRestore);
+    } else if (restoreConnectedSourcesAfterMs !== undefined && sourcesToRestore.length) {
+      const timer = setTimeout(() => {
+        showSources(sourcesToRestore.filter((source) => source.isConnected));
+        const timerIndex = sourceRestoreTimers.indexOf(timer);
+        if (timerIndex >= 0) {
+          sourceRestoreTimers.splice(timerIndex, 1);
+        }
+      }, restoreConnectedSourcesAfterMs);
+      sourceRestoreTimers.push(timer);
     }
     hiddenSources = [];
     resets = [];

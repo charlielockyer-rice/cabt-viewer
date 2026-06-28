@@ -2054,6 +2054,102 @@ describe('cabtReplayToSnapshot', () => {
     expect(step.animationPhases?.[1].view.players[0].bench[0].pokemon?.animationHidden).toBeUndefined();
   });
 
+  it('coalesces multiple deck-to-bench placements from one resolving card effect', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 2,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 721, serial: 4, hp: 150, maxHp: 150 }],
+            bench: [],
+            benchMax: 5,
+            hand: [{ id: 1086, serial: 39 }],
+            deckCount: 50,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 50,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'Play', playerIndex: 0, cardId: 1086, serial: 39 },
+        ],
+        current: {
+          turn: 2,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 721, serial: 4, hp: 150, maxHp: 150 }],
+            bench: [],
+            benchMax: 5,
+            hand: [],
+            deckCount: 50,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 50,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'MoveCard', playerIndex: 0, cardId: 722, serial: 6, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.BENCH },
+          { type: 'MoveCard', playerIndex: 0, cardId: 723, serial: 13, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.BENCH },
+          { type: 'Shuffle', playerIndex: 0 },
+        ],
+        current: {
+          turn: 2,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 721, serial: 4, hp: 150, maxHp: 150 }],
+            bench: [
+              { id: 722, serial: 6, hp: 90, maxHp: 90 },
+              { id: 723, serial: 13, hp: 90, maxHp: 90 },
+            ],
+            benchMax: 5,
+            hand: [],
+            deckCount: 48,
+            discard: [{ id: 1086, serial: 39 }],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 50,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    expect(snapshot.steps).toHaveLength(2);
+    const step = snapshot.steps[1];
+    expect(step.label).toBe('Player 1 played Buddy-Buddy Poffin, put 2 Pokemon from their deck onto the board, and shuffled their deck.');
+    expect(step.actionTimeline?.map((event) => event.kind)).toEqual(['Play', 'MoveCard', 'MoveCard', 'Shuffle']);
+    expect(step.animationPhases?.map((phase) => phase.key.replace(/:\d+$/, ''))).toEqual([
+      'Play',
+      'DeckBoardPlace',
+      'Shuffle',
+    ]);
+    expect(step.animationPhases?.[1].view.players[0].bench
+      .filter((slot) => !slot.empty)
+      .map((slot) => slot.pokemon?.serial)).toEqual([6, 13]);
+  });
+
   it('coalesces Waitress-style reveal, attach, return, and shuffle into one replay step', () => {
     const snapshot = cabtReplayToSnapshot({
       visualize: [{

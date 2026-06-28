@@ -61,6 +61,8 @@
 
   let motionLayer = $state<HTMLElement>();
   const timers: ReturnType<typeof setTimeout>[] = [];
+  const handoffTimers: ReturnType<typeof setTimeout>[] = [];
+  const handoffFrameIds: number[] = [];
   let seenEventIds = new Set<number>();
   let initialized = false;
   let lastScopeKey: string | number = '';
@@ -84,6 +86,14 @@
 
   onDestroy(() => {
     clearBoardMoves();
+    for (const timer of handoffTimers) {
+      clearTimeout(timer);
+    }
+    handoffTimers.length = 0;
+    for (const frameId of handoffFrameIds) {
+      cancelAnimationFrame(frameId);
+    }
+    handoffFrameIds.length = 0;
   });
 
   $effect(() => {
@@ -91,7 +101,7 @@
     const currentScopeKey = scopeKey;
     const scopeChanged = initialized && currentScopeKey !== lastScopeKey;
     if (scopeChanged) {
-      clearBoardMoves();
+      clearBoardMoves({ settleHandoff: replayMode });
     }
     lastScopeKey = currentScopeKey;
 
@@ -458,17 +468,40 @@
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
   }
 
-  function clearBoardMoves() {
+  function clearBoardMoves({ settleHandoff = false }: { settleHandoff?: boolean } = {}) {
     animationGeneration += 1;
+    const cleanupGeneration = animationGeneration;
     for (const timer of timers) {
       clearTimeout(timer);
     }
     timers.length = 0;
-    for (const element of hiddenElementCounts.keys()) {
-      delete element.dataset.boardMoveAnimationHidden;
+    const elementsToRestore = hiddenElementSnapshots();
+    const spriteIdsToClear = new Set(sprites.map((sprite) => sprite.id));
+    if (settleHandoff && (elementsToRestore.length || spriteIdsToClear.size)) {
+      const timer = setTimeout(() => {
+        restoreBoardMoveElements(elementsToRestore);
+        removeSpritesAfterPrepaint(spriteIdsToClear, cleanupGeneration);
+        const timerIndex = handoffTimers.indexOf(timer);
+        if (timerIndex >= 0) {
+          handoffTimers.splice(timerIndex, 1);
+        }
+      }, replayHandoffSettleMs);
+      handoffTimers.push(timer);
+      return;
     }
-    hiddenElementCounts.clear();
+
+    restoreBoardMoveElements(elementsToRestore);
     sprites = [];
+  }
+
+  function hiddenElementSnapshots() {
+    return [...hiddenElementCounts.entries()].map(([element, count]) => ({ element, count }));
+  }
+
+  function restoreBoardMoveElements(elements: Array<{ element: HTMLElement; count: number }>) {
+    for (const { element, count } of elements) {
+      showBoardMoveElement(element, { releaseCount: count });
+    }
   }
 
   function hideBoardMoveElement(element: HTMLElement) {
@@ -476,14 +509,38 @@
     element.dataset.boardMoveAnimationHidden = 'true';
   }
 
-  function showBoardMoveElement(element: HTMLElement) {
-    const count = (hiddenElementCounts.get(element) ?? 1) - 1;
+  function showBoardMoveElement(element: HTMLElement, { releaseCount = 1 }: { releaseCount?: number } = {}) {
+    const count = (hiddenElementCounts.get(element) ?? releaseCount) - releaseCount;
     if (count > 0) {
       hiddenElementCounts.set(element, count);
       return;
     }
     hiddenElementCounts.delete(element);
     delete element.dataset.boardMoveAnimationHidden;
+  }
+
+  function removeSpritesAfterPrepaint(spriteIdsToClear: Set<string>, generation: number) {
+    if (!spriteIdsToClear.size) {
+      return;
+    }
+    const firstFrameId = requestAnimationFrame(() => {
+      removeHandoffFrame(firstFrameId);
+      const secondFrameId = requestAnimationFrame(() => {
+        removeHandoffFrame(secondFrameId);
+        if (generation === animationGeneration) {
+          sprites = sprites.filter((sprite) => !spriteIdsToClear.has(sprite.id));
+        }
+      });
+      handoffFrameIds.push(secondFrameId);
+    });
+    handoffFrameIds.push(firstFrameId);
+  }
+
+  function removeHandoffFrame(frameId: number) {
+    const frameIndex = handoffFrameIds.indexOf(frameId);
+    if (frameIndex >= 0) {
+      handoffFrameIds.splice(frameIndex, 1);
+    }
   }
 
   function measureSpriteCorrection(sprite: BoardMoveSprite, target: HTMLElement) {
@@ -558,7 +615,7 @@
     if (destinationReady || timedOut || detached) {
       showBoardMoveElement(source);
       showBoardMoveElement(target);
-      sprites = sprites.filter((item) => item.id !== sprite.id);
+      removeSpritesAfterPrepaint(new Set([sprite.id]), generation);
       return;
     }
 
