@@ -2,7 +2,7 @@
   import { onDestroy, onMount, tick } from 'svelte';
   import CardTile from './CardTile.svelte';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
-  import { resolveAnimationAnchorElements, type AnimationAnchorRef } from '../animations/animationAnchors';
+  import { resolveExactAnimationAnchorElement, type AnimationAnchorRef } from '../animations/animationAnchors';
   import { afterTwoAnimationFrames } from '../animations/animationFrames';
   import {
     hideElementForAnimation,
@@ -357,20 +357,9 @@
   }
 
   function elementForAnchor(anchor: AnimationAnchorRef): HTMLElement | null {
-    const exact = resolveAnimationAnchorElements(anchor).at(0);
+    const exact = resolveExactAnimationAnchorElement(anchor);
     if (exact) {
       return visualElementForAnchor(exact, anchor);
-    }
-    if (anchor.kind === 'discard-card') {
-      const fallback = resolveAnimationAnchorElements({ kind: 'discard-pile', playerIndex: anchor.playerIndex }).at(0);
-      return fallback ? visualElementForAnchor(fallback, { kind: 'discard-pile', playerIndex: anchor.playerIndex }) : null;
-    }
-    if ('serial' in anchor && anchor.serial !== undefined) {
-      const fallbackAnchor = { ...anchor, serial: undefined } as AnimationAnchorRef;
-      const fallback = resolveAnimationAnchorElements(fallbackAnchor).at(0);
-      if (fallback) {
-        return visualElementForAnchor(fallback, fallbackAnchor);
-      }
     }
     return null;
   }

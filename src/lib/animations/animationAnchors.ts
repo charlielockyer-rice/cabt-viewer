@@ -330,6 +330,13 @@ export function resolveAnimationAnchorElements(
   return Array.from(elements);
 }
 
+export function resolveExactAnimationAnchorElement(
+  anchor: AnimationAnchorRef,
+  options: AnimationAnchorResolveOptions = {},
+): HTMLElement | null {
+  return resolveAnimationAnchorElements(anchor, options).at(0) ?? null;
+}
+
 export function animationAnchorForElement(element: Element): ResolvedAnimationAnchor | null {
   const anchoredElement = element.closest('[data-animation-anchor-key]');
   if (!(anchoredElement instanceof HTMLElement)) {

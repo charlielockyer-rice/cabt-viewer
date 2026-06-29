@@ -8,6 +8,7 @@ import {
   parseAnimationAnchor,
   parseAnimationIdentity,
   resolveAnimationAnchorElements,
+  resolveExactAnimationAnchorElement,
   serializeAnimationAnchor,
   serializeAnimationIdentity,
   type AnimationAnchorRef,
@@ -135,6 +136,23 @@ describe('animation anchors', () => {
       root,
       identity: { kind: 'card', serial: 10 },
     })).toEqual([matching]);
+  });
+
+  it('resolves one exact serial-sensitive anchor element', () => {
+    const anchor = { kind: 'attached-energy' as const, playerIndex: 1, slot: 'active' as const, slotIndex: 0, serial: 91 };
+    const matching = new TestElement({
+      animationAnchor: 'attached-energy',
+      animationAnchorKey: 'player:1:attached-energy:active:0:serial:91',
+      animationCardSerial: '91',
+    });
+    const sameSlotOtherSerial = new TestElement({
+      animationAnchor: 'attached-energy',
+      animationAnchorKey: 'player:1:attached-energy:active:0:serial:92',
+      animationCardSerial: '92',
+    });
+    const root = queryRoot([sameSlotOtherSerial, matching]);
+
+    expect(resolveExactAnimationAnchorElement(anchor, { root })).toBe(matching);
   });
 
   it('infers identity serials from legacy anchor keys', () => {

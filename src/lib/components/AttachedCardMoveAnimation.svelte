@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import {
+    resolveExactAnimationAnchorElement,
     resolveAnimationAnchorElements,
     type AnimationAnchorRef,
     type AnimationIdentity,
@@ -232,8 +233,8 @@
   }
 
   function spriteForMotion(motion: CardMoveAnimationMotion): AttachedMoveSprite[] {
-    const source = sourceForAnchor(motion.sourceAnchor);
-    const target = targetElementForAnchor(motion.targetAnchor);
+    const source = sourceForAnchor(motion.sourceAnchor, 'planned');
+    const target = targetElementForAnchor(motion.targetAnchor, 'planned');
     const boardPlane = boardPlaneElement();
     if (!source || !target || !boardPlane) {
       return [];
@@ -350,11 +351,11 @@
       );
   }
 
-  function sourceForAnchor(anchor: AnimationAnchorRef): AttachedMoveSource | null {
+  function sourceForAnchor(anchor: AnimationAnchorRef, mode: 'planned' | 'live' = 'live'): AttachedMoveSource | null {
     if (anchor.kind !== 'attached-energy' && anchor.kind !== 'attached-tool') {
       return null;
     }
-    const element = elementForAnchor(anchor);
+    const element = mode === 'planned' ? exactElementForAnchor(anchor) : elementForAnchor(anchor);
     if (!element) {
       return anchor.serial !== undefined ? previousSourceForSerial(anchor.serial) : null;
     }
@@ -434,8 +435,8 @@
     return null;
   }
 
-  function targetElementForAnchor(anchor: AnimationAnchorRef): HTMLElement | null {
-    const element = elementForAnchor(anchor);
+  function targetElementForAnchor(anchor: AnimationAnchorRef, mode: 'planned' | 'live' = 'live'): HTMLElement | null {
+    const element = mode === 'planned' ? exactElementForAnchor(anchor) : elementForAnchor(anchor);
     if (!element) {
       return null;
     }
@@ -445,8 +446,12 @@
     return element;
   }
 
+  function exactElementForAnchor(anchor: AnimationAnchorRef): HTMLElement | null {
+    return resolveExactAnimationAnchorElement(anchor);
+  }
+
   function elementForAnchor(anchor: AnimationAnchorRef): HTMLElement | null {
-    const exact = resolveAnimationAnchorElements(anchor).at(0);
+    const exact = resolveExactAnimationAnchorElement(anchor);
     if (exact) {
       return exact;
     }
