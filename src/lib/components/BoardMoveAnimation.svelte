@@ -658,7 +658,7 @@
 
   function restoreBoardMoveElements(elements: HiddenBoardMoveElement[]) {
     for (const hidden of elements) {
-      showBoardMoveElement(hidden);
+      releaseBoardMoveElementClaim(hidden);
     }
   }
 
@@ -673,7 +673,18 @@
     hiddenElements.set(element, [...existing, hidden]);
   }
 
-  function showBoardMoveElement(hidden: HiddenBoardMoveElement) {
+  function showBoardMoveElement(element: HTMLElement) {
+    const entries = hiddenElements.get(element);
+    if (!entries?.length) {
+      return;
+    }
+    for (const hidden of entries) {
+      releaseElementVisibilityClaim(hidden);
+    }
+    hiddenElements.delete(element);
+  }
+
+  function releaseBoardMoveElementClaim(hidden: HiddenBoardMoveElement) {
     const entries = hiddenElements.get(hidden.element);
     if (!entries?.length) {
       return;
