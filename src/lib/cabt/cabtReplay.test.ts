@@ -658,6 +658,69 @@ describe('cabtReplayToSnapshot', () => {
     ]);
   });
 
+  it('keeps valid planned motions when one event in the phase cannot resolve', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 8,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [],
+            benchMax: 5,
+            hand: [],
+            deckCount: 0,
+            prize: Array.from({ length: 6 }, () => null),
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 0,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'MoveCard', playerIndex: 0, cardId: 96, serial: 120, fromArea: CabtAreaType.PRIZE, toArea: CabtAreaType.HAND },
+          { type: 'MoveCard', playerIndex: 0, cardId: 1261, serial: 121, fromArea: CabtAreaType.PRIZE, toArea: CabtAreaType.HAND },
+        ],
+        current: {
+          turn: 8,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [],
+            benchMax: 5,
+            hand: [
+              { id: 1261, serial: 121 },
+            ],
+            deckCount: 0,
+            prize: Array.from({ length: 5 }, () => null),
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 0,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    const motions = snapshot.steps[1].animationPhases?.[0].animationPlan?.motions ?? [];
+
+    expect(motions).toHaveLength(1);
+    expect(motions[0]).toMatchObject({
+      kind: 'card-move',
+      targetAnchor: { kind: 'hand-card', playerIndex: 0, handIndex: 0, serial: 121 },
+      identity: { kind: 'card', serial: 121, cardId: 1261 },
+    });
+  });
+
   it('plans MoveCardReverse Prize-take motions as face-down sprites', () => {
     const snapshot = cabtReplayToSnapshot({
       visualize: [{

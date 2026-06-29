@@ -1585,7 +1585,7 @@ function abilityPulseMotions(phase: AnimationEventPhase, view: GameView): Animat
       durationMs: actionAnimationTiming.abilityAnnounceMs,
     } satisfies AnimationMotion];
   });
-  return motions.some((motion) => motion === null) ? [] : motions.flatMap((motion) => motion ?? []);
+  return compactAnimationMotions(motions);
 }
 
 function abilityAnchorForEvent(view: GameView, event: ActionTimelineEvent): AnimationAnchorRef | undefined {
@@ -1644,7 +1644,7 @@ function attackPulseMotions(phase: AnimationEventPhase, view: GameView): Animati
       durationMs: actionAnimationTiming.attackAnnounceMs,
     } satisfies AnimationMotion];
   });
-  return motions.some((motion) => motion === null) ? [] : motions.flatMap((motion) => motion ?? []);
+  return compactAnimationMotions(motions);
 }
 
 function damagePulseMotions(phase: AnimationEventPhase, view: GameView, stepEvents: ActionTimelineEvent[]): AnimationMotion[] {
@@ -1675,7 +1675,7 @@ function damagePulseMotions(phase: AnimationEventPhase, view: GameView, stepEven
       durationMs: actionAnimationTiming.damageVisualMs,
     } satisfies AnimationMotion];
   });
-  return motions.some((motion) => motion === null) ? [] : motions.flatMap((motion) => motion ?? []);
+  return compactAnimationMotions(motions);
 }
 
 function shuffleMotions(phase: AnimationEventPhase): AnimationMotion[] {
@@ -1696,10 +1696,7 @@ function shuffleMotions(phase: AnimationEventPhase): AnimationMotion[] {
 
 function drawCardMoveMotions(phase: AnimationEventPhase, view: GameView): AnimationMotion[] {
   const motionGroups = phase.events.map((event) => drawCardMoveMotionForEvent(phase, view, event));
-  if (motionGroups.some((motion) => motion === null)) {
-    return [];
-  }
-  return motionGroups.flatMap((motion) => motion ?? []);
+  return compactAnimationMotions(motionGroups);
 }
 
 function drawCardMoveMotionForEvent(
@@ -1749,10 +1746,7 @@ function drawCardMoveMotionForEvent(
 
 function prizeTakeCardMoveMotions(phase: AnimationEventPhase, view: GameView): AnimationMotion[] {
   const motionGroups = phase.events.map((event) => prizeTakeCardMoveMotionForEvent(phase, view, event));
-  if (motionGroups.some((motion) => motion === null)) {
-    return [];
-  }
-  return motionGroups.flatMap((motion) => motion ?? []);
+  return compactAnimationMotions(motionGroups);
 }
 
 function prizeTakeCardMoveMotionForEvent(
@@ -1848,10 +1842,7 @@ function prizeSourceAnchorForEvent(
 
 function handToDeckCardMoveMotions(phase: AnimationEventPhase, view: GameView): AnimationMotion[] {
   const motionGroups = phase.events.map((event) => handToDeckCardMoveMotionForEvent(phase, view, event));
-  if (motionGroups.some((motion) => motion === null)) {
-    return [];
-  }
-  return motionGroups.flatMap((motion) => motion ?? []);
+  return compactAnimationMotions(motionGroups);
 }
 
 function handToDeckCardMoveMotionForEvent(
@@ -1905,10 +1896,7 @@ function handToDeckCardMoveMotionForEvent(
 
 function handPlayCardMoveMotions(phase: AnimationEventPhase, view: GameView): AnimationMotion[] {
   const motionGroups = phase.events.map((event) => handPlayCardMoveMotionForEvent(phase, view, event));
-  if (motionGroups.some((motion) => motion === null)) {
-    return [];
-  }
-  return motionGroups.flatMap((motion) => motion ?? []);
+  return compactAnimationMotions(motionGroups);
 }
 
 function handPlayCardMoveMotionForEvent(
@@ -2288,10 +2276,11 @@ function revealAttachTargetAnchorForEvent(view: GameView, event: ActionTimelineE
 
 function boardCardMoveMotions(phase: AnimationEventPhase, view: GameView): AnimationMotion[] {
   const motionGroups = phase.events.map((event) => boardCardMoveMotionsForEvent(phase, view, event));
-  if (motionGroups.some((motions) => motions === null)) {
-    return [];
-  }
-  return motionGroups.flatMap((motions) => motions ?? []);
+  return compactAnimationMotions(motionGroups);
+}
+
+function compactAnimationMotions(groups: MaybeAnimationMotionGroup[]): AnimationMotion[] {
+  return groups.flatMap((group) => group ?? []);
 }
 
 function boardCardMoveMotionsForEvent(
@@ -2709,6 +2698,8 @@ type AnimationEventPhase = {
   durationMs: number;
   usesSourceView: boolean;
 };
+
+type MaybeAnimationMotionGroup = AnimationMotion | AnimationMotion[] | null | undefined;
 
 function animationEventPhases(events: ActionTimelineEvent[]): AnimationEventPhase[] {
   const phases: AnimationEventPhase[] = [];
