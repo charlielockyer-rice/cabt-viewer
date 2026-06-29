@@ -36,7 +36,6 @@
     type RevealStartAction,
   } from '../animations/revealSessionActions';
   import {
-    cardHeightToWidthRatio,
     centerOf,
     deckTopElement,
     fallbackHandTarget,
@@ -44,6 +43,7 @@
     handCardSlots,
     handCardVisualRect,
     handSlotForSerial,
+    revealedCardLayout,
   } from '../animations/viewportCardMotion';
   import { actionAnimationBatchEvents, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import type { ActionTimelineEvent, CardView } from '../game/types';
@@ -230,7 +230,7 @@
       return undefined;
     }
     const revealCount = revealCountForMotion(motion);
-    const layout = revealLayout(revealCount);
+    const layout = revealedCardLayout(revealCount);
     const target = layout.target(anchor.revealIndex);
     return {
       id: `planned-held-${motion.playerIndex}-${anchor.revealIndex}-${anchor.serial ?? card.id}`,
@@ -534,7 +534,7 @@
       return;
     }
 
-    const layout = revealLayout(selectedSprites.length);
+    const layout = revealedCardLayout(selectedSprites.length);
     const selectedTargets = new Map<string, {
       center: { x: number; y: number };
       width: number;
@@ -744,7 +744,7 @@
     playerActions: RevealStartAction[],
     execution: RevealExecution,
   ): RevealSprite[] {
-    const layout = revealLayout(playerActions.length);
+    const layout = revealedCardLayout(playerActions.length);
     const liveDeckElement = execution === 'live' ? deckTopElement(playerIndex) : null;
     return playerActions.flatMap((action, index) => {
       const deckElement = execution === 'planned'
@@ -793,55 +793,6 @@
         removeMs: action.removeMs,
       }];
     });
-  }
-
-  function revealLayout(count: number) {
-    const viewportWidth = typeof window === 'undefined' ? 1200 : window.innerWidth;
-    const viewportHeight = typeof window === 'undefined' ? 800 : window.innerHeight;
-    const boardRect = typeof document === 'undefined'
-      ? undefined
-      : document.querySelector('.playmat')?.getBoundingClientRect();
-    const centerX = boardRect ? boardRect.left + boardRect.width / 2 : viewportWidth / 2;
-    const centerY = boardRect ? boardRect.top + boardRect.height * 0.5 : viewportHeight * 0.47;
-    const maxWidth = boardRect ? boardRect.width - 96 : viewportWidth - 96;
-    const availableWidth = Math.max(220, maxWidth);
-    const spacingRatio = viewportWidth < 760 ? 0.62 : 0.7;
-    const minCardWidth = viewportWidth < 760 ? 92 : 112;
-    const maxColumns = Math.max(1, Math.floor(((availableWidth / minCardWidth) - 1) / spacingRatio + 1));
-    const columns = Math.min(count, maxColumns);
-    const rows = Math.ceil(count / columns);
-    const boardHeight = boardRect?.height ?? viewportHeight;
-    const revealBandHeight = boardHeight * (viewportWidth < 760 ? 0.46 : 0.52);
-    const maxByHeight = revealBandHeight / (cardHeightToWidthRatio * (rows + Math.max(0, rows - 1) * 0.08));
-    const maxReadableWidth = Math.min(viewportWidth < 760 ? 174 : 252, availableWidth, maxByHeight);
-    const countScale = count <= 1 ? 1 : count <= 2 ? 0.9 : count <= 4 ? 0.78 : count <= 6 ? 0.68 : 0.58;
-    const desiredCardWidth = maxReadableWidth * countScale;
-    const maxByWidth = availableWidth / (1 + spacingRatio * Math.max(0, columns - 1));
-    const cardWidth = Math.max(minCardWidth, Math.min(maxReadableWidth, desiredCardWidth, maxByWidth));
-    const cardHeight = cardWidth * cardHeightToWidthRatio;
-    const spacing = cardWidth * spacingRatio;
-    const rotationStep = count <= 1 ? 0 : Math.min(5, 20 / Math.max(1, count - 1));
-    const arcDrop = cardWidth * 0.045;
-    const rowGap = cardHeight * 0.08;
-    const totalHeight = rows * cardHeight + Math.max(0, rows - 1) * rowGap;
-    const originY = centerY - totalHeight / 2 + cardHeight / 2;
-
-    return {
-      cardWidth,
-      cardHeight,
-      target(index: number) {
-        const row = Math.floor(index / columns);
-        const rowStart = row * columns;
-        const cardsInRow = Math.min(columns, count - rowStart);
-        const column = index - rowStart;
-        const offset = column - (cardsInRow - 1) / 2;
-        return {
-          x: centerX + offset * spacing,
-          y: originY + row * (cardHeight + rowGap) + Math.abs(offset) * arcDrop,
-          rotation: offset * rotationStep,
-        };
-      },
-    };
   }
 
   function updateSprites(update: (sprite: RevealSprite) => RevealSprite) {
