@@ -10,7 +10,9 @@
     type AnimationAnchorRef,
   } from '../animations/animationAnchors';
   import { afterTwoAnimationFrames } from '../animations/animationFrames';
-  import { replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
+  import { replayAnimationScopeExitSettleMs, replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
+  import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
+  import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
   import type { ReplayAnimationPhasePlan, RevealSessionAnimationMotion, RevealSessionStep } from '../animations/replayAnimationPlan';
   import {
     cardHeightToWidthRatio,
@@ -111,12 +113,9 @@
   const handoffFrameIds: number[] = [];
   const handoffSettleMs = 48;
   let reveals = $state<RevealAnimation[]>([]);
-  let seenEventIds = new Set<number>();
-  let initialized = false;
-  let lastScopeKey: string | number = '';
-  let lastPlanKey = '';
+  const runState = new ReplayAnimationRunState();
   let nextAnimationId = 1;
-  const activeAttachElements = new Set<HTMLElement>();
+  const activeAttachElementCounts = new Map<HTMLElement, number>();
   let activeAttachClaims: ElementVisibilityClaim[] = [];
   let hiddenTargets: HiddenRevealTarget[] = [];
 
@@ -129,18 +128,16 @@
     const currentScopeKey = scopeKey;
     const currentPlanMotions = plannedRevealMotions;
     const planKey = revealSessionPlanKey(currentPlanMotions);
-    const scopeChanged = initialized && currentScopeKey !== lastScopeKey;
-    const planChanged = planKey !== lastPlanKey;
-    lastScopeKey = currentScopeKey;
-    lastPlanKey = planKey;
+    const run = runState.update(currentScopeKey, planKey);
 
     if (currentPlanMotions.length) {
-      initialized = true;
-      for (const event of currentEvents) {
-        seenEventIds.add(event.id);
-      }
-      if (planChanged || scopeChanged) {
-        clearReveals();
+      runState.markEventsSeen(currentEvents);
+      if (run.shouldStartPlan) {
+        if (run.scopeChanged) {
+          settleReveals();
+        } else {
+          clearReveals();
+        }
         const planSteps = revealSessionPlanSteps(currentPlanMotions);
         const revealActions = revealStartActionsForSteps(planSteps);
         const attachActions = revealCardActionsForSteps(planSteps, 'attach');
@@ -166,25 +163,20 @@
       return;
     }
 
-    if (!initialized) {
-      for (const event of currentEvents) {
-        seenEventIds.add(event.id);
-      }
-      initialized = true;
+    if (run.firstRun) {
+      runState.markEventsSeen(currentEvents);
       return;
     }
 
     if (replayMode) {
-      if (scopeChanged) {
-        clearReveals();
+      if (run.scopeChanged) {
+        settleReveals();
       }
-      for (const event of currentEvents) {
-        seenEventIds.add(event.id);
-      }
+      runState.markEventsSeen(currentEvents);
       return;
     }
 
-    const animationEvents = actionAnimationBatchEvents(currentEvents, seenEventIds);
+    const animationEvents = actionAnimationBatchEvents(currentEvents, runState.seenEventIds);
     const revealActions = animationEvents
       .filter((event) => isDeckRevealEvent(event) && shouldAnimateEvent(event))
       .flatMap((event) => revealStartActionForEvent(event, animationEvents) ?? []);
@@ -198,9 +190,7 @@
       .filter((event) => isRevealReturnEvent(event) && shouldAnimateEvent(event))
       .flatMap((event) => revealCardActionForEvent(event, animationEvents) ?? []);
 
-    for (const event of currentEvents) {
-      seenEventIds.add(event.id);
-    }
+    runState.markEventsSeen(currentEvents);
 
     if (revealActions.length) {
       startReveal(revealActions);
@@ -412,7 +402,7 @@
   }
 
   function shouldAnimateEvent(event: ActionTimelineEvent): boolean {
-    return !seenEventIds.has(event.id);
+    return !runState.hasSeen(event);
   }
 
   function isDeckRevealEvent(event: ActionTimelineEvent): boolean {
@@ -674,6 +664,39 @@
     clearAttachTargets();
   }
 
+  function settleReveals() {
+    const revealIds = new Set(reveals.map((reveal) => reveal.id));
+    const hiddenToRelease = [...hiddenTargets];
+    const attachCountsToRelease = Array.from(activeAttachElementCounts.entries());
+    const attachClaimsToRelease = [...activeAttachClaims];
+    for (const frameId of handoffFrameIds) {
+      cancelAnimationFrame(frameId);
+    }
+    handoffFrameIds.length = 0;
+    const items = revealIds.size
+      ? reveals.map((reveal) => ({ id: reveal.id }))
+      : hiddenToRelease.length || attachCountsToRelease.length || attachClaimsToRelease.length
+        ? [{ id: -1 }]
+        : [];
+    scheduleReplayAnimationScopeClear({
+      items,
+      timers,
+      delayMs: replayAnimationScopeExitSettleMs,
+      removeIds() {
+        reveals = reveals.filter((reveal) => !revealIds.has(reveal.id));
+        showTargets(hiddenToRelease);
+        for (const [element, count] of attachCountsToRelease) {
+          for (let index = 0; index < count; index += 1) {
+            deactivateAttachElement(element);
+          }
+        }
+        for (const claim of attachClaimsToRelease) {
+          releaseAttachClaim(claim);
+        }
+      },
+    });
+  }
+
   function moveSelectedSpritesToReveal(playerIndex: number, returningSerials: ReadonlySet<number>) {
     const selectedSprites = reveals
       .flatMap((reveal) => reveal.sprites)
@@ -775,9 +798,8 @@
     }
     const startTimer = setTimeout(() => {
       const attachedElement = attachedCardElement(target, serial);
-      attachedElement?.classList.add('reveal-attach-handoff-energy');
       if (attachedElement) {
-        activeAttachElements.add(attachedElement);
+        activateAttachElement(attachedElement);
       }
       if (immediateClaim) {
         releaseAttachClaim(immediateClaim);
@@ -785,23 +807,38 @@
     }, delayMs);
     const endTimer = setTimeout(() => {
       const attachedElement = attachedCardElement(target, serial);
-      attachedElement?.classList.remove('reveal-attach-handoff-energy');
       if (attachedElement) {
-        activeAttachElements.delete(attachedElement);
+        deactivateAttachElement(attachedElement);
       }
     }, delayMs + actionAnimationTiming.handMoveMs + 120);
     timers.push(startTimer, endTimer);
   }
 
   function clearAttachTargets() {
-    for (const element of activeAttachElements) {
+    for (const element of activeAttachElementCounts.keys()) {
       element.classList.remove('reveal-attach-handoff-energy');
     }
-    activeAttachElements.clear();
+    activeAttachElementCounts.clear();
     for (const claim of activeAttachClaims) {
       releaseElementVisibilityClaim(claim);
     }
     activeAttachClaims = [];
+  }
+
+  function activateAttachElement(element: HTMLElement) {
+    const count = activeAttachElementCounts.get(element) ?? 0;
+    activeAttachElementCounts.set(element, count + 1);
+    element.classList.add('reveal-attach-handoff-energy');
+  }
+
+  function deactivateAttachElement(element: HTMLElement) {
+    const count = (activeAttachElementCounts.get(element) ?? 1) - 1;
+    if (count > 0) {
+      activeAttachElementCounts.set(element, count);
+      return;
+    }
+    activeAttachElementCounts.delete(element);
+    element.classList.remove('reveal-attach-handoff-energy');
   }
 
   function releaseAttachClaim(claim: ElementVisibilityClaim) {
