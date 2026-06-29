@@ -6,6 +6,8 @@
     releaseElementVisibilityClaim,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
+  import { resolveAnimationAnchorElements } from '../animations/animationAnchors';
+  import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -18,6 +20,7 @@
     replayMode?: boolean;
     animatePlacements?: boolean;
     animateTakes?: boolean;
+    animationPlan?: ReplayAnimationPhasePlan;
   };
 
   type PrizeTargetAnimation = {
@@ -67,6 +70,7 @@
     replayMode = false,
     animatePlacements = true,
     animateTakes = true,
+    animationPlan,
   }: Props = $props();
 
   const timers: ReturnType<typeof setTimeout>[] = [];
@@ -79,6 +83,7 @@
   let initialized = false;
   let reduceMotion = $state(false);
   let lastScopeKey: string | number = '';
+  let lastPlanKey = '';
   let nextAnimationId = 1;
   let anchorElement = $state<HTMLElement>();
   let prizeTakes = $state<PrizeTakeAnimation[]>([]);
@@ -106,8 +111,31 @@
   $effect(() => {
     const currentEvents = events;
     const currentScopeKey = scopeKey;
+    const plannedTakeMotions = prizeTakePlanMotions(animationPlan);
+    const planKey = prizeTakePlanKey(plannedTakeMotions);
     const scopeChanged = initialized && currentScopeKey !== lastScopeKey;
+    const planChanged = planKey !== lastPlanKey;
     lastScopeKey = currentScopeKey;
+    lastPlanKey = planKey;
+
+    if (animateTakes && plannedTakeMotions.length) {
+      const shouldStartPlan = !initialized || planChanged || scopeChanged;
+      initialized = true;
+      if (shouldStartPlan) {
+        clearAnimations();
+        if (reduceMotion || startPlannedPrizeTake(plannedTakeMotions)) {
+          for (const event of currentEvents) {
+            seenEventIds.add(event.id);
+          }
+          return;
+        }
+      } else {
+        for (const event of currentEvents) {
+          seenEventIds.add(event.id);
+        }
+        return;
+      }
+    }
 
     if (!initialized) {
       for (const event of currentEvents) {
@@ -146,6 +174,20 @@
       startPrizeTake(takeEvents, animationEvents);
     }
   });
+
+  function prizeTakePlanMotions(plan: ReplayAnimationPhasePlan | undefined): CardMoveAnimationMotion[] {
+    return (plan?.motions ?? []).filter((motion): motion is CardMoveAnimationMotion =>
+      motion.kind === 'card-move'
+      && motion.coordinateSpace === 'viewport'
+      && motion.sourceAnchor.kind === 'prize-card'
+      && motion.targetAnchor.kind === 'hand-card'
+      && plan?.key.startsWith(`PrizeTake:${motion.sourceAnchor.playerIndex}`),
+    );
+  }
+
+  function prizeTakePlanKey(motions: CardMoveAnimationMotion[]): string {
+    return motions.map((motion) => `${motion.id}:${motion.startMs}:${motion.durationMs}`).join('|');
+  }
 
   function shouldAnimateEvent(event: ActionTimelineEvent, scopeChanged: boolean): boolean {
     return (replayMode && scopeChanged) || !seenEventIds.has(event.id);
@@ -240,6 +282,26 @@
       prizeTakes = prizeTakes.filter((item) => item.id !== animation.id);
     }, Math.max(...sprites.map((sprite) => sprite.delayMs + prizeTakeDurationMs(sprite))) + 20);
     timers.push(timer);
+  }
+
+  function startPlannedPrizeTake(motions: CardMoveAnimationMotion[]): boolean {
+    const sprites = motions.flatMap((motion, index) => plannedPrizeTakeSprite(motion, index, motions.length) ?? []);
+    if (!sprites.length) {
+      return false;
+    }
+
+    const animation: PrizeTakeAnimation = {
+      id: nextAnimationId++,
+      sprites,
+      hiddenTargets: [],
+    };
+    prizeTakes = [...prizeTakes, animation];
+
+    const timer = setTimeout(() => {
+      prizeTakes = prizeTakes.filter((item) => item.id !== animation.id);
+    }, Math.max(...sprites.map((sprite) => sprite.delayMs + prizeTakeDurationMs(sprite))) + 20);
+    timers.push(timer);
+    return true;
   }
 
   function clearAnimations() {
@@ -354,6 +416,90 @@
         targetElement,
       }];
     });
+  }
+
+  function plannedPrizeTakeSprite(motion: CardMoveAnimationMotion, index: number, motionCount: number): PrizeTakeSprite | undefined {
+    const sourceElement = animationElementForMotionAnchor(motion.sourceAnchor, motion.identity);
+    const targetElement = animationElementForMotionAnchor(motion.targetAnchor, motion.identity);
+    if (!sourceElement || !targetElement) {
+      return undefined;
+    }
+
+    const sourceRect = sourceElement.getBoundingClientRect();
+    const targetRect = handCardVisualRect(targetElement) ?? targetElement.getBoundingClientRect();
+    if (sourceRect.width <= 0 || sourceRect.height <= 0 || targetRect.width <= 0 || targetRect.height <= 0) {
+      return undefined;
+    }
+
+    const sourceCenter = centerOf(sourceRect);
+    const targetCenter = centerOf(targetRect);
+    const layout = revealLayout(Math.max(index + 1, motionCount));
+    const revealTarget = layout.target(index);
+    const card = plannedMotionCard(motion);
+    const reveal = !plannedMotionFaceDown(motion) && !isConcealedHandTarget(targetElement) && !!card;
+    const handConcealed = isConcealedHandTarget(targetElement);
+
+    return {
+      id: motion.id,
+      card,
+      reveal,
+      mode: reveal ? 'revealing' : 'direct',
+      order: index + 1,
+      delayMs: motion.startMs,
+      left: sourceCenter.x - layout.cardWidth / 2,
+      top: sourceCenter.y - layout.cardHeight / 2,
+      width: layout.cardWidth,
+      height: layout.cardHeight,
+      sourceScale: Math.max(0.18, Math.min(0.85, sourceRect.width / layout.cardWidth)),
+      revealX: revealTarget.x - sourceCenter.x,
+      revealY: revealTarget.y - sourceCenter.y,
+      takeX: targetCenter.x - sourceCenter.x,
+      takeY: targetCenter.y - sourceCenter.y,
+      takeScale: Math.max(0.25, Math.min(1.15, targetRect.width / layout.cardWidth)),
+      takeRotation: handConcealed ? 180 : 0,
+      takeFlip: handConcealed ? 0 : 180,
+      rotation: revealTarget.rotation,
+      targetElement,
+    };
+  }
+
+  function animationElementForMotionAnchor(
+    anchor: CardMoveAnimationMotion['sourceAnchor'],
+    identity: CardMoveAnimationMotion['identity'],
+  ): HTMLElement | undefined {
+    const element = resolveAnimationAnchorElements(anchor, { identity }).at(0)
+      ?? resolveAnimationAnchorElements(anchor).at(0);
+    if (!element) {
+      return undefined;
+    }
+    if (anchor.kind === 'hand-card') {
+      const visual = element.querySelector('.card-tile');
+      return visual instanceof HTMLElement ? visual : element;
+    }
+    return element;
+  }
+
+  function plannedMotionCard(motion: CardMoveAnimationMotion): CardView | undefined {
+    if (motion.spriteVisual.kind !== 'card') {
+      return undefined;
+    }
+    const cardId = motion.identity?.cardId ?? motion.spriteVisual.card?.id;
+    if (!Number.isFinite(Number(cardId))) {
+      return undefined;
+    }
+    return {
+      ...cabtCardToView(Number(cardId)),
+      ...(motion.spriteVisual.card ?? {}),
+      serial: motion.identity?.serial ?? motion.spriteVisual.card?.serial,
+    };
+  }
+
+  function plannedMotionFaceDown(motion: CardMoveAnimationMotion): boolean {
+    return motion.spriteVisual.kind === 'card' && motion.spriteVisual.faceDown === true;
+  }
+
+  function isConcealedHandTarget(targetElement: HTMLElement): boolean {
+    return !!targetElement.closest('.hand.concealed');
   }
 
   function activateTarget(animation: PrizeTargetAnimation) {

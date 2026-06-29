@@ -438,6 +438,168 @@ describe('cabtReplayToSnapshot', () => {
     expect(snapshot.steps[0].actionTimeline).toHaveLength(2);
   });
 
+  it('plans replay Prize-take card moves from prize anchors to final hand anchors', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 8,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [],
+            benchMax: 5,
+            hand: [],
+            deckCount: 0,
+            prize: Array.from({ length: 6 }, () => null),
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 0,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'MoveCard', playerIndex: 0, cardId: 96, serial: 120, fromArea: CabtAreaType.PRIZE, toArea: CabtAreaType.HAND },
+          { type: 'MoveCard', playerIndex: 0, cardId: 1261, serial: 121, fromArea: CabtAreaType.PRIZE, toArea: CabtAreaType.HAND },
+        ],
+        current: {
+          turn: 8,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [],
+            benchMax: 5,
+            hand: [
+              { id: 96, serial: 120 },
+              { id: 1261, serial: 121 },
+            ],
+            deckCount: 0,
+            prize: Array.from({ length: 4 }, () => null),
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 0,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    const step = snapshot.steps[1];
+    expect(step.animationPhases?.map((phase) => phase.key)).toEqual(['PrizeTake:0']);
+    expect(step.animationPhases?.[0].view.players[0].prizesLeft).toBe(6);
+    expect(step.animationPhases?.[0].view.players[0].hand.map((card) => card.serial)).toEqual([120, 121]);
+    expect(step.animationPhases?.[0].animationPlan?.motions).toMatchObject([
+      {
+        kind: 'card-move',
+        coordinateSpace: 'viewport',
+        sourceAnchor: { kind: 'prize-card', playerIndex: 0, prizeIndex: 4 },
+        targetAnchor: { kind: 'hand-card', playerIndex: 0, handIndex: 0, serial: 120 },
+        identity: { kind: 'card', serial: 120, cardId: 96 },
+        startMs: 0,
+        durationMs: 1180,
+        handoffPolicy: {
+          hideDestinationUntil: 'prepaint',
+          removeSprite: 'prepaint',
+        },
+      },
+      {
+        kind: 'card-move',
+        coordinateSpace: 'viewport',
+        sourceAnchor: { kind: 'prize-card', playerIndex: 0, prizeIndex: 5 },
+        targetAnchor: { kind: 'hand-card', playerIndex: 0, handIndex: 1, serial: 121 },
+        identity: { kind: 'card', serial: 121, cardId: 1261 },
+        startMs: 45,
+      },
+    ]);
+    expect(step.animationPhases?.[0].animationPlan?.visibilityClaims).toMatchObject([
+      {
+        anchor: { kind: 'hand-card', playerIndex: 0, handIndex: 0, serial: 120 },
+        identity: { kind: 'card', serial: 120, cardId: 96 },
+        role: 'destination',
+      },
+      {
+        anchor: { kind: 'hand-card', playerIndex: 0, handIndex: 1, serial: 121 },
+        identity: { kind: 'card', serial: 121, cardId: 1261 },
+        role: 'destination',
+      },
+    ]);
+  });
+
+  it('plans MoveCardReverse Prize-take motions as face-down sprites', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 8,
+          yourIndex: 1,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 0,
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            hand: [],
+            deckCount: 0,
+            prize: Array.from({ length: 1 }, () => null),
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'MoveCardReverse', playerIndex: 1, cardId: 96, serial: 220, fromArea: CabtAreaType.PRIZE, toArea: CabtAreaType.HAND },
+        ],
+        current: {
+          turn: 8,
+          yourIndex: 1,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 0,
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            hand: [{ id: 96, serial: 220 }],
+            deckCount: 0,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    const step = snapshot.steps[1];
+    expect(step.animationPhases?.map((phase) => phase.key)).toEqual(['PrizeTake:1']);
+    expect(step.animationPhases?.[0].animationPlan?.motions).toMatchObject([
+      {
+        kind: 'card-move',
+        coordinateSpace: 'viewport',
+        sourceAnchor: { kind: 'prize-card', playerIndex: 1, prizeIndex: 0 },
+        targetAnchor: { kind: 'hand-card', playerIndex: 1, handIndex: 0, serial: 220 },
+        identity: { kind: 'card', serial: 220, cardId: 96 },
+        spriteVisual: {
+          kind: 'card',
+          faceDown: true,
+        },
+      },
+    ]);
+  });
+
   it('labels setup prize placement without revealing card names', () => {
     const snapshot = cabtReplayToSnapshot({
       visualize: [{

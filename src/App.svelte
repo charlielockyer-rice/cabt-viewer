@@ -1419,6 +1419,7 @@
           scopeKey={animationScopeKey}
           {replayMode}
           animatePlacements={false}
+          animationPlan={replayAnimationPlan}
         />
 
         <HandPlayAnimation
