@@ -8,6 +8,10 @@ import {
   playerLabel,
   plural,
 } from './replayAnimationPhases';
+import {
+  isReplayMoveBetween,
+  replayEventMoveAreas,
+} from './replayEventAreas';
 import { CabtAreaType } from './types';
 import type { ActionTimelineEvent } from '../game/types';
 
@@ -208,14 +212,14 @@ function isCheckupKind(kind: string | undefined): boolean {
 }
 
 function sameMoveCardBatch(previous: ActionTimelineEvent | undefined, next: ActionTimelineEvent): boolean {
-  const previousParams = previous?.params as Record<string, unknown> | undefined;
-  const nextParams = next.params as Record<string, unknown> | undefined;
-  const fromArea = Number(nextParams?.fromArea);
-  const toArea = Number(nextParams?.toArea);
+  const previousAreas = previous ? replayEventMoveAreas(previous) : undefined;
+  const nextAreas = replayEventMoveAreas(next);
   return previous?.playerIndex === next.playerIndex
-    && Number(previousParams?.fromArea) === fromArea
-    && Number(previousParams?.toArea) === toArea
-    && isBatchedMoveDestination(fromArea, toArea);
+    && previousAreas !== undefined
+    && nextAreas !== undefined
+    && previousAreas.fromArea === nextAreas.fromArea
+    && previousAreas.toArea === nextAreas.toArea
+    && isBatchedMoveDestination(nextAreas.fromArea, nextAreas.toArea);
 }
 
 function isBatchedMoveDestination(fromArea: number, toArea: number): boolean {
@@ -232,8 +236,8 @@ function sameBoardPositionMoveBatch(previous: ActionTimelineEvent | undefined, n
 }
 
 function isBoardPositionMoveEvent(event: ActionTimelineEvent | undefined): boolean {
-  const params = event?.params as Record<string, unknown> | undefined;
-  return isMoveCardKind(event?.kind) && isBoardPositionMove(Number(params?.fromArea), Number(params?.toArea));
+  const areas = event ? replayEventMoveAreas(event) : undefined;
+  return !!areas && isBoardPositionMove(areas.fromArea, areas.toArea);
 }
 
 function drawGroupLabel(events: ActionTimelineEvent[]): string {
@@ -273,10 +277,8 @@ function isMulliganRedrawGroup(events: ActionTimelineEvent[]): boolean {
   return events.some((event) => event.kind === 'HasBasicPokemon' && (event.params as Record<string, unknown> | undefined)?.hasBasicPokemon === false)
     && events.some((event) => event.kind === 'Shuffle')
     && events.some((event) => {
-      const params = event.params as Record<string, unknown> | undefined;
       return event.kind === 'MoveCard'
-        && Number(params?.fromArea) === CabtAreaType.HAND
-        && Number(params?.toArea) === CabtAreaType.DECK;
+        && isReplayMoveBetween(event, CabtAreaType.HAND, CabtAreaType.DECK);
     });
 }
 
@@ -285,7 +287,7 @@ function moveCardGroupLabel(events: ActionTimelineEvent[], turn: number): string
     return events[0].message;
   }
   const moveEvents = events.filter((event) => isMoveCardKind(event.kind));
-  const firstParams = moveEvents[0]?.params as Record<string, unknown> | undefined;
+  const firstMove = moveEvents[0];
   const playerIndex = moveEvents[0]?.playerIndex;
   const samePlayer = moveEvents.every((event) => event.playerIndex === playerIndex);
   const allSameMove = moveEvents.every((event) => sameMoveCardBatch(moveEvents[0], event));
@@ -293,8 +295,8 @@ function moveCardGroupLabel(events: ActionTimelineEvent[], turn: number): string
     samePlayer
     && playerIndex !== undefined
     && allSameMove
-    && Number(firstParams?.fromArea) === CabtAreaType.DECK
-    && Number(firstParams?.toArea) === CabtAreaType.PRIZE
+    && firstMove !== undefined
+    && isReplayMoveBetween(firstMove, CabtAreaType.DECK, CabtAreaType.PRIZE)
   ) {
     if (turn === 0) {
       return `Player ${playerIndex + 1} set ${moveEvents.length} Prize cards.`;
@@ -305,8 +307,8 @@ function moveCardGroupLabel(events: ActionTimelineEvent[], turn: number): string
     samePlayer
     && playerIndex !== undefined
     && allSameMove
-    && Number(firstParams?.fromArea) === CabtAreaType.HAND
-    && Number(firstParams?.toArea) === CabtAreaType.DECK
+    && firstMove !== undefined
+    && isReplayMoveBetween(firstMove, CabtAreaType.HAND, CabtAreaType.DECK)
     && events.some((event) => event.kind === 'Shuffle')
   ) {
     if (turn === 0) {
@@ -318,8 +320,8 @@ function moveCardGroupLabel(events: ActionTimelineEvent[], turn: number): string
     samePlayer
     && playerIndex !== undefined
     && allSameMove
-    && Number(firstParams?.fromArea) === CabtAreaType.PRIZE
-    && Number(firstParams?.toArea) === CabtAreaType.HAND
+    && firstMove !== undefined
+    && isReplayMoveBetween(firstMove, CabtAreaType.PRIZE, CabtAreaType.HAND)
   ) {
     return `Player ${playerIndex + 1} took ${moveEvents.length} Prize cards.`;
   }
