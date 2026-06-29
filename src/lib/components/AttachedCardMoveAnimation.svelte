@@ -55,10 +55,16 @@
     targetRotation: number;
     delayMs: number;
     durationMs: number;
+    lifecycle: AttachedMoveLifecycle;
+  };
+
+  type AttachedMoveLifecycle = {
+    kind: 'planned';
+    removeMs?: number;
+  } | {
+    kind: 'live';
     hiddenElement?: HTMLElement;
     destinationCardElement?: HTMLElement;
-    planned: boolean;
-    removeMs?: number;
   };
 
   type ActiveAttachedMoveSprite = AttachedMoveSprite & {
@@ -69,7 +75,8 @@
 
   type AttachedMoveSource = {
     rect: RectSnapshot;
-    hiddenElement?: HTMLElement;
+    rotationElement?: HTMLElement;
+    liveHiddenElement?: HTMLElement;
   };
 
   type RectSnapshot = PlaneRect;
@@ -196,25 +203,25 @@
       };
       activeSprites = [...activeSprites, activeSprite];
       const startTimer = setTimeout(() => {
-        if (!activeSprite.planned && activeSprite.hiddenElement) {
+        if (activeSprite.lifecycle.kind === 'live' && activeSprite.lifecycle.hiddenElement) {
           hideActiveElement(
             activeSprite,
-            activeSprite.hiddenElement,
+            activeSprite.lifecycle.hiddenElement,
             'source',
             'data-attached-move-animation-hidden',
           );
         }
-        if (!activeSprite.planned && activeSprite.destinationCardElement) {
+        if (activeSprite.lifecycle.kind === 'live' && activeSprite.lifecycle.destinationCardElement) {
           hideActiveElement(
             activeSprite,
-            activeSprite.destinationCardElement,
+            activeSprite.lifecycle.destinationCardElement,
             'destination',
             'data-attached-move-destination-card-hidden',
           );
         }
       }, sprite.delayMs);
-      const cleanupDelayMs = sprite.planned
-        ? sprite.removeMs
+      const cleanupDelayMs = sprite.lifecycle.kind === 'planned'
+        ? sprite.lifecycle.removeMs
         : sprite.delayMs + sprite.durationMs + liveAttachedMoveHandoffHoldMs;
       if (cleanupDelayMs !== undefined) {
         const cleanupTimer = setTimeout(() => {
@@ -250,8 +257,10 @@
       identity: motion.identity,
       delayMs: motion.startMs,
       durationMs: motion.durationMs,
-      planned: true,
-      removeMs: replayAnimationSpriteRemovalMs(motion, animationPlan?.durationMs),
+      lifecycle: {
+        kind: 'planned',
+        removeMs: replayAnimationSpriteRemovalMs(motion, animationPlan?.durationMs),
+      },
     });
   }
 
@@ -272,7 +281,7 @@
       },
       delayMs: actionAnimationStartMs(animationEvents, event),
       durationMs: actionAnimationTiming.handMoveMs,
-      planned: false,
+      lifecycle: { kind: 'live' },
     });
   }
 
@@ -283,8 +292,7 @@
     identity?: AnimationIdentity;
     delayMs: number;
     durationMs: number;
-    planned: boolean;
-    removeMs?: number;
+    lifecycle: AttachedMoveLifecycle;
   }): AttachedMoveSprite[] {
     const source = input.source;
     const target = input.target;
@@ -329,14 +337,17 @@
       moveY: targetCenter.y - sourceCenter.y,
       startScale: 1,
       targetScale: Number.isFinite(targetScale) && targetScale > 0 ? targetScale : 1,
-      startRotation: source.hiddenElement ? sourceRotationFor(source.hiddenElement) : targetRotation,
+      startRotation: source.rotationElement ? sourceRotationFor(source.rotationElement) : targetRotation,
       targetRotation,
       delayMs: input.delayMs,
       durationMs: input.durationMs,
-      hiddenElement: source.hiddenElement,
-      destinationCardElement: destinationCardElementFor(target, serial, cardId),
-      planned: input.planned,
-      removeMs: input.removeMs,
+      lifecycle: input.lifecycle.kind === 'live'
+        ? {
+            kind: 'live',
+            hiddenElement: source.liveHiddenElement,
+            destinationCardElement: destinationCardElementFor(target, serial, cardId),
+          }
+        : input.lifecycle,
     }];
   }
 
@@ -378,7 +389,9 @@
     const ownerCard = ownerPokemonCardElement(element);
     const rect = ownerCard ? elementRectInPlane(ownerCard, boardPlane) : elementRectInPlane(element, boardPlane);
     if (rect) {
-      return { rect, hiddenElement: element };
+      return mode === 'planned'
+        ? { rect, rotationElement: element }
+        : { rect, rotationElement: element, liveHiddenElement: element };
     }
     if (mode === 'planned') {
       return null;
@@ -407,7 +420,8 @@
         }
         return {
           rect,
-          hiddenElement: visibleEnergy,
+          rotationElement: visibleEnergy,
+          liveHiddenElement: visibleEnergy,
         };
       }
       return previousSourceForSerial(serial);
@@ -422,7 +436,8 @@
         }
         return {
           rect,
-          hiddenElement: visibleTool,
+          rotationElement: visibleTool,
+          liveHiddenElement: visibleTool,
         };
       }
       return previousSourceForSerial(serial);
