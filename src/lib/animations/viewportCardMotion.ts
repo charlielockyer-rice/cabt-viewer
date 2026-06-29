@@ -7,7 +7,7 @@ export const cardHeightToWidthRatio = 88 / 63;
 
 export type ViewportRect = Pick<DOMRect, 'left' | 'top' | 'width' | 'height'>;
 
-export function animationElementForMotionAnchor(
+export function strictVisualElementForMotionAnchor(
   anchor: CardMoveAnimationMotion['sourceAnchor'],
   identity: CardMoveAnimationMotion['identity'],
 ): HTMLElement | undefined {

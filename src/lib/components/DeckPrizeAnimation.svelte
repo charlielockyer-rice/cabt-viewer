@@ -16,7 +16,7 @@
   import { replayAnimationScopeExitSettleMs } from '../animations/replayAnimationHandoff';
   import { replayAnimationPlanHasPhase, replayAnimationSelectedMotionsPlanKey, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import {
-    animationElementForMotionAnchor,
+    strictVisualElementForMotionAnchor,
     cardHeightToWidthRatio,
     centerOf,
     fallbackHandTarget,
@@ -418,8 +418,8 @@
   }
 
   function plannedPrizeTakeSprite(motion: CardMoveAnimationMotion, index: number, motionCount: number): PrizeTakeSprite | undefined {
-    const sourceElement = animationElementForMotionAnchor(motion.sourceAnchor, motion.identity);
-    const targetElement = animationElementForMotionAnchor(motion.targetAnchor, motion.identity);
+    const sourceElement = strictVisualElementForMotionAnchor(motion.sourceAnchor, motion.identity);
+    const targetElement = strictVisualElementForMotionAnchor(motion.targetAnchor, motion.identity);
     if (!sourceElement || !targetElement) {
       return undefined;
     }

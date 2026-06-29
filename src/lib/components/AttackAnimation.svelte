@@ -7,7 +7,7 @@
     releaseAnimationElementEffectClaims,
     type AnimationElementEffectClaim,
   } from '../animations/animationElementEffects';
-  import { pulseMotionPlanKey, ScheduledAnimationEffectRunner } from '../animations/plannedPulseEffects';
+  import { pulseMotionPlanKey, ScheduledAnimationEffectRunner } from '../animations/scheduledAnimationEffects';
   import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import { actionAnimationPhaseKind, actionAnimationTimelinePhaseKeyForEvent } from '../cabt/actionAnimationPhases';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';

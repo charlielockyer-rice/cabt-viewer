@@ -11,7 +11,7 @@
   import { replayAnimationScopeExitSettleMs } from '../animations/replayAnimationHandoff';
   import { replayAnimationPlanHasPhase, replayAnimationSelectedMotionsPlanKey, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import {
-    animationElementForMotionAnchor,
+    strictVisualElementForMotionAnchor,
     cardHeightToWidthRatio,
     centerOf,
     deckTopElement,
@@ -160,8 +160,8 @@
   }
 
   function plannedSpriteForMotion(motion: CardMoveAnimationMotion, index: number): DrawSprite | undefined {
-    const sourceElement = animationElementForMotionAnchor(motion.sourceAnchor, motion.identity);
-    const targetElement = animationElementForMotionAnchor(motion.targetAnchor, motion.identity);
+    const sourceElement = strictVisualElementForMotionAnchor(motion.sourceAnchor, motion.identity);
+    const targetElement = strictVisualElementForMotionAnchor(motion.targetAnchor, motion.identity);
     if (!sourceElement || !targetElement) {
       return undefined;
     }

@@ -2,7 +2,7 @@
   import { onDestroy } from 'svelte';
   import { resolveStrictAnimationAnchorElement } from '../animations/animationAnchors';
   import { claimAnimationElementEffect } from '../animations/animationElementEffects';
-  import { pulseMotionPlanKey, ScheduledAnimationEffectRunner } from '../animations/plannedPulseEffects';
+  import { pulseMotionPlanKey, ScheduledAnimationEffectRunner } from '../animations/scheduledAnimationEffects';
   import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import { replayAnimationPlanOwnsMotion, type PulseAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
 

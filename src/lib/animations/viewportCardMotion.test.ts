@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { animationElementForMotionAnchor } from './viewportCardMotion';
+import { strictVisualElementForMotionAnchor } from './viewportCardMotion';
 
 class FakeHTMLElement {
   dataset: Record<string, string> = {};
@@ -23,7 +23,7 @@ class FakeHTMLElement {
   }
 }
 
-describe('animationElementForMotionAnchor', () => {
+describe('strictVisualElementForMotionAnchor', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -34,7 +34,7 @@ describe('animationElementForMotionAnchor', () => {
       querySelectorAll: () => [],
     });
 
-    expect(animationElementForMotionAnchor(
+    expect(strictVisualElementForMotionAnchor(
       { kind: 'discard-card', playerIndex: 0, serial: 99 },
       { kind: 'card', serial: 99 },
     )).toBeUndefined();

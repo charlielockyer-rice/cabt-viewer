@@ -2,7 +2,7 @@
   import { onDestroy, tick } from 'svelte';
   import { afterTwoAnimationFrames } from '../animations/animationFrames';
   import {
-    animationElementForMotionAnchor,
+    strictVisualElementForMotionAnchor,
     centerOf,
     isConcealedHandTarget,
   } from '../animations/viewportCardMotion';
@@ -142,11 +142,11 @@
   }
 
   function sourceElementForMotion(motion: CardMoveAnimationMotion): HTMLElement | undefined {
-    return animationElementForMotionAnchor(motion.sourceAnchor, motion.identity);
+    return strictVisualElementForMotionAnchor(motion.sourceAnchor, motion.identity);
   }
 
   function targetElementForMotion(motion: CardMoveAnimationMotion): HTMLElement | undefined {
-    return animationElementForMotionAnchor(motion.targetAnchor, motion.identity);
+    return strictVisualElementForMotionAnchor(motion.targetAnchor, motion.identity);
   }
 
   function isOpponentSide(element: HTMLElement): boolean {

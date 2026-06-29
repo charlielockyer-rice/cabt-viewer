@@ -3,7 +3,7 @@
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { claimAnimationElementEffect } from '../animations/animationElementEffects';
   import { resolveStrictAnimationAnchorElement } from '../animations/animationAnchors';
-  import { pulseMotionPlanKey, ScheduledAnimationEffectRunner } from '../animations/plannedPulseEffects';
+  import { pulseMotionPlanKey, ScheduledAnimationEffectRunner } from '../animations/scheduledAnimationEffects';
   import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import { replayAnimationPlanHasPhase, type PulseAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import type { ActionTimelineEvent } from '../game/types';
