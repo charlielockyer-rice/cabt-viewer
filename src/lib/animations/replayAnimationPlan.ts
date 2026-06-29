@@ -124,10 +124,9 @@ export function createReplayAnimationPhasePlan(input: {
   view: GameView;
   durationMs: number;
   motions?: AnimationMotion[];
-  visibilityClaims?: AnimationVisibilityClaim[];
 }): ReplayAnimationPhasePlan {
   const motions = input.motions ?? [];
-  const visibilityClaims = input.visibilityClaims ?? replayAnimationVisibilityClaimsForMotions(input.key, motions);
+  const visibilityClaims = replayAnimationVisibilityClaimsForMotions(input.key, motions);
   assertFiniteNonNegative(input.durationMs, 'durationMs');
 
   for (const motion of motions) {

@@ -254,69 +254,6 @@ describe('replay animation phase plans', () => {
     })).toThrow('bad-session.bad-step.startMs');
   });
 
-  it('requires visibility claims to reference an owning motion', () => {
-    expect(() => createReplayAnimationPhasePlan({
-      key: 'BadClaim',
-      view: gameView(),
-      durationMs: 360,
-      motions: [cardMoveMotion('move', 0, 360)],
-      visibilityClaims: [
-        {
-          scopeKey: 'BadClaim',
-          role: 'destination',
-          anchor: { kind: 'discard-pile', playerIndex: 0 },
-        },
-      ],
-    })).toThrow('missing a motion id');
-
-    expect(() => createReplayAnimationPhasePlan({
-      key: 'UnknownMotionClaim',
-      view: gameView(),
-      durationMs: 360,
-      motions: [cardMoveMotion('move', 0, 360)],
-      visibilityClaims: [
-        {
-          scopeKey: 'UnknownMotionClaim',
-          motionId: 'other-move',
-          role: 'destination',
-          anchor: { kind: 'discard-pile', playerIndex: 0 },
-        },
-      ],
-    })).toThrow('unknown motion "other-move"');
-  });
-
-  it('requires reveal-session visibility claims to reference an owning step', () => {
-    expect(() => createReplayAnimationPhasePlan({
-      key: 'BadRevealClaim',
-      view: gameView(),
-      durationMs: 900,
-      motions: [revealSessionMotion()],
-      visibilityClaims: [
-        {
-          scopeKey: 'BadRevealClaim',
-          motionId: 'pokegear-session',
-          role: 'destination',
-          anchor: { kind: 'hand-slot', playerIndex: 0, handIndex: 3 },
-        },
-      ],
-    })).toThrow('missing a step id');
-
-    expect(() => createReplayAnimationPhasePlan({
-      key: 'UnknownRevealStepClaim',
-      view: gameView(),
-      durationMs: 900,
-      motions: [revealSessionMotion()],
-      visibilityClaims: [
-        {
-          scopeKey: 'UnknownRevealStepClaim',
-          motionId: 'pokegear-session',
-          stepId: 'wrong-step',
-          role: 'destination',
-          anchor: { kind: 'hand-slot', playerIndex: 0, handIndex: 3 },
-        },
-      ],
-    })).toThrow('unknown step "wrong-step"');
-  });
 });
 
 function cardMoveMotion(id: string, startMs: number, durationMs: number): AnimationMotion {
