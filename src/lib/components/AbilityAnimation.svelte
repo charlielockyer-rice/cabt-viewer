@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { resolveExactAnimationAnchorElement } from '../animations/animationAnchors';
+  import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
   import { replayAnimationPlanHasPhase, type PulseAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import type { ActionTimelineEvent } from '../game/types';
 
@@ -20,10 +21,7 @@
   }: Props = $props();
 
   const timers: ReturnType<typeof setTimeout>[] = [];
-  let seenEventIds = new Set<number>();
-  let initialized = false;
-  let lastScopeKey: string | number = '';
-  let lastPlanKey = '';
+  const runState = new ReplayAnimationRunState();
   let reduceMotion = $state(false);
   let animationGeneration = 0;
   const activeAbilityElements = new Set<HTMLElement>();
@@ -51,48 +49,37 @@
     const currentPlan = animationPlan;
     const plannedPulses = abilityPulseMotions(currentPlan);
     const planKey = abilityPulsePlanKey(plannedPulses);
-    const scopeChanged = initialized && currentScopeKey !== lastScopeKey;
-    const planChanged = planKey !== lastPlanKey;
-    if (scopeChanged || planChanged) {
+    const run = runState.update(currentScopeKey, planKey);
+    if (run.scopeChanged || run.planChanged) {
       clearAbilityAnimations();
     }
-    lastScopeKey = currentScopeKey;
-    lastPlanKey = planKey;
 
     if (plannedPulses.length) {
-      initialized = true;
-      if (!reduceMotion && (scopeChanged || planChanged)) {
+      if (!reduceMotion && run.shouldStartPlan) {
         startPlannedAbilityAnnouncements(plannedPulses);
       }
-      markEventsSeen(currentEvents);
+      runState.markEventsSeen(currentEvents);
       return;
     }
 
-    if (!initialized) {
-      markEventsSeen(currentEvents);
-      initialized = true;
+    if (run.firstRun) {
+      runState.markEventsSeen(currentEvents);
       return;
     }
 
     if (replayMode) {
-      markEventsSeen(currentEvents);
+      runState.markEventsSeen(currentEvents);
       return;
     }
 
-    const animationEvents = actionAnimationBatchEvents(currentEvents, seenEventIds);
-    markEventsSeen(currentEvents);
+    const animationEvents = actionAnimationBatchEvents(currentEvents, runState.seenEventIds);
+    runState.markEventsSeen(currentEvents);
     if (!animationEvents.length || reduceMotion) {
       return;
     }
 
     startAbilityAnnouncements(animationEvents);
   });
-
-  function markEventsSeen(currentEvents: ActionTimelineEvent[]) {
-    for (const event of currentEvents) {
-      seenEventIds.add(event.id);
-    }
-  }
 
   function abilityPulseMotions(plan: ReplayAnimationPhasePlan | undefined): PulseAnimationMotion[] {
     return (plan?.motions ?? []).filter((motion): motion is PulseAnimationMotion =>

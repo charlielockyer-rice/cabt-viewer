@@ -1,18 +1,10 @@
 <script lang="ts">
-  import { cardFaceImageUrl } from '../game/cardAssets';
   import { onDestroy, onMount } from 'svelte';
-  import {
-    hideElementForAnimation,
-    releaseElementVisibilityClaim,
-    type ElementVisibilityClaim,
-  } from '../animations/animationVisibilityClaims';
   import { resolveExactAnimationAnchorElement } from '../animations/animationAnchors';
+  import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
-  import { cabtCardToView } from '../cabt/cardView';
-  import { CabtAreaType } from '../cabt/types';
-  import { replayAnimationPhaseGapMs } from '../game/replay';
   import { replayAnimationPlanHasPhase, type PulseAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
-  import type { ActionTimelineEvent, CardView } from '../game/types';
+  import type { ActionTimelineEvent } from '../game/types';
 
   type Props = {
     events?: ActionTimelineEvent[];
@@ -30,21 +22,6 @@
     delayMs: number;
   };
 
-  type KnockOutSprite = {
-    id: string;
-    card: CardView;
-    left: number;
-    top: number;
-    width: number;
-    height: number;
-    deltaX: number;
-    deltaY: number;
-    rotation: number;
-    targetRotation: number;
-    targetScale: number;
-    delayMs: number;
-  };
-
   let {
     events = [],
     stepEvents = [],
@@ -54,19 +31,12 @@
   }: Props = $props();
 
   const timers: ReturnType<typeof setTimeout>[] = [];
-  let seenEventIds = new Set<number>();
-  let initialized = false;
-  let lastScopeKey: string | number = '';
-  let lastPlanKey = '';
+  const runState = new ReplayAnimationRunState();
   let reduceMotion = $state(false);
   let damageSprites = $state<DamageSprite[]>([]);
-  let knockOutSprites = $state<KnockOutSprite[]>([]);
   let animationGeneration = 0;
   const activeAttackAnnouncements = new Set<HTMLElement>();
   const activeAttackLunges = new Set<HTMLElement>();
-  const knockOutVisibilityClaims = new Map<string, ElementVisibilityClaim[]>();
-  const knockOutTiltDeg = 22;
-  const knockOutSpritePadPx = 10;
 
   onMount(() => {
     if (typeof window.matchMedia !== 'function') {
@@ -90,50 +60,38 @@
     const currentScopeKey = scopeKey;
     const plannedPulses = attackPulseMotions(animationPlan);
     const planKey = attackPulsePlanKey(plannedPulses);
-    const scopeChanged = initialized && currentScopeKey !== lastScopeKey;
-    const planChanged = planKey !== lastPlanKey;
-    if (scopeChanged || planChanged) {
+    const run = runState.update(currentScopeKey, planKey);
+    if (run.scopeChanged || run.planChanged) {
       clearAttackAnimations();
     }
-    lastScopeKey = currentScopeKey;
-    lastPlanKey = planKey;
 
     if (plannedPulses.length) {
-      initialized = true;
-      if (!reduceMotion && (scopeChanged || planChanged)) {
+      if (!reduceMotion && run.shouldStartPlan) {
         startPlannedPulses(plannedPulses);
       }
-      markEventsSeen(currentEvents);
+      runState.markEventsSeen(currentEvents);
       return;
     }
 
-    if (!initialized) {
-      markEventsSeen(currentEvents);
-      initialized = true;
+    if (run.firstRun) {
+      runState.markEventsSeen(currentEvents);
       return;
     }
 
     if (replayMode) {
-      markEventsSeen(currentEvents);
+      runState.markEventsSeen(currentEvents);
       return;
     }
 
-    const animationEvents = actionAnimationBatchEvents(currentEvents, seenEventIds);
-    markEventsSeen(currentEvents);
+    const animationEvents = actionAnimationBatchEvents(currentEvents, runState.seenEventIds);
+    runState.markEventsSeen(currentEvents);
     if (!animationEvents.length || reduceMotion) {
       return;
     }
 
     startAttackAnnouncements(animationEvents);
     startDamageAnimations(animationEvents);
-    startKnockOutAnimations(animationEvents);
   });
-
-  function markEventsSeen(currentEvents: ActionTimelineEvent[]) {
-    for (const event of currentEvents) {
-      seenEventIds.add(event.id);
-    }
-  }
 
   function attackPulseMotions(plan: ReplayAnimationPhasePlan | undefined): PulseAnimationMotion[] {
     return (plan?.motions ?? []).filter((motion): motion is PulseAnimationMotion =>
@@ -300,61 +258,6 @@
     timers.push(cleanup);
   }
 
-  function startKnockOutAnimations(animationEvents: ActionTimelineEvent[]) {
-    const koEvents = animationEvents.filter(isKnockOutEvent);
-    if (!koEvents.length) {
-      return;
-    }
-    const generation = animationGeneration;
-    for (const event of koEvents) {
-      const source = slotElementForEvent(event);
-      const discard = discardElementForPlayer(event.playerIndex);
-      const params = event.params as Record<string, unknown> | undefined;
-      const cardId = Number(params?.cardId);
-      if (!source || !discard || !Number.isFinite(cardId)) {
-        continue;
-      }
-      const sourceCard = source.querySelector('.card-tile');
-      const sourceRect = (sourceCard instanceof HTMLElement ? sourceCard : source).getBoundingClientRect();
-      const discardRect = discard.getBoundingClientRect();
-      const spriteWidth = sourceRect.width + knockOutSpritePadPx * 2;
-      const spriteHeight = sourceRect.height + knockOutSpritePadPx * 2;
-      const spriteLeft = sourceRect.left - knockOutSpritePadPx;
-      const spriteTop = sourceRect.top - knockOutSpritePadPx;
-      const delayMs = actionAnimationStartMs(animationEvents, event);
-      const sprite: KnockOutSprite = {
-        id: `${event.id}-${params?.serial ?? cardId}`,
-        card: cabtCardToView(cardId),
-        left: spriteLeft,
-        top: spriteTop,
-        width: spriteWidth,
-        height: spriteHeight,
-        deltaX: discardRect.left + discardRect.width / 2 - (spriteLeft + spriteWidth / 2),
-        deltaY: discardRect.top + discardRect.height / 2 - (spriteTop + spriteHeight / 2),
-        rotation: source.closest('.top-active-slot, .top-bench-row') ? 180 : 0,
-        targetRotation: discard.closest('.top-piles') ? 180 : 0,
-        targetScale: Math.max(0.35, Math.min(1, discardRect.width / sourceRect.width)),
-        delayMs,
-      };
-      const startTimer = setTimeout(() => {
-        if (generation !== animationGeneration || !document.body.contains(source) || !document.body.contains(discard)) {
-          return;
-        }
-        hideKnockOutElement(sprite.id, source, 'source');
-        const destination = discardCardElement(event.playerIndex, Number(params?.serial), cardId);
-        if (destination) {
-          hideKnockOutElement(sprite.id, destination, 'destination');
-        }
-        knockOutSprites = [...knockOutSprites, sprite];
-        const cleanup = setTimeout(() => {
-          releaseKnockOutSprite(sprite.id);
-        }, actionAnimationTiming.knockOutMs + replayAnimationPhaseGapMs);
-        timers.push(cleanup);
-      }, delayMs);
-      timers.push(startTimer);
-    }
-  }
-
   function clearAttackAnimations() {
     animationGeneration += 1;
     for (const timer of timers) {
@@ -367,11 +270,7 @@
     for (const element of activeAttackLunges) {
       clearAttackLunge(element);
     }
-    for (const spriteId of Array.from(knockOutVisibilityClaims.keys())) {
-      releaseKnockOutSprite(spriteId);
-    }
     damageSprites = [];
-    knockOutSprites = [];
   }
 
   function clearAttackAnnouncement(element: HTMLElement) {
@@ -388,38 +287,8 @@
     activeAttackLunges.delete(element);
   }
 
-  function hideKnockOutElement(spriteId: string, element: HTMLElement, role: 'source' | 'destination') {
-    const claim = hideElementForAnimation({
-      element,
-      scopeKey,
-      role,
-      fallbackAttribute: 'data-attack-knock-out-hidden',
-    });
-    const claims = knockOutVisibilityClaims.get(spriteId) ?? [];
-    claims.push(claim);
-    knockOutVisibilityClaims.set(spriteId, claims);
-  }
-
-  function releaseKnockOutSprite(spriteId: string) {
-    const claims = knockOutVisibilityClaims.get(spriteId) ?? [];
-    for (const claim of claims) {
-      releaseElementVisibilityClaim(claim);
-    }
-    knockOutVisibilityClaims.delete(spriteId);
-    knockOutSprites = knockOutSprites.filter((item) => item.id !== spriteId);
-  }
-
   function isDamageEvent(event: ActionTimelineEvent) {
     return event.kind === 'HpChange' || event.kind === 'HPChange';
-  }
-
-  function isKnockOutEvent(event: ActionTimelineEvent) {
-    const params = event.params as Record<string, unknown> | undefined;
-    const fromArea = Number(params?.fromArea);
-    const toArea = Number(params?.toArea);
-    return event.kind === 'MoveCard'
-      && toArea === CabtAreaType.DISCARD
-      && (fromArea === CabtAreaType.ACTIVE || fromArea === CabtAreaType.BENCH);
   }
 
   function slotElementForEvent(event: ActionTimelineEvent): HTMLElement | null {
@@ -450,27 +319,6 @@
     return element instanceof HTMLElement ? element : null;
   }
 
-  function discardElementForPlayer(playerIndex: number | undefined): HTMLElement | null {
-    if (playerIndex === undefined) {
-      return null;
-    }
-    const element = document.querySelector(`[data-card-anchor="player:${playerIndex}:discard"]`);
-    return element instanceof HTMLElement ? element : null;
-  }
-
-  function discardCardElement(playerIndex: number | undefined, serial: number, cardId: number): HTMLElement | null {
-    const discard = discardElementForPlayer(playerIndex);
-    if (!discard) {
-      return null;
-    }
-    const card = Number.isFinite(serial)
-      ? discard.querySelector(`.card-tile[data-card-serial="${serial}"]`)
-      : Number.isFinite(cardId)
-        ? discard.querySelector(`.card-tile[data-card-id="${cardId}"]`)
-        : null;
-    return card instanceof HTMLElement ? card : null;
-  }
-
   function attackNameForEvent(event: ActionTimelineEvent): string {
     const match = event.message.match(/\bused\s+(.+?)\s+with\b/i);
     return match?.[1] ?? 'Attack';
@@ -491,38 +339,11 @@
     ].join('; ');
   }
 
-  function knockOutSpriteStyle(sprite: KnockOutSprite) {
-    return [
-      `left: ${sprite.left}px`,
-      `top: ${sprite.top}px`,
-      `width: ${sprite.width}px`,
-      `height: ${sprite.height}px`,
-      `--ko-x: ${sprite.deltaX.toFixed(1)}px`,
-      `--ko-y: ${sprite.deltaY.toFixed(1)}px`,
-      `--ko-rotation: ${sprite.rotation}deg`,
-      `--ko-end-rotation: ${sprite.rotation + knockOutTiltDeg}deg`,
-      `--ko-target-rotation: ${sprite.targetRotation}deg`,
-      `--ko-scale: ${sprite.targetScale.toFixed(3)}`,
-      `--ko-pad: ${knockOutSpritePadPx}px`,
-      `--attack-delay: ${sprite.delayMs}ms`,
-    ].join('; ');
-  }
 </script>
 
 <span class="attack-animation-layer" aria-hidden="true">
   {#each damageSprites as sprite (sprite.id)}
     <span class="attack-damage-number" style={damageSpriteStyle(sprite)}>{sprite.value}</span>
-  {/each}
-  {#each knockOutSprites as sprite (sprite.id)}
-      <span class="attack-ko-card" style={knockOutSpriteStyle(sprite)}>
-        <span class="attack-ko-card-frame">
-        {#if cardFaceImageUrl(sprite.card)}
-          <img src={cardFaceImageUrl(sprite.card)} alt="" draggable="false" />
-        {:else}
-          <span>{sprite.card.name}</span>
-        {/if}
-      </span>
-    </span>
   {/each}
 </span>
 
@@ -564,14 +385,6 @@
     animation: attack-lunge var(--damage-visual-ms, 560ms) cubic-bezier(0.2, 0.82, 0.22, 1) both;
   }
 
-  :global(.board-slot[data-attack-knock-out-hidden="true"] > .card-tile),
-  :global(.board-slot[data-attack-knock-out-hidden="true"] > .pokemon-status),
-  :global(.board-slot[data-attack-knock-out-hidden="true"] > .energy-badges),
-  :global(.board-slot[data-attack-knock-out-hidden="true"] > .tool-card-preview),
-  :global(.board-slot[data-attack-knock-out-hidden="true"] > .slot-badges) {
-    opacity: 0;
-  }
-
   .attack-damage-number {
     position: fixed;
     display: inline-flex;
@@ -603,43 +416,6 @@
   .attack-damage-number::before,
   .attack-damage-number::after {
     content: none;
-  }
-
-  .attack-ko-card {
-    position: fixed;
-    display: grid;
-    place-items: center;
-    overflow: visible;
-    border-radius: 6px;
-    transform-origin: 50% 50%;
-    animation: attack-ko-card 620ms cubic-bezier(0.24, 0.78, 0.24, 1) var(--attack-delay) both;
-  }
-
-  .attack-ko-card-frame {
-    position: absolute;
-    inset: var(--ko-pad, 0);
-    display: grid;
-    place-items: center;
-    overflow: visible;
-    border-radius: inherit;
-    background: #f7f8fa;
-    box-shadow: 0 16px 36px rgba(23, 30, 38, 0.3);
-  }
-
-  .attack-ko-card-frame img {
-    width: 100%;
-    height: 100%;
-    display: block;
-    object-fit: fill;
-    border-radius: inherit;
-    pointer-events: none;
-  }
-
-  .attack-ko-card-frame > span {
-    padding: 8px;
-    font-size: 12px;
-    font-weight: 900;
-    text-align: center;
   }
 
   @keyframes attack-announcement-glow {
@@ -702,30 +478,10 @@
     }
   }
 
-  @keyframes attack-ko-card {
-    0% {
-      opacity: 1;
-      transform: translate3d(0, 0, 0) rotate(var(--ko-rotation));
-    }
-    32% {
-      opacity: 1;
-      transform: translate3d(0, 0, 0) rotate(var(--ko-end-rotation));
-    }
-    78% {
-      opacity: 1;
-      transform: translate3d(var(--ko-x), var(--ko-y), 0) rotate(var(--ko-end-rotation)) scale(var(--ko-scale));
-    }
-    100% {
-      opacity: 1;
-      transform: translate3d(var(--ko-x), var(--ko-y), 0) rotate(var(--ko-target-rotation)) scale(var(--ko-scale));
-    }
-  }
-
   @media (prefers-reduced-motion: reduce) {
     :global(.board-slot[data-attack-announce-active="true"]),
     :global(.board-slot[data-attack-lunge-active="true"]),
-    .attack-damage-number,
-    .attack-ko-card {
+    .attack-damage-number {
       animation: none;
     }
   }

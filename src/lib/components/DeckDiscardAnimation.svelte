@@ -7,6 +7,7 @@
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
   import { resolveExactAnimationAnchorElement } from '../animations/animationAnchors';
+  import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
   import { replayAnimationSpriteGroupRemovalMs } from '../animations/replayAnimationHandoff';
   import { replayAnimationPlanHasPhase, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { actionAnimationBatchEvents, actionAnimationStartMs } from '../cabt/actionAnimationSchedule';
@@ -60,13 +61,10 @@
   const timers: ReturnType<typeof setTimeout>[] = [];
   const cardMoveDurationMs = 300;
   let discards = $state<DiscardAnimation[]>([]);
-  let seenEventIds = new Set<number>();
-  let initialized = false;
+  const runState = new ReplayAnimationRunState();
   let nextAnimationId = 1;
   let reduceMotion = $state(false);
   let motionLayer = $state<HTMLElement>();
-  let lastScopeKey: string | number = '';
-  let lastPlanKey = '';
 
   onMount(() => {
     if (typeof window.matchMedia !== 'function') {
@@ -90,51 +88,45 @@
     const currentScopeKey = scopeKey;
     const plannedMotions = deckDiscardPlanMotions(animationPlan);
     const planKey = deckDiscardPlanKey(plannedMotions);
-    const scopeChanged = initialized && currentScopeKey !== lastScopeKey;
-    const planChanged = planKey !== lastPlanKey;
-    lastScopeKey = currentScopeKey;
-    lastPlanKey = planKey;
+    const run = runState.update(currentScopeKey, planKey);
 
     if (plannedMotions.length) {
-      const shouldStartPlan = !initialized || planChanged || scopeChanged;
-      initialized = true;
-      if (shouldStartPlan) {
+      if (run.shouldStartPlan) {
         clearDiscards();
         if (!reduceMotion) {
           startPlannedDiscard(plannedMotions);
         }
       }
-      markEventsSeen(currentEvents);
+      runState.markEventsSeen(currentEvents);
       return;
     }
 
-    if (!initialized) {
-      markEventsSeen(currentEvents);
-      initialized = true;
+    if (run.firstRun) {
+      runState.markEventsSeen(currentEvents);
       return;
     }
 
-    if (scopeChanged && replayMode) {
+    if (run.scopeChanged && replayMode) {
       clearDiscards();
     }
 
     if (replayMode) {
-      markEventsSeen(currentEvents);
+      runState.markEventsSeen(currentEvents);
       return;
     }
 
-    const animationEvents = actionAnimationBatchEvents(currentEvents, seenEventIds);
+    const animationEvents = actionAnimationBatchEvents(currentEvents, runState.seenEventIds);
     const discardEvents = animationEvents.filter((event) => {
       if (!isDeckDiscardEvent(event)) {
         return false;
       }
-      if (seenEventIds.has(event.id)) {
+      if (runState.hasSeen(event)) {
         return false;
       }
       return true;
     });
 
-    markEventsSeen(currentEvents);
+    runState.markEventsSeen(currentEvents);
 
     if (discardEvents.length) {
       startDiscard(discardEvents, animationEvents);
@@ -154,12 +146,6 @@
 
   function deckDiscardPlanKey(motions: CardMoveAnimationMotion[]): string {
     return motions.map((motion) => `${motion.id}:${motion.startMs}:${motion.durationMs}`).join('|');
-  }
-
-  function markEventsSeen(currentEvents: ActionTimelineEvent[]) {
-    for (const event of currentEvents) {
-      seenEventIds.add(event.id);
-    }
   }
 
   function isDeckDiscardEvent(event: ActionTimelineEvent) {

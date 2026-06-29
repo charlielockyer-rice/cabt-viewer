@@ -6,6 +6,7 @@
     releaseElementVisibilityClaim,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
+  import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
   import { replayAnimationSpriteGroupRemovalMs } from '../animations/replayAnimationHandoff';
   import { replayAnimationPlanHasPhase, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import {
@@ -86,10 +87,7 @@
   const sourceRestoreTimers: ReturnType<typeof setTimeout>[] = [];
   const cardMoveDurationMs = 360;
   const handOutroSettleMs = 180;
-  let seenEventIds = new Set<number>();
-  let initialized = false;
-  let lastScopeKey: string | number = '';
-  let lastPlanKey = '';
+  const runState = new ReplayAnimationRunState();
   let reduceMotion = $state(false);
   let nextAnimationId = 1;
   let resets = $state<ResetAnimation[]>([]);
@@ -121,64 +119,52 @@
     const currentScopeKey = scopeKey;
     const plannedMotions = handToDeckPlanMotions(animationPlan);
     const planKey = handToDeckPlanKey(plannedMotions);
-    const scopeChanged = initialized && currentScopeKey !== lastScopeKey;
-    const planChanged = planKey !== lastPlanKey;
-    lastScopeKey = currentScopeKey;
-    lastPlanKey = planKey;
+    const run = runState.update(currentScopeKey, planKey);
 
     if (plannedMotions.length) {
-      const shouldStartPlan = !initialized || planChanged || scopeChanged;
-      initialized = true;
-      if (shouldStartPlan) {
+      if (run.shouldStartPlan) {
         clearResets({ restoreSources: false, restoreConnectedSourcesAfterMs: handOutroSettleMs });
         if (!reduceMotion) {
           startPlannedReset(plannedMotions);
         }
       } else {
-        markEventsSeen(currentEvents);
+        runState.markEventsSeen(currentEvents);
         return;
       }
-      markEventsSeen(currentEvents);
+      runState.markEventsSeen(currentEvents);
       return;
     }
 
-    if (!initialized) {
-      markEventsSeen(currentEvents);
-      initialized = true;
+    if (run.firstRun) {
+      runState.markEventsSeen(currentEvents);
       return;
     }
 
     if (replayMode) {
-      if (scopeChanged) {
+      if (run.scopeChanged) {
         clearResets({ restoreSources: false, restoreConnectedSourcesAfterMs: handOutroSettleMs });
       }
-      markEventsSeen(currentEvents);
+      runState.markEventsSeen(currentEvents);
       return;
     }
 
-    const animationEvents = actionAnimationBatchEvents(currentEvents, seenEventIds);
+    const animationEvents = actionAnimationBatchEvents(currentEvents, runState.seenEventIds);
     const resetEvents = animationEvents.filter((event) => {
       if (!isHandToDeckMove(event)) {
         return false;
       }
-      if (seenEventIds.has(event.id)) {
+      if (runState.hasSeen(event)) {
         return false;
       }
       return true;
     });
 
-    markEventsSeen(currentEvents);
+    runState.markEventsSeen(currentEvents);
 
     if (resetEvents.length) {
       startReset(resetEvents, animationEvents);
     }
   });
-
-  function markEventsSeen(currentEvents: ActionTimelineEvent[]) {
-    for (const event of currentEvents) {
-      seenEventIds.add(event.id);
-    }
-  }
 
   function handToDeckPlanMotions(plan: ReplayAnimationPhasePlan | undefined): CardMoveAnimationMotion[] {
     return (plan?.motions ?? []).filter((motion): motion is CardMoveAnimationMotion =>

@@ -409,6 +409,7 @@
           || (fromArea === CabtAreaType.ACTIVE && toArea === CabtAreaType.BENCH)
           || (fromArea === CabtAreaType.DECK && (toArea === CabtAreaType.ACTIVE || toArea === CabtAreaType.BENCH))
           || ((fromArea === CabtAreaType.ACTIVE || fromArea === CabtAreaType.BENCH) && toArea === CabtAreaType.DECK)
+          || ((fromArea === CabtAreaType.ACTIVE || fromArea === CabtAreaType.BENCH) && toArea === CabtAreaType.DISCARD)
           || (fromArea === CabtAreaType.STADIUM && toArea === CabtAreaType.DISCARD)
         )
       );
@@ -541,7 +542,7 @@
       }
       return pairedBenchSourceElement(event, moveEvents);
     }
-    if (toArea === CabtAreaType.DISCARD && Number(params?.fromArea) === CabtAreaType.STADIUM) {
+    if (toArea === CabtAreaType.DISCARD) {
       const discardCard = discardCardElement(playerIndex, Number(params?.serial), Number(params?.cardId));
       if (discardCard) {
         return discardCard;
