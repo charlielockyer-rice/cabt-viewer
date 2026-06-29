@@ -131,6 +131,7 @@ export function createReplayAnimationPhasePlan(input: {
 
   for (const motion of motions) {
     validateMotionTiming(motion);
+    validateMotionCoordinateSpace(input.key, motion);
   }
   validateVisibilityClaims(input.key, motions, visibilityClaims);
 
@@ -232,6 +233,32 @@ export function replayAnimationMotionSpanMs(motions: readonly AnimationMotion[])
 
 export function replayAnimationPhasePlanDurationMs(plan: Pick<ReplayAnimationPhasePlan, 'durationMs'>): number {
   return plan.durationMs;
+}
+
+function validateMotionCoordinateSpace(phaseKey: string, motion: AnimationMotion): void {
+  if (motion.kind !== 'card-move') {
+    return;
+  }
+  if (motion.coordinateSpace === 'board') {
+    if (!isBoardPlaneAnchor(motion.sourceAnchor) || !isBoardPlaneAnchor(motion.targetAnchor)) {
+      throw new Error(`Replay animation phase "${phaseKey}" board motion "${motion.id}" must use board-plane anchors.`);
+    }
+    return;
+  }
+  if (motion.coordinateSpace === 'cross-plane') {
+    const sourceBoard = isBoardPlaneAnchor(motion.sourceAnchor);
+    const targetBoard = isBoardPlaneAnchor(motion.targetAnchor);
+    if (sourceBoard === targetBoard) {
+      throw new Error(`Replay animation phase "${phaseKey}" cross-plane motion "${motion.id}" must cross between board and viewport anchors.`);
+    }
+  }
+}
+
+function isBoardPlaneAnchor(anchor: AnimationAnchorRef): boolean {
+  return anchor.kind !== 'hand'
+    && anchor.kind !== 'hand-card'
+    && anchor.kind !== 'hand-slot'
+    && anchor.kind !== 'reveal-card';
 }
 
 function validateMotionTiming(motion: AnimationMotion): void {

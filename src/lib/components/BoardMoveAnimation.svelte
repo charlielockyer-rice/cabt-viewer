@@ -9,6 +9,7 @@
     releaseElementVisibilityClaim,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
+  import { replayAnimationScopeExitSettleMs } from '../animations/replayAnimationHandoff';
   import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -68,7 +69,6 @@
 
   const boardMoveHandoffPollMs = 16;
   const boardMoveHandoffMaxWaitMs = 300;
-  const replayHandoffSettleMs = 40;
 
   let {
     events = [],
@@ -404,7 +404,7 @@
   }
 
   function replayHandoffHoldMs() {
-    return replayMode ? replayAnimationPhaseGapMs + replayHandoffSettleMs : 0;
+    return replayMode ? replayAnimationPhaseGapMs + replayAnimationScopeExitSettleMs : 0;
   }
 
   function isBoardMoveEvent(event: ActionTimelineEvent) {
@@ -643,7 +643,7 @@
         if (timerIndex >= 0) {
           handoffTimers.splice(timerIndex, 1);
         }
-      }, replayHandoffSettleMs);
+      }, replayAnimationScopeExitSettleMs);
       handoffTimers.push(timer);
       return;
     }

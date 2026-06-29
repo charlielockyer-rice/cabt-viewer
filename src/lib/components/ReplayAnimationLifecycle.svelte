@@ -2,7 +2,7 @@
   import { onDestroy, onMount, tick } from 'svelte';
   import { replayAnimationVisibility, type AnimationVisibilityToken } from '../animations/animationVisibility';
   import { releaseAnimationVisibilityScope } from '../animations/animationVisibilityClaims';
-  import { replayAnimationClaimTiming } from '../animations/replayAnimationHandoff';
+  import { replayAnimationClaimTiming, replayAnimationScopeExitSettleMs } from '../animations/replayAnimationHandoff';
   import type { ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
 
   type Props = {
@@ -71,7 +71,7 @@
     }
 
     if (scopeChanged && lastScopeKey) {
-      releasePlanTokens();
+      releasePlanTokens({ delayMs: replayAnimationScopeExitSettleMs });
       scheduleStaleScopeRelease(lastScopeKey);
     } else if (planChanged || motionPreferenceChanged) {
       releasePlanTokens();
@@ -128,7 +128,7 @@
     scheduleVisibilityRefresh();
   });
 
-  function releasePlanTokens() {
+  function releasePlanTokens({ delayMs = 0 }: { delayMs?: number } = {}) {
     for (const timer of planTokenStartTimers) {
       clearTimeout(timer);
     }
@@ -137,10 +137,20 @@
       clearTimeout(timer);
     }
     planTokenReleaseTimers.length = 0;
-    for (const token of planTokens) {
+    const tokens = planTokens;
+    planTokens = [];
+    if (delayMs > 0 && tokens.length) {
+      setTimeout(() => {
+        for (const token of tokens) {
+          replayAnimationVisibility.release(token);
+        }
+        scheduleVisibilityRefresh();
+      }, delayMs);
+      return;
+    }
+    for (const token of tokens) {
       replayAnimationVisibility.release(token);
     }
-    planTokens = [];
   }
 
   function scheduleStaleScopeRelease(scopeKey: string) {

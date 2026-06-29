@@ -178,6 +178,38 @@ describe('replay animation phase plans', () => {
     })).toThrow('shorter than motion span 360ms');
   });
 
+  it('rejects board motions that target viewport-only anchors', () => {
+    expect(() => createReplayAnimationPhasePlan({
+      key: 'BoardMove:0',
+      view: gameView(),
+      durationMs: 360,
+      motions: [
+        {
+          ...cardMoveMotion('bad-board-move', 0, 360),
+          coordinateSpace: 'board',
+          sourceAnchor: { kind: 'pokemon-card', playerIndex: 0, slot: 'active', slotIndex: 0, serial: 101 },
+          targetAnchor: { kind: 'hand-card', playerIndex: 0, handIndex: 2, serial: 101 },
+        },
+      ],
+    })).toThrow('must use board-plane anchors');
+  });
+
+  it('rejects cross-plane motions that do not cross coordinate families', () => {
+    expect(() => createReplayAnimationPhasePlan({
+      key: 'CrossPlane:0',
+      view: gameView(),
+      durationMs: 360,
+      motions: [
+        {
+          ...cardMoveMotion('bad-cross-plane', 0, 360),
+          coordinateSpace: 'cross-plane',
+          sourceAnchor: { kind: 'pokemon-card', playerIndex: 0, slot: 'active', slotIndex: 0, serial: 101 },
+          targetAnchor: { kind: 'discard-pile', playerIndex: 0 },
+        },
+      ],
+    })).toThrow('must cross between board and viewport anchors');
+  });
+
   it('validates nested reveal session timing explicitly', () => {
     const plan = createReplayAnimationPhasePlan({
       key: 'DeckSearchReveal:0',

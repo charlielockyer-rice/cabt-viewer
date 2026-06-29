@@ -4,7 +4,7 @@ import { createReplayAnimationPhasePlan, type AnimationMotion } from './replayAn
 import type { GameView } from '../game/types';
 
 describe('replay animation handoff timing', () => {
-  it('releases prepaint destination claims before the moving sprite is removed', () => {
+  it('releases prepaint destination claims when the moving sprite arrives', () => {
     const plan = planWithMotion(cardMoveMotion({
       id: 'draw-card',
       startMs: 100,
@@ -20,7 +20,7 @@ describe('replay animation handoff timing', () => {
       identity: { kind: 'card', serial: 11, cardId: 22 },
     })).toEqual({
       startMs: 0,
-      releaseMs: 320,
+      releaseMs: 350,
     });
   });
 

@@ -14,6 +14,8 @@ export type ReplayAnimationClaimTiming = {
   releaseMs?: number;
 };
 
+export const replayAnimationScopeExitSettleMs = 40;
+
 export function replayAnimationClaimTiming(
   plan: ReplayAnimationPhasePlan,
   claim: AnimationVisibilityClaim,
@@ -90,7 +92,7 @@ function replayAnimationClaimReleaseMs(
     return 0;
   }
   if (motion.handoffPolicy.hideDestinationUntil === 'prepaint') {
-    return motion.startMs + Math.round(motion.durationMs * 0.88);
+    return motion.startMs + motion.durationMs;
   }
   if (motion.handoffPolicy.hideDestinationUntil === 'arrival') {
     return motion.startMs + motion.durationMs + 24;
