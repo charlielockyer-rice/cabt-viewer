@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte';
+  import CardTile from './CardTile.svelte';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { resolveAnimationAnchorElements, type AnimationAnchorRef } from '../animations/animationAnchors';
   import {
@@ -12,7 +13,7 @@
   import { CabtAreaType } from '../cabt/types';
   import { cardBackCssVar } from '../game/cardAssets';
   import { replayAnimationPhaseGapMs } from '../game/replay';
-  import type { ActionTimelineEvent } from '../game/types';
+  import type { ActionTimelineEvent, CardView } from '../game/types';
 
   type Props = {
     events?: ActionTimelineEvent[];
@@ -43,6 +44,8 @@
     delayMs: number;
     durationMs: number;
     measuring: boolean;
+    card?: Pick<CardView, 'id' | 'serial' | 'name' | 'fullName' | 'cardImage' | 'imageUrl'>;
+    faceDown?: boolean;
   };
 
   type BoardMoveInstruction = {
@@ -190,6 +193,8 @@
         opponentSide: isOpponentAnchor(motion.sourceAnchor) || isOpponentAnchor(motion.targetAnchor),
         delayMs: motion.startMs,
         durationMs: motion.durationMs,
+        card: motion.spriteVisual.kind === 'card' ? motion.spriteVisual.card : undefined,
+        faceDown: motion.spriteVisual.kind === 'card' ? motion.spriteVisual.faceDown : undefined,
         key: motion.id,
       }, generation, plannedBoardMoveHandoffDelayMs(motion, latestDeckPlacementStartMs));
     }
@@ -252,6 +257,8 @@
       opponentSide: boolean;
       delayMs: number;
       durationMs: number;
+      card?: Pick<CardView, 'id' | 'serial' | 'name' | 'fullName' | 'cardImage' | 'imageUrl'>;
+      faceDown?: boolean;
       key: string;
     },
     generation: number,
@@ -269,7 +276,7 @@
 
     const sprite: BoardMoveSprite = {
       id: `${generation}:${instruction.key}`,
-      html: spriteHtml(instruction.source, instruction.target, instruction.fromDeck),
+      html: instruction.card ? '' : spriteHtml(instruction.source, instruction.target, instruction.fromDeck),
       fallbackName: instruction.fallbackName ?? (instruction.cardId !== undefined ? cabtCardToView(instruction.cardId).name : 'Card'),
       left: targetRect.left,
       top: targetRect.top,
@@ -289,6 +296,8 @@
       delayMs: instruction.delayMs,
       durationMs: instruction.durationMs,
       measuring: true,
+      card: instruction.card,
+      faceDown: instruction.faceDown,
     };
 
     const startTimer = setTimeout(async () => {
@@ -332,6 +341,10 @@
     if (exact) {
       return visualElementForAnchor(exact, anchor);
     }
+    if (anchor.kind === 'discard-card') {
+      const fallback = resolveAnimationAnchorElements({ kind: 'discard-pile', playerIndex: anchor.playerIndex }).at(0);
+      return fallback ? visualElementForAnchor(fallback, { kind: 'discard-pile', playerIndex: anchor.playerIndex }) : null;
+    }
     if ('serial' in anchor && anchor.serial !== undefined) {
       const fallbackAnchor = { ...anchor, serial: undefined } as AnimationAnchorRef;
       const fallback = resolveAnimationAnchorElements(fallbackAnchor).at(0);
@@ -349,6 +362,10 @@
         const face = pile.querySelector('.deck-card-face');
         return face instanceof HTMLElement ? face : pile;
       }
+    }
+    if (anchor.kind === 'discard-card') {
+      const card = element.classList.contains('card-tile') ? element : element.querySelector('.card-tile');
+      return card instanceof HTMLElement ? card : element;
     }
     return element;
   }
@@ -832,6 +849,9 @@
     ].join('; ');
   }
 
+  function spriteCard(sprite: BoardMoveSprite): CardView | undefined {
+    return sprite.card as CardView | undefined;
+  }
 </script>
 
 <span class="board-move-animation-layer" style={cardBackCssVar()} bind:this={motionLayer} aria-hidden="true">
@@ -845,7 +865,9 @@
       style={spriteStyle(sprite)}
     >
       <span class="board-move-card-inner">
-        {#if sprite.html}
+        {#if sprite.card}
+          <CardTile card={spriteCard(sprite)} compact faceDown={sprite.faceDown} />
+        {:else if sprite.html}
           {@html sprite.html}
         {:else}
           <span class="board-move-fallback">{sprite.fallbackName}</span>

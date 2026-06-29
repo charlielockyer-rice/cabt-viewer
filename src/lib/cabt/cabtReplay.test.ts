@@ -3076,6 +3076,7 @@ describe('cabtReplayToSnapshot', () => {
           { type: 'Attack', playerIndex: 0, cardId: 723, serial: 13, attackId: 1046 },
           { type: 'MoveCard', playerIndex: 0, cardId: 3, serial: 56, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.DISCARD },
           { type: 'MoveCard', playerIndex: 0, cardId: 1235, serial: 27, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.DISCARD },
+          { type: 'MoveCard', playerIndex: 0, cardId: 955, serial: 44, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.DISCARD },
           { type: 'HpChange', playerIndex: 1, cardId: 721, serial: 64, value: -400, putDamageCounter: false },
           { type: 'MoveCard', playerIndex: 1, cardId: 721, serial: 64, fromArea: CabtAreaType.ACTIVE, toArea: CabtAreaType.DISCARD },
           { type: 'MoveCard', playerIndex: 1, cardId: 3, serial: 96, fromArea: CabtAreaType.ENERGY, toArea: CabtAreaType.DISCARD },
@@ -3089,8 +3090,8 @@ describe('cabtReplayToSnapshot', () => {
             bench: [],
             benchMax: 5,
             handCount: 0,
-            deckCount: 43,
-            discard: [{ id: 3, serial: 56 }, { id: 1235, serial: 27 }],
+            deckCount: 42,
+            discard: [{ id: 3, serial: 56 }, { id: 1235, serial: 27 }, { id: 955, serial: 44 }],
             prize: [],
           }, {
             active: [],
@@ -3110,6 +3111,7 @@ describe('cabtReplayToSnapshot', () => {
       'Attack',
       'MoveCard',
       'MoveCard',
+      'MoveCard',
       'HpChange',
       'MoveCard',
       'MoveCard',
@@ -3127,6 +3129,65 @@ describe('cabtReplayToSnapshot', () => {
     expect(step.animationPhases?.[3].view.players[1].active.damage).toBe(400);
     expect(step.animationPhases?.[3].view.players[1].bench[0].pokemon?.serial).toBe(99);
     expect(step.animationPhases?.[3].view.players[1].bench[0].damage).toBe(0);
+    expect(step.animationPhases?.[1].animationPlan?.motions).toMatchObject([
+      {
+        kind: 'card-move',
+        coordinateSpace: 'board',
+        sourceAnchor: { kind: 'deck-top', playerIndex: 0 },
+        targetAnchor: { kind: 'discard-card', playerIndex: 0, serial: 56 },
+        identity: { kind: 'card', serial: 56, cardId: 3 },
+        durationMs: 300,
+        startMs: 0,
+        spriteVisual: {
+          kind: 'card',
+          card: { id: 3, serial: 56 },
+        },
+        handoffPolicy: {
+          hideSourceUntil: 'snapshot',
+          hideDestinationUntil: 'prepaint',
+          removeSprite: 'prepaint',
+          prepaintFrames: 2,
+        },
+      },
+      {
+        kind: 'card-move',
+        coordinateSpace: 'board',
+        sourceAnchor: { kind: 'deck-top', playerIndex: 0 },
+        targetAnchor: { kind: 'discard-card', playerIndex: 0, serial: 27 },
+        identity: { kind: 'card', serial: 27, cardId: 1235 },
+        durationMs: 300,
+        startMs: 300,
+        spriteVisual: {
+          kind: 'card',
+          card: { id: 1235, serial: 27 },
+        },
+        handoffPolicy: {
+          hideSourceUntil: 'snapshot',
+          hideDestinationUntil: 'prepaint',
+          removeSprite: 'prepaint',
+          prepaintFrames: 2,
+        },
+      },
+      {
+        kind: 'card-move',
+        coordinateSpace: 'board',
+        sourceAnchor: { kind: 'deck-top', playerIndex: 0 },
+        targetAnchor: { kind: 'discard-card', playerIndex: 0, serial: 44 },
+        identity: { kind: 'card', serial: 44, cardId: 955 },
+        durationMs: 300,
+        startMs: 600,
+        spriteVisual: {
+          kind: 'card',
+          card: { id: 955, serial: 44 },
+        },
+        handoffPolicy: {
+          hideSourceUntil: 'snapshot',
+          hideDestinationUntil: 'prepaint',
+          removeSprite: 'prepaint',
+          prepaintFrames: 2,
+        },
+      },
+    ]);
     expect(step.animationPhases?.[3].animationPlan?.motions).toMatchObject([
       {
         kind: 'card-move',

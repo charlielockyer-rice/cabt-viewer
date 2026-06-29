@@ -7,6 +7,7 @@
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
   import { actionAnimationBatchEvents, actionAnimationStartMs } from '../cabt/actionAnimationSchedule';
+  import type { ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
   import type { ActionTimelineEvent, CardView } from '../game/types';
@@ -17,6 +18,7 @@
     deckElement?: HTMLElement;
     discardElement?: HTMLElement;
     scopeKey?: string | number;
+    animationPlan?: ReplayAnimationPhasePlan;
     replayMode?: boolean;
     opponent?: boolean;
   };
@@ -46,6 +48,7 @@
     deckElement,
     discardElement,
     scopeKey = '',
+    animationPlan,
     replayMode = false,
     opponent = false,
   }: Props = $props();
@@ -79,8 +82,20 @@
   $effect(() => {
     const currentEvents = events;
     const currentScopeKey = scopeKey;
+    const currentPlan = animationPlan;
     const scopeChanged = initialized && currentScopeKey !== lastScopeKey;
     lastScopeKey = currentScopeKey;
+
+    if (planOwnsDeckDiscard(currentPlan)) {
+      if (discards.length) {
+        clearDiscards();
+      }
+      for (const event of currentEvents) {
+        seenEventIds.add(event.id);
+      }
+      initialized = true;
+      return;
+    }
 
     if (!initialized) {
       for (const event of currentEvents) {
@@ -121,6 +136,12 @@
       && Number(params?.fromArea) === CabtAreaType.DECK
       && Number(params?.toArea) === CabtAreaType.DISCARD
       && Number.isFinite(Number(params?.cardId));
+  }
+
+  function planOwnsDeckDiscard(plan: ReplayAnimationPhasePlan | undefined): boolean {
+    return !!plan
+      && plan.key.startsWith(`DeckDiscard:${playerIndex}`)
+      && plan.motions.some((motion) => motion.kind === 'card-move' && motion.coordinateSpace === 'board');
   }
 
   function startDiscard(discardEvents: ActionTimelineEvent[], animationEvents: ActionTimelineEvent[]) {

@@ -220,6 +220,7 @@
       {projectedHoverPile}
       {animationEvents}
       {animationScopeKey}
+      {animationPlan}
       {replayMode}
       bind:topLostPileElement
       bind:topDiscardPileElement

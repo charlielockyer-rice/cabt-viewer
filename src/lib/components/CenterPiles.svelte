@@ -5,6 +5,7 @@
   import DeckShuffleAnimation from './DeckShuffleAnimation.svelte';
   import { animationAnchorForElement } from '../animations/animationAnchors';
   import { replayAnimationVisibility, type AnimationVisibilityToken } from '../animations/animationVisibility';
+  import type { ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { cardBackCssVar } from '../game/cardAssets';
   import type { CardView, PlayerView } from '../game/types';
   import type { ActionTimelineEvent } from '../game/types';
@@ -20,6 +21,7 @@
     bottomDiscardPileElement?: HTMLButtonElement;
     animationEvents?: ActionTimelineEvent[];
     animationScopeKey?: string | number;
+    animationPlan?: ReplayAnimationPhasePlan;
     replayMode?: boolean;
     showLostZone: (player: PlayerView) => void;
     showDiscard: (player: PlayerView) => void;
@@ -36,6 +38,7 @@
     bottomDiscardPileElement = $bindable(),
     animationEvents = [],
     animationScopeKey = '',
+    animationPlan,
     replayMode = false,
     showLostZone,
     showDiscard,
@@ -396,6 +399,7 @@
           deckElement={topDeckPileElement}
           discardElement={topDiscardPileElement}
           scopeKey={animationScopeKey}
+          {animationPlan}
           {replayMode}
           opponent
         />
@@ -532,6 +536,7 @@
           deckElement={bottomDeckPileElement}
           discardElement={bottomDiscardPileElement}
           scopeKey={animationScopeKey}
+          {animationPlan}
           {replayMode}
         />
       </div>

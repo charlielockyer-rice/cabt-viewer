@@ -1446,6 +1446,7 @@ function animationPhaseMotions(
   if (
     phase.key.startsWith('BoardMove:')
     || phase.key.startsWith('BoardToDeck:')
+    || phase.key.startsWith('DeckDiscard:')
     || phase.key.startsWith('DeckBoardPlace:')
     || phase.key.startsWith('StadiumMove:')
     || phase.key.startsWith('AttachedMove:')
@@ -1719,7 +1720,9 @@ function boardCardMoveMotionsForEvent(
     sourceAnchor,
     targetAnchor,
     identity: {
-      kind: attachedIdentityKind(fromArea) ?? (fromArea === CabtAreaType.STADIUM ? 'stadium' : 'pokemon'),
+      kind: attachedIdentityKind(fromArea)
+        ?? (fromArea === CabtAreaType.STADIUM ? 'stadium' : undefined)
+        ?? (fromArea === CabtAreaType.DECK && toArea === CabtAreaType.DISCARD ? 'card' : 'pokemon'),
       serial,
       cardId,
       name: stringValue(params?.cardName),
@@ -1730,7 +1733,8 @@ function boardCardMoveMotionsForEvent(
       : 'prepaint',
     durationMs: cardMoveDurationMs(fromArea, toArea),
     coordinateSpace: isAttachedCardArea(fromArea) && toArea === CabtAreaType.HAND ? 'cross-plane' : 'board',
-    spriteVisual: isAttachedCardArea(fromArea) && toArea === CabtAreaType.HAND
+    spriteVisual: (isAttachedCardArea(fromArea) && toArea === CabtAreaType.HAND)
+      || (fromArea === CabtAreaType.DECK && toArea === CabtAreaType.DISCARD)
       ? { kind: 'card', card: cardViewFromEvent(event) }
       : undefined,
   })];
@@ -1822,6 +1826,9 @@ function cardMoveDurationMs(fromArea: number, toArea: number): number {
   if (isKnockOutMove(fromArea, toArea)) {
     return actionAnimationTiming.knockOutMs;
   }
+  if (fromArea === CabtAreaType.DECK && toArea === CabtAreaType.DISCARD) {
+    return actionAnimationTiming.deckDiscardMs;
+  }
   if (fromArea === CabtAreaType.STADIUM && toArea === CabtAreaType.DISCARD) {
     return actionAnimationTiming.stadiumMoveMs;
   }
@@ -1907,6 +1914,11 @@ function boardMoveTargetAnchor(
     return { kind: 'deck-top', playerIndex };
   }
   if (toArea === CabtAreaType.DISCARD) {
+    const discard = view.players[playerIndex]?.discard ?? [];
+    const card = discard.find((candidate) => eventCardMatches(candidate, event));
+    if (card) {
+      return { kind: 'discard-card', playerIndex, serial: card.serial };
+    }
     return { kind: 'discard-pile', playerIndex };
   }
   if (toArea === CabtAreaType.HAND) {
@@ -2334,7 +2346,8 @@ function animationPhaseNeedsDedicatedView(phase: AnimationEventPhase): boolean {
 }
 
 function animationPhaseMayHavePlan(phase: AnimationEventPhase): boolean {
-  return phase.key.startsWith('DeckBoardPlace:')
+  return phase.key.startsWith('DeckDiscard:')
+    || phase.key.startsWith('DeckBoardPlace:')
     || phase.key.startsWith('DeckReveal:')
     || phase.key.startsWith('DeckSearchReveal:')
     || phase.key.startsWith('DeckRevealReturn:')
