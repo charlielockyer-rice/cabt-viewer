@@ -27,6 +27,7 @@
   import { replayAnimationScopeExitSettleMs, replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
   import { createReplayPhasePlanRunner, type ReplayPhasePlanRunnerContext } from '../animations/replayPhasePlanRunner.svelte';
   import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
+  import { isLiveHandPlayEvent, liveHandPlayTargetForEvent, type LiveHandPlayTargetResolver } from '../animations/liveHandPlayTargets';
   import {
     replayAnimationPlanOwnsMotion,
     type CardMoveAnimationMotion,
@@ -108,6 +109,17 @@
   let previousCardRects = new Map<number, RectSnapshot>();
   let activePlays = $state<ActivePlay[]>([]);
   let activeTargets: ActiveTargetEffect[] = [];
+  const liveHandPlayTargetResolver: LiveHandPlayTargetResolver = {
+    pokemon: boardSlotByPokemonIdentity,
+    pokemonBySerial,
+    playZone: playZoneTarget,
+    stadium: stadiumTarget,
+    discard: discardTarget,
+    discardCard: discardCardTarget,
+    active: activeTarget,
+    firstBench: firstBenchTarget,
+    isStadium: isStadiumCardId,
+  };
   const replayPlanRunner = createReplayPhasePlanRunner({
     selectMotions: handPlayPlanMotions,
     lifecycle: 'replay',
@@ -135,7 +147,7 @@
 
     const animationEvents = actionAnimationBatchEvents(currentEvents, replay.seenEventIds);
     const playEvents = animationEvents.filter((event) => {
-      if (!isHandPlayEvent(event)) {
+      if (!isLiveHandPlayEvent(event)) {
         return false;
       }
       if (replayPlanRunner.hasSeen(event)) {
@@ -162,22 +174,6 @@
       && motion.targetAnchor.kind !== 'deck-top'
       && motion.targetAnchor.kind !== 'hand-card'
       && replayAnimationPlanOwnsMotion(plan, motion, ['Play', 'HandMove', 'Evolve', 'Attach']));
-  }
-
-  function isHandPlayEvent(event: ActionTimelineEvent): boolean {
-    const params = event.params as Record<string, unknown> | undefined;
-    if (event.kind === 'Play' || event.kind === 'Attach' || event.kind === 'Evolve') {
-      return Number.isFinite(Number(params?.cardId));
-    }
-    const areas = replayEventMoveAreas(event);
-    return event.kind === 'MoveCard'
-      && areas?.fromArea === CabtAreaType.HAND
-      && (
-        areas.toArea === CabtAreaType.DISCARD
-        || areas.toArea === CabtAreaType.ACTIVE
-        || areas.toArea === CabtAreaType.BENCH
-      )
-      && Number.isFinite(Number(params?.cardId));
   }
 
   function startPlay(playEvents: ActionTimelineEvent[], animationEvents: ActionTimelineEvent[]) {
@@ -379,7 +375,7 @@
 
     const serial = Number(params?.serial);
     const handElement = handAnchor(event.playerIndex);
-    const target = targetForEvent(event);
+    const target = liveHandPlayTargetForEvent(event, liveHandPlayTargetResolver);
     const planeElement = target?.closest('.game-board-plane') as HTMLElement | null;
     if (!handElement || !target || !planeElement) {
       return [];
@@ -560,62 +556,6 @@
     return cardMoveDurationMs;
   }
 
-  function targetForEvent(event: ActionTimelineEvent): HTMLElement | null {
-    const params = event.params as Record<string, unknown> | undefined;
-    const playerIndex = event.playerIndex;
-    const serial = Number(params?.serial);
-    const cardId = Number(params?.cardId);
-
-    if (event.kind === 'Attach') {
-      const targetSerial = Number(params?.serialTarget);
-      const targetCardId = Number(params?.cardIdTarget);
-      return boardSlotByPokemonIdentity(targetSerial, targetCardId, playerIndex);
-    }
-
-    if (event.kind === 'Evolve') {
-      const targetSerial = Number(params?.serialTarget);
-      const targetCardId = Number(params?.cardIdTarget);
-      return boardSlotByPokemonIdentity(targetSerial, targetCardId, playerIndex)
-        ?? boardSlotByPokemonIdentity(serial, cardId, playerIndex);
-    }
-
-    if (Number.isFinite(serial)) {
-      const boardSlot = document.querySelector(`[data-pokemon-serial="${serial}"]`);
-      if (boardSlot instanceof HTMLElement) {
-        return boardSlot;
-      }
-      const discardCard = document.querySelector(`[data-card-anchor="player:${playerIndex}:discard"] [data-card-serial="${serial}"]`);
-      if (discardCard instanceof HTMLElement) {
-        return discardCard;
-      }
-    }
-
-    if (event.kind === 'MoveCard') {
-      const areas = replayEventMoveAreas(event);
-      if (areas?.toArea === CabtAreaType.DISCARD) {
-        return discardTarget(playerIndex, serial);
-      }
-      if (areas?.toArea === CabtAreaType.ACTIVE) {
-        return document.querySelector(`[data-card-anchor="player:${playerIndex}:active:0"]`);
-      }
-      if (areas?.toArea === CabtAreaType.BENCH) {
-        return boardSlotByPokemonIdentity(serial, cardId, playerIndex)
-          ?? document.querySelector(`[data-card-anchor^="player:${playerIndex}:bench:"]`);
-      }
-    }
-
-    if (event.kind === 'Play') {
-      if (isStadiumCardId(cardId)) {
-        return stadiumTarget(playerIndex, serial);
-      }
-      return playZoneTarget(playerIndex, serial)
-        ?? discardTarget(playerIndex, serial)
-        ?? boardSlotByPokemonIdentity(serial, cardId, playerIndex);
-    }
-
-    return null;
-  }
-
   function playZoneTarget(playerIndex: number | undefined, serial: number): HTMLElement | null {
     if (playerIndex === undefined) {
       return null;
@@ -650,13 +590,16 @@
     if (playerIndex === undefined) {
       return null;
     }
-    if (Number.isFinite(serial)) {
-      const card = document.querySelector(`[data-card-anchor="player:${playerIndex}:discard"] [data-card-serial="${serial}"]`);
-      if (card instanceof HTMLElement) {
-        return card;
-      }
+    return discardCardTarget(playerIndex, serial)
+      ?? document.querySelector(`[data-card-anchor="player:${playerIndex}:discard"]`);
+  }
+
+  function discardCardTarget(playerIndex: number | undefined, serial: number): HTMLElement | null {
+    if (playerIndex === undefined || !Number.isFinite(serial)) {
+      return null;
     }
-    return document.querySelector(`[data-card-anchor="player:${playerIndex}:discard"]`);
+    const card = document.querySelector(`[data-card-anchor="player:${playerIndex}:discard"] [data-card-serial="${serial}"]`);
+    return card instanceof HTMLElement ? card : null;
   }
 
   function boardSlotByPokemonIdentity(serial: number, cardId: number, playerIndex: number | undefined): HTMLElement | null {
@@ -673,6 +616,26 @@
       }
     }
     return null;
+  }
+
+  function pokemonBySerial(serial: number): HTMLElement | null {
+    if (!Number.isFinite(serial)) {
+      return null;
+    }
+    const bySerial = document.querySelector(`[data-pokemon-serial="${serial}"]`);
+    return bySerial instanceof HTMLElement ? bySerial : null;
+  }
+
+  function activeTarget(playerIndex: number | undefined): HTMLElement | null {
+    return playerIndex === undefined
+      ? null
+      : document.querySelector(`[data-card-anchor="player:${playerIndex}:active:0"]`);
+  }
+
+  function firstBenchTarget(playerIndex: number | undefined): HTMLElement | null {
+    return playerIndex === undefined
+      ? null
+      : document.querySelector(`[data-card-anchor^="player:${playerIndex}:bench:"]`);
   }
 
   function handAnchor(playerIndex: number): HTMLElement | null {
