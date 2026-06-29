@@ -1,7 +1,5 @@
-import {
-  resolveStrictAnimationAnchorElement,
-} from './animationAnchors';
 import type { CardMoveAnimationMotion } from './replayAnimationPlan';
+import { strictAnimationVisualElementForAnchor } from './animationAnchorVisuals';
 import { cabtCardToView } from '../cabt/cardView';
 import type { CardView } from '../game/types';
 
@@ -13,22 +11,7 @@ export function animationElementForMotionAnchor(
   anchor: CardMoveAnimationMotion['sourceAnchor'],
   identity: CardMoveAnimationMotion['identity'],
 ): HTMLElement | undefined {
-  const element = resolveStrictAnimationAnchorElement(anchor, { identity });
-  if (!element) {
-    return undefined;
-  }
-  if (anchor.kind === 'deck-top') {
-    const pile = element.closest('.deck-pile');
-    if (pile instanceof HTMLElement) {
-      const face = pile.querySelector('.deck-card-face');
-      return face instanceof HTMLElement ? face : pile;
-    }
-  }
-  if (anchor.kind === 'hand-card') {
-    const visual = element.querySelector('.card-tile');
-    return visual instanceof HTMLElement ? visual : element;
-  }
-  return element;
+  return strictAnimationVisualElementForAnchor(anchor, identity);
 }
 
 export function plannedMotionCard(motion: CardMoveAnimationMotion): CardView | undefined {

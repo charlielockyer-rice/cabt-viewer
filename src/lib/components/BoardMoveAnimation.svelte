@@ -3,8 +3,9 @@
   import CardTile from './CardTile.svelte';
   import { actionAnimationPhaseKind, actionAnimationTimelinePhaseKeyForEvent } from '../cabt/actionAnimationPhases';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
-  import { resolveStrictAnimationAnchorElement, type AnimationAnchorRef, type AnimationIdentity } from '../animations/animationAnchors';
+  import type { AnimationAnchorRef, AnimationIdentity } from '../animations/animationAnchors';
   import { afterTwoAnimationFrames } from '../animations/animationFrames';
+  import { strictAnimationVisualElementForAnchor } from '../animations/animationAnchorVisuals';
   import {
     hideElementForAnimation,
     releaseElementVisibilityClaim,
@@ -407,26 +408,7 @@
   }
 
   function elementForAnchor(anchor: AnimationAnchorRef, identity?: AnimationIdentity): HTMLElement | null {
-    const exact = resolveStrictAnimationAnchorElement(anchor, { identity });
-    if (exact) {
-      return visualElementForAnchor(exact, anchor);
-    }
-    return null;
-  }
-
-  function visualElementForAnchor(element: HTMLElement, anchor: AnimationAnchorRef): HTMLElement {
-    if (anchor.kind === 'deck-top') {
-      const pile = element.closest('.deck-pile');
-      if (pile instanceof HTMLElement) {
-        const face = pile.querySelector('.deck-card-face');
-        return face instanceof HTMLElement ? face : pile;
-      }
-    }
-    if (anchor.kind === 'discard-card' || anchor.kind === 'play-zone-card') {
-      const card = element.classList.contains('card-tile') ? element : element.querySelector('.card-tile');
-      return card instanceof HTMLElement ? card : element;
-    }
-    return element;
+    return strictAnimationVisualElementForAnchor(anchor, identity) ?? null;
   }
 
   function isOpponentAnchor(anchor: AnimationAnchorRef): boolean {

@@ -11,6 +11,7 @@
     type AnimationElementEffectClaim,
   } from '../animations/animationElementEffects';
   import { resolveStrictAnimationAnchorElement } from '../animations/animationAnchors';
+  import { strictAnimationVisualElementForAnchor } from '../animations/animationAnchorVisuals';
   import { replayAnimationScopeExitSettleMs, replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
   import { createReplayPhasePlanRunner, type ReplayPhasePlanRunnerContext } from '../animations/replayPhasePlanRunner.svelte';
   import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
@@ -332,21 +333,7 @@
   }
 
   function targetElementForMotion(motion: CardMoveAnimationMotion): HTMLElement | null {
-    const exact = resolveStrictAnimationAnchorElement(motion.targetAnchor, { identity: motion.identity });
-    if (exact) {
-      return targetVisualElementForAnchor(exact, motion.targetAnchor.kind);
-    }
-    return null;
-  }
-
-  function targetVisualElementForAnchor(element: HTMLElement, anchorKind: string): HTMLElement {
-    if (anchorKind === 'discard-pile') {
-      const topCard = element.querySelector('.discard-card-top .card-tile');
-      if (topCard instanceof HTMLElement) {
-        return topCard;
-      }
-    }
-    return element;
+    return strictAnimationVisualElementForAnchor(motion.targetAnchor, motion.identity) ?? null;
   }
 
   function clearPlays() {

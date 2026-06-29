@@ -6,7 +6,7 @@
     releaseElementVisibilityClaims,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
-  import { resolveStrictAnimationAnchorElement } from '../animations/animationAnchors';
+  import { strictAnimationVisualElementForAnchor } from '../animations/animationAnchorVisuals';
   import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import { scheduleReplayAnimationGroupRemoval, scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
   import { replayAnimationScopeExitSettleMs } from '../animations/replayAnimationHandoff';
@@ -213,8 +213,8 @@
     index: number,
     motionPlane: HTMLElement,
   ): DiscardSprite | undefined {
-    const sourceElement = plannedVisualElementForAnchor(motion.sourceAnchor, motion.identity);
-    const targetElement = plannedVisualElementForAnchor(motion.targetAnchor, motion.identity);
+    const sourceElement = strictAnimationVisualElementForAnchor(motion.sourceAnchor, motion.identity);
+    const targetElement = strictAnimationVisualElementForAnchor(motion.targetAnchor, motion.identity);
     if (!sourceElement || !targetElement) {
       return undefined;
     }
@@ -243,28 +243,6 @@
       height: targetRect.height,
       durationMs: motion.durationMs,
     };
-  }
-
-  function plannedVisualElementForAnchor(
-    anchor: CardMoveAnimationMotion['sourceAnchor'],
-    identity: CardMoveAnimationMotion['identity'],
-  ): HTMLElement | null {
-    const element = resolveStrictAnimationAnchorElement(anchor, { identity });
-    if (!element) {
-      return null;
-    }
-    if (anchor.kind === 'deck-top') {
-      const pile = element.closest('.deck-pile');
-      if (pile instanceof HTMLElement) {
-        const face = pile.querySelector('.deck-card-face');
-        return face instanceof HTMLElement ? face : pile;
-      }
-    }
-    if (anchor.kind === 'discard-card') {
-      const card = element.classList.contains('card-tile') ? element : element.querySelector('.card-tile');
-      return card instanceof HTMLElement ? card : element;
-    }
-    return element;
   }
 
   function clearDiscards() {
