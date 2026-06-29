@@ -284,7 +284,7 @@
     if (!step || replayStore.animationPhaseIndex < phases.length) {
       return [];
     }
-    const evolvePhaseIndex = phases.findIndex((phase) => phase.key.startsWith('Evolve:'));
+    const evolvePhaseIndex = phases.findIndex((phase) => phase.kind === 'Evolve');
     if (evolvePhaseIndex === -1 || phases.length > evolvePhaseIndex + 1) {
       return [];
     }

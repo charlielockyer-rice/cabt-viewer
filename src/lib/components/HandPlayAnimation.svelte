@@ -15,6 +15,7 @@
   import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
   import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
+  import { actionAnimationPhaseKind } from '../cabt/actionAnimationPhases';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -308,7 +309,7 @@
   }
 
   function isEvolutionMotion(motion: CardMoveAnimationMotion): boolean {
-    return motion.id.startsWith('Evolve:');
+    return actionAnimationPhaseKind(motion.id) === 'Evolve';
   }
 
   function slotAttachTargetForMotion(motion: CardMoveAnimationMotion, target: HTMLElement): HTMLElement | null {

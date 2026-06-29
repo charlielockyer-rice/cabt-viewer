@@ -1,6 +1,6 @@
 import type { GameView } from './types';
 import type { ActionTimelineEvent } from './types';
-import type { ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
+import type { ReplayAnimationPhaseKind, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
 
 export type ReplayPlayerInfo = {
   userId: number;
@@ -25,6 +25,7 @@ export type ReplayStep = {
 
 export type ReplayAnimationPhase = {
   key: string;
+  kind: ReplayAnimationPhaseKind;
   label?: string;
   view: GameView;
   actionTimeline: ActionTimelineEvent[];

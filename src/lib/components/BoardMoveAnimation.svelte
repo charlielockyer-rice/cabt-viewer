@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, tick } from 'svelte';
   import CardTile from './CardTile.svelte';
-  import { actionAnimationTimelinePhaseKeyForEvent } from '../cabt/actionAnimationPhases';
+  import { actionAnimationPhaseKind, actionAnimationTimelinePhaseKeyForEvent } from '../cabt/actionAnimationPhases';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { resolveStrictAnimationAnchorElement, type AnimationAnchorRef, type AnimationIdentity } from '../animations/animationAnchors';
   import { afterTwoAnimationFrames } from '../animations/animationFrames';
@@ -405,12 +405,12 @@
 
   function ownsLiveBoardMovePhase(animationEvents: ActionTimelineEvent[], event: ActionTimelineEvent): boolean {
     const key = actionAnimationTimelinePhaseKeyForEvent(animationEvents, event);
-    return key?.startsWith('BoardMove:')
-      || key?.startsWith('BoardToDeck:')
-      || key?.startsWith('DeckBoardPlace:')
-      || key?.startsWith('StadiumMove:')
-      || key?.startsWith('KnockOut:')
-      || false;
+    const kind = key ? actionAnimationPhaseKind(key) : null;
+    return kind === 'BoardMove'
+      || kind === 'BoardToDeck'
+      || kind === 'DeckBoardPlace'
+      || kind === 'StadiumMove'
+      || kind === 'KnockOut';
   }
 
   function isDeckBoardPlacementEvent(event: ActionTimelineEvent) {

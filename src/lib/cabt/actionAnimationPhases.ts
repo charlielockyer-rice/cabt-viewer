@@ -1,4 +1,5 @@
 import { CabtAreaType } from './types';
+import type { ReplayAnimationPhaseKind } from '../animations/replayAnimationPlan';
 import type { ActionTimelineEvent } from '../game/types';
 
 export const actionAnimationTiming = {
@@ -33,6 +34,233 @@ export type ActionAnimationPhase = {
   stepMs: number;
 };
 
+export type ActionAnimationPhaseKind = ReplayAnimationPhaseKind;
+
+const actionAnimationPhaseKindConfig = {
+  Ability: {
+    durationMs: actionAnimationTiming.abilityAnnounceMs,
+    stepMs: actionAnimationTiming.abilityAnnounceMs,
+    usesSourceView: true,
+    needsDedicatedView: true,
+    mayHavePlan: true,
+  },
+  Attack: {
+    durationMs: actionAnimationTiming.attackAnnounceMs,
+    stepMs: actionAnimationTiming.attackAnnounceMs,
+    usesSourceView: true,
+    needsDedicatedView: true,
+    mayHavePlan: true,
+  },
+  Attach: {
+    durationMs: actionAnimationTiming.handMoveMs,
+    stepMs: actionAnimationTiming.handMoveStepMs,
+    usesSourceView: true,
+    needsDedicatedView: false,
+    mayHavePlan: true,
+  },
+  AttachedMove: {
+    durationMs: actionAnimationTiming.handMoveMs,
+    stepMs: actionAnimationTiming.handMoveStepMs,
+    usesSourceView: true,
+    needsDedicatedView: true,
+    mayHavePlan: true,
+  },
+  BoardMove: {
+    durationMs: actionAnimationTiming.boardMoveMs,
+    stepMs: 0,
+    usesSourceView: true,
+    needsDedicatedView: true,
+    mayHavePlan: true,
+  },
+  BoardToDeck: {
+    durationMs: actionAnimationTiming.boardMoveMs,
+    stepMs: actionAnimationTiming.handMoveStepMs,
+    usesSourceView: true,
+    needsDedicatedView: true,
+    mayHavePlan: true,
+  },
+  Change: {
+    durationMs: actionAnimationTiming.conditionAnnounceMs,
+    stepMs: actionAnimationTiming.conditionAnnounceMs,
+    usesSourceView: true,
+    needsDedicatedView: true,
+    mayHavePlan: true,
+  },
+  Coin: {
+    durationMs: actionAnimationTiming.coinAnnounceMs,
+    stepMs: actionAnimationTiming.coinAnnounceMs,
+    usesSourceView: false,
+    needsDedicatedView: true,
+    mayHavePlan: true,
+  },
+  Condition: {
+    durationMs: actionAnimationTiming.conditionAnnounceMs,
+    stepMs: actionAnimationTiming.conditionAnnounceMs,
+    usesSourceView: true,
+    needsDedicatedView: true,
+    mayHavePlan: true,
+  },
+  Damage: {
+    durationMs: actionAnimationTiming.damageVisualMs,
+    stepMs: actionAnimationTiming.damageVisualMs,
+    usesSourceView: true,
+    needsDedicatedView: true,
+    mayHavePlan: true,
+  },
+  DeckBoardPlace: {
+    durationMs: actionAnimationTiming.boardMoveMs,
+    stepMs: actionAnimationTiming.handMoveStepMs,
+    usesSourceView: false,
+    needsDedicatedView: false,
+    mayHavePlan: true,
+  },
+  DeckDiscard: {
+    durationMs: actionAnimationTiming.deckDiscardMs,
+    stepMs: actionAnimationTiming.deckDiscardStepMs,
+    usesSourceView: false,
+    needsDedicatedView: false,
+    mayHavePlan: true,
+  },
+  DeckPrizePlace: {
+    durationMs: actionAnimationTiming.boardMoveMs,
+    stepMs: actionAnimationTiming.handMoveStepMs,
+    usesSourceView: false,
+    needsDedicatedView: false,
+    mayHavePlan: true,
+  },
+  DeckReveal: {
+    durationMs: actionAnimationTiming.deckRevealMs,
+    stepMs: actionAnimationTiming.deckRevealStepMs,
+    usesSourceView: false,
+    needsDedicatedView: false,
+    mayHavePlan: true,
+  },
+  DeckRevealReturn: {
+    durationMs: actionAnimationTiming.deckRevealReturnMs,
+    stepMs: actionAnimationTiming.deckRevealReturnStepMs,
+    usesSourceView: false,
+    needsDedicatedView: false,
+    mayHavePlan: true,
+  },
+  DeckRevealTake: {
+    durationMs: actionAnimationTiming.handMoveMs,
+    stepMs: actionAnimationTiming.handMoveStepMs,
+    usesSourceView: false,
+    needsDedicatedView: false,
+    mayHavePlan: true,
+  },
+  DeckSearchReveal: {
+    durationMs: actionAnimationTiming.deckRevealMs,
+    stepMs: actionAnimationTiming.deckRevealStepMs,
+    usesSourceView: false,
+    needsDedicatedView: false,
+    mayHavePlan: true,
+  },
+  Devolve: {
+    durationMs: actionAnimationTiming.conditionAnnounceMs,
+    stepMs: actionAnimationTiming.conditionAnnounceMs,
+    usesSourceView: true,
+    needsDedicatedView: true,
+    mayHavePlan: true,
+  },
+  DiscardRecover: {
+    durationMs: actionAnimationTiming.handMoveMs,
+    stepMs: actionAnimationTiming.handMoveStepMs,
+    usesSourceView: true,
+    needsDedicatedView: true,
+    mayHavePlan: true,
+  },
+  Draw: {
+    durationMs: actionAnimationTiming.deckDrawMs,
+    stepMs: actionAnimationTiming.deckDrawStepMs,
+    usesSourceView: false,
+    needsDedicatedView: false,
+    mayHavePlan: true,
+  },
+  Evolve: {
+    durationMs: actionAnimationTiming.evolveMs,
+    stepMs: actionAnimationTiming.handMoveStepMs,
+    usesSourceView: true,
+    needsDedicatedView: true,
+    mayHavePlan: true,
+  },
+  HandMove: {
+    durationMs: actionAnimationTiming.handMoveMs,
+    stepMs: actionAnimationTiming.handMoveStepMs,
+    usesSourceView: true,
+    needsDedicatedView: false,
+    mayHavePlan: true,
+  },
+  HandToDeck: {
+    durationMs: actionAnimationTiming.handMoveMs,
+    stepMs: actionAnimationTiming.handMoveStepMs,
+    usesSourceView: true,
+    needsDedicatedView: false,
+    mayHavePlan: true,
+  },
+  KnockOut: {
+    durationMs: actionAnimationTiming.knockOutMs,
+    stepMs: actionAnimationTiming.knockOutMs,
+    usesSourceView: true,
+    needsDedicatedView: true,
+    mayHavePlan: true,
+  },
+  MoveAttached: {
+    durationMs: actionAnimationTiming.conditionAnnounceMs,
+    stepMs: actionAnimationTiming.conditionAnnounceMs,
+    usesSourceView: true,
+    needsDedicatedView: true,
+    mayHavePlan: true,
+  },
+  Play: {
+    durationMs: actionAnimationTiming.handMoveMs,
+    stepMs: actionAnimationTiming.handMoveStepMs,
+    usesSourceView: true,
+    needsDedicatedView: false,
+    mayHavePlan: true,
+  },
+  PrizeTake: {
+    durationMs: actionAnimationTiming.prizeTakeMs,
+    stepMs: actionAnimationTiming.prizeTakeStepMs,
+    usesSourceView: true,
+    needsDedicatedView: true,
+    mayHavePlan: true,
+  },
+  Shuffle: {
+    durationMs: actionAnimationTiming.deckShuffleMs,
+    stepMs: actionAnimationTiming.deckShuffleMs,
+    usesSourceView: false,
+    needsDedicatedView: false,
+    mayHavePlan: true,
+  },
+  StadiumMove: {
+    durationMs: actionAnimationTiming.stadiumMoveMs,
+    stepMs: actionAnimationTiming.handMoveStepMs,
+    usesSourceView: true,
+    needsDedicatedView: true,
+    mayHavePlan: true,
+  },
+} satisfies Record<ActionAnimationPhaseKind, {
+  durationMs: number;
+  stepMs: number;
+  usesSourceView: boolean;
+  needsDedicatedView: boolean;
+  mayHavePlan: boolean;
+}>;
+
+export const actionAnimationPhaseKinds = Object.keys(actionAnimationPhaseKindConfig) as ActionAnimationPhaseKind[];
+
+const actionAnimationPhaseKindSet = new Set<string>(actionAnimationPhaseKinds);
+
+export function actionAnimationPhaseKind(key: string): ActionAnimationPhaseKind | null {
+  const separatorIndex = key.indexOf(':');
+  if (separatorIndex <= 0) {
+    return null;
+  }
+  const kind = key.slice(0, separatorIndex);
+  return actionAnimationPhaseKindSet.has(kind) ? kind as ActionAnimationPhaseKind : null;
+}
+
 export function actionAnimationPhaseForEvent(event: ActionTimelineEvent): ActionAnimationPhase | null {
   const key = actionAnimationPhaseKey(event);
   if (!key) {
@@ -60,16 +288,18 @@ export function actionAnimationTimelinePhaseKey(
   if (!key) {
     return null;
   }
+  const kind = actionAnimationPhaseKind(key);
+  const previousKinds = previousPhaseKeys.map(actionAnimationPhaseKind);
   if (
-    key.startsWith('Damage:')
-    && !previousPhaseKeys.some((phaseKey) => phaseKey.startsWith('Attack:') || phaseKey.startsWith('Condition:'))
+    kind === 'Damage'
+    && !previousKinds.some((phaseKind) => phaseKind === 'Attack' || phaseKind === 'Condition')
   ) {
     return null;
   }
-  if (key.startsWith('KnockOut:') && !previousPhaseKeys.some((phaseKey) => phaseKey.startsWith('Attack:'))) {
+  if (kind === 'KnockOut' && !previousKinds.includes('Attack')) {
     return null;
   }
-  if (key.startsWith('AttachedMove:') && previousPhaseKeys.some((phaseKey) => phaseKey.startsWith('KnockOut:'))) {
+  if (kind === 'AttachedMove' && previousKinds.includes('KnockOut')) {
     return null;
   }
   return key;
@@ -199,225 +429,29 @@ export function actionAnimationPhaseDurationMs(key: string, count: number): numb
 }
 
 export function actionAnimationPhaseCardDurationMs(key: string): number {
-  if (key.startsWith('Shuffle:')) {
-    return actionAnimationTiming.deckShuffleMs;
-  }
-  if (key.startsWith('Draw:')) {
-    return actionAnimationTiming.deckDrawMs;
-  }
-  if (key.startsWith('DeckDiscard:')) {
-    return actionAnimationTiming.deckDiscardMs;
-  }
-  if (key.startsWith('DeckReveal:')) {
-    return actionAnimationTiming.deckRevealMs;
-  }
-  if (key.startsWith('DeckSearchReveal:')) {
-    return actionAnimationTiming.deckRevealMs;
-  }
-  if (key.startsWith('DeckBoardPlace:')) {
-    return actionAnimationTiming.boardMoveMs;
-  }
-  if (key.startsWith('DeckPrizePlace:')) {
-    return actionAnimationTiming.boardMoveMs;
-  }
-  if (key.startsWith('DeckRevealReturn:')) {
-    return actionAnimationTiming.deckRevealReturnMs;
-  }
-  if (key.startsWith('DeckRevealTake:')) {
-    return actionAnimationTiming.handMoveMs;
-  }
-  if (key.startsWith('AttachedMove:')) {
-    return actionAnimationTiming.handMoveMs;
-  }
-  if (key.startsWith('DiscardRecover:')) {
-    return actionAnimationTiming.handMoveMs;
-  }
-  if (key.startsWith('PrizeTake:')) {
-    return actionAnimationTiming.prizeTakeMs;
-  }
-  if (key.startsWith('StadiumMove:')) {
-    return actionAnimationTiming.stadiumMoveMs;
-  }
-  if (key.startsWith('Evolve:')) {
-    return actionAnimationTiming.evolveMs;
-  }
-  if (key.startsWith('Attack:')) {
-    return actionAnimationTiming.attackAnnounceMs;
-  }
-  if (key.startsWith('Ability:')) {
-    return actionAnimationTiming.abilityAnnounceMs;
-  }
-  if (key.startsWith('Coin:')) {
-    return actionAnimationTiming.coinAnnounceMs;
-  }
-  if (key.startsWith('Condition:')) {
-    return actionAnimationTiming.conditionAnnounceMs;
-  }
-  if (key.startsWith('Change:')) {
-    return actionAnimationTiming.conditionAnnounceMs;
-  }
-  if (key.startsWith('Devolve:') || key.startsWith('MoveAttached:')) {
-    return actionAnimationTiming.conditionAnnounceMs;
-  }
-  if (key.startsWith('Damage:')) {
-    return actionAnimationTiming.damageVisualMs;
-  }
-  if (key.startsWith('KnockOut:')) {
-    return actionAnimationTiming.knockOutMs;
-  }
-  if (key.startsWith('BoardToDeck:')) {
-    return actionAnimationTiming.boardMoveMs;
-  }
-  if (key.startsWith('BoardMove:')) {
-    return actionAnimationTiming.boardMoveMs;
-  }
-  return actionAnimationTiming.handMoveMs;
+  return actionAnimationPhaseConfigForKey(key)?.durationMs ?? actionAnimationTiming.handMoveMs;
 }
 
 export function actionAnimationPhaseStepMs(key: string): number {
-  if (key.startsWith('Draw:')) {
-    return actionAnimationTiming.deckDrawStepMs;
-  }
-  if (key.startsWith('DeckDiscard:')) {
-    return actionAnimationTiming.deckDiscardStepMs;
-  }
-  if (key.startsWith('DeckReveal:')) {
-    return actionAnimationTiming.deckRevealStepMs;
-  }
-  if (key.startsWith('DeckSearchReveal:')) {
-    return actionAnimationTiming.deckRevealStepMs;
-  }
-  if (key.startsWith('DeckBoardPlace:')) {
-    return actionAnimationTiming.handMoveStepMs;
-  }
-  if (key.startsWith('DeckPrizePlace:')) {
-    return actionAnimationTiming.handMoveStepMs;
-  }
-  if (key.startsWith('DeckRevealReturn:')) {
-    return actionAnimationTiming.deckRevealReturnStepMs;
-  }
-  if (key.startsWith('DeckRevealTake:')) {
-    return actionAnimationTiming.handMoveStepMs;
-  }
-  if (key.startsWith('AttachedMove:')) {
-    return actionAnimationTiming.handMoveStepMs;
-  }
-  if (key.startsWith('DiscardRecover:')) {
-    return actionAnimationTiming.handMoveStepMs;
-  }
-  if (key.startsWith('PrizeTake:')) {
-    return actionAnimationTiming.prizeTakeStepMs;
-  }
-  if (key.startsWith('StadiumMove:')) {
-    return actionAnimationTiming.handMoveStepMs;
-  }
-  if (key.startsWith('Shuffle:')) {
-    return actionAnimationTiming.deckShuffleMs;
-  }
-  if (key.startsWith('Attack:')) {
-    return actionAnimationTiming.attackAnnounceMs;
-  }
-  if (key.startsWith('Ability:')) {
-    return actionAnimationTiming.abilityAnnounceMs;
-  }
-  if (key.startsWith('Coin:')) {
-    return actionAnimationTiming.coinAnnounceMs;
-  }
-  if (key.startsWith('Condition:')) {
-    return actionAnimationTiming.conditionAnnounceMs;
-  }
-  if (key.startsWith('Change:')) {
-    return actionAnimationTiming.conditionAnnounceMs;
-  }
-  if (key.startsWith('Devolve:') || key.startsWith('MoveAttached:')) {
-    return actionAnimationTiming.conditionAnnounceMs;
-  }
-  if (key.startsWith('Damage:')) {
-    return actionAnimationTiming.damageVisualMs;
-  }
-  if (key.startsWith('KnockOut:')) {
-    return actionAnimationTiming.knockOutMs;
-  }
-  if (key.startsWith('BoardToDeck:')) {
-    return actionAnimationTiming.handMoveStepMs;
-  }
-  if (key.startsWith('BoardMove:')) {
-    return 0;
-  }
-  return actionAnimationTiming.handMoveStepMs;
+  return actionAnimationPhaseConfigForKey(key)?.stepMs ?? actionAnimationTiming.handMoveStepMs;
 }
 
 export function actionAnimationPhaseUsesSourceView(key: string): boolean {
-  return key.startsWith('HandToDeck:')
-    || key.startsWith('Play:')
-    || key.startsWith('HandMove:')
-    || key.startsWith('Attach:')
-    || key.startsWith('Evolve:')
-    || key.startsWith('Devolve:')
-    || key.startsWith('Ability:')
-    || key.startsWith('Attack:')
-    || key.startsWith('Change:')
-    || key.startsWith('MoveAttached:')
-    || key.startsWith('Condition:')
-    || key.startsWith('Damage:')
-    || key.startsWith('KnockOut:')
-    || key.startsWith('BoardToDeck:')
-    || key.startsWith('BoardMove:')
-    || key.startsWith('AttachedMove:')
-    || key.startsWith('DiscardRecover:')
-    || key.startsWith('StadiumMove:')
-    || key.startsWith('PrizeTake:');
+  return actionAnimationPhaseConfigForKey(key)?.usesSourceView ?? false;
 }
 
 export function actionAnimationPhaseNeedsDedicatedView(key: string): boolean {
-  return key.startsWith('Evolve:')
-    || key.startsWith('Ability:')
-    || key.startsWith('Attack:')
-    || key.startsWith('Coin:')
-    || key.startsWith('Change:')
-    || key.startsWith('Devolve:')
-    || key.startsWith('MoveAttached:')
-    || key.startsWith('Condition:')
-    || key.startsWith('Damage:')
-    || key.startsWith('KnockOut:')
-    || key.startsWith('BoardToDeck:')
-    || key.startsWith('BoardMove:')
-    || key.startsWith('AttachedMove:')
-    || key.startsWith('DiscardRecover:')
-    || key.startsWith('StadiumMove:')
-    || key.startsWith('PrizeTake:');
+  return actionAnimationPhaseConfigForKey(key)?.needsDedicatedView ?? false;
 }
 
 export function actionAnimationPhaseMayHavePlan(key: string): boolean {
-  return key.startsWith('HandToDeck:')
-    || key.startsWith('Play:')
-    || key.startsWith('HandMove:')
-    || key.startsWith('Attach:')
-    || key.startsWith('Evolve:')
-    || key.startsWith('Devolve:')
-    || key.startsWith('Ability:')
-    || key.startsWith('Attack:')
-    || key.startsWith('Coin:')
-    || key.startsWith('Change:')
-    || key.startsWith('MoveAttached:')
-    || key.startsWith('Condition:')
-    || key.startsWith('Damage:')
-    || key.startsWith('KnockOut:')
-    || key.startsWith('BoardToDeck:')
-    || key.startsWith('BoardMove:')
-    || key.startsWith('AttachedMove:')
-    || key.startsWith('Draw:')
-    || key.startsWith('Shuffle:')
-    || key.startsWith('DeckDiscard:')
-    || key.startsWith('DeckBoardPlace:')
-    || key.startsWith('DeckPrizePlace:')
-    || key.startsWith('DiscardRecover:')
-    || key.startsWith('StadiumMove:')
-    || key.startsWith('DeckReveal:')
-    || key.startsWith('DeckSearchReveal:')
-    || key.startsWith('DeckRevealReturn:')
-    || key.startsWith('DeckRevealTake:')
-    || key.startsWith('PrizeTake:');
+  const kind = actionAnimationPhaseKind(key);
+  return kind !== null && actionAnimationPhaseKindConfig[kind].mayHavePlan;
+}
+
+function actionAnimationPhaseConfigForKey(key: string): typeof actionAnimationPhaseKindConfig[ActionAnimationPhaseKind] | undefined {
+  const kind = actionAnimationPhaseKind(key);
+  return kind ? actionAnimationPhaseKindConfig[kind] : undefined;
 }
 
 export function isSpecialConditionEvent(kind: string | undefined): boolean {

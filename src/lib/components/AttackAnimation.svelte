@@ -9,7 +9,7 @@
   } from '../animations/animationElementEffects';
   import { pulseMotionPlanKey, ScheduledAnimationEffectRunner } from '../animations/plannedPulseEffects';
   import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
-  import { actionAnimationTimelinePhaseKeyForEvent } from '../cabt/actionAnimationPhases';
+  import { actionAnimationPhaseKind, actionAnimationTimelinePhaseKeyForEvent } from '../cabt/actionAnimationPhases';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { replayAnimationPlanHasPhase, type PulseAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import type { ActionTimelineEvent } from '../game/types';
@@ -175,7 +175,7 @@
     const attackEvent = stepEvents.find((event) => event.kind === 'Attack');
     const damageEvents = animationEvents.filter((event) =>
       isDamageEvent(event)
-      && actionAnimationTimelinePhaseKeyForEvent(animationEvents, event)?.startsWith('Damage:'));
+      && actionAnimationPhaseKind(actionAnimationTimelinePhaseKeyForEvent(animationEvents, event) ?? '') === 'Damage');
     for (const event of damageEvents) {
       const target = slotElementForEvent(event);
       const attacker = attackEvent ? slotElementForEvent(attackEvent) : null;

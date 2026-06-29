@@ -170,6 +170,7 @@ describe('replay animation handoff timing', () => {
 function planWithMotion(motion: AnimationMotion) {
   return createReplayAnimationPhasePlan({
     key: 'Test:0',
+    kind: 'Play',
     view: gameView(),
     durationMs: 1200,
     motions: [motion],

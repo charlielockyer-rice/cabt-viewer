@@ -19,6 +19,7 @@ describe('replay animation phase plans', () => {
 
     const plan = createReplayAnimationPhasePlan({
       key: 'FutureCardEffect:0',
+      kind: 'Play',
       view: gameView(),
       durationMs: 980,
       motions,
@@ -50,16 +51,17 @@ describe('replay animation phase plans', () => {
   });
 
   it('matches animation phase keys through the shared routing helper', () => {
-    expect(replayAnimationPlanHasPhase({ key: 'Draw:0' }, 'Draw', 0)).toBe(true);
-    expect(replayAnimationPlanHasPhase({ key: 'Draw:0' }, 'Draw')).toBe(true);
-    expect(replayAnimationPlanHasPhase({ key: 'Draw:0' }, 'Draw', 1)).toBe(false);
-    expect(replayAnimationPlanHasPhase({ key: 'Draw:0' }, 'Shuffle', 0)).toBe(false);
+    expect(replayAnimationPlanHasPhase({ key: 'Draw:0', kind: 'Draw' }, 'Draw', 0)).toBe(true);
+    expect(replayAnimationPlanHasPhase({ key: 'Draw:0', kind: 'Draw' }, 'Draw')).toBe(true);
+    expect(replayAnimationPlanHasPhase({ key: 'Draw:0', kind: 'Draw' }, 'Draw', 1)).toBe(false);
+    expect(replayAnimationPlanHasPhase({ key: 'Draw:0', kind: 'Draw' }, 'Shuffle', 0)).toBe(false);
     expect(replayAnimationPlanHasPhase(undefined, 'Draw', 0)).toBe(false);
   });
 
   it('derives card-move visibility claims from handoff policies by default', () => {
     const plan = createReplayAnimationPhasePlan({
       key: 'Move:0',
+      kind: 'Play',
       view: gameView(),
       durationMs: 360,
       motions: [cardMoveMotion('move', 0, 360)],
@@ -172,6 +174,7 @@ describe('replay animation phase plans', () => {
   it('rejects a phase duration that cannot contain its explicit motions', () => {
     expect(() => createReplayAnimationPhasePlan({
       key: 'TooShort',
+      kind: 'Play',
       view: gameView(),
       durationMs: 359,
       motions: [cardMoveMotion('move', 0, 360)],
@@ -181,6 +184,7 @@ describe('replay animation phase plans', () => {
   it('rejects board motions that target viewport-only anchors', () => {
     expect(() => createReplayAnimationPhasePlan({
       key: 'BoardMove:0',
+      kind: 'BoardMove',
       view: gameView(),
       durationMs: 360,
       motions: [
@@ -197,6 +201,7 @@ describe('replay animation phase plans', () => {
   it('rejects cross-plane motions that do not cross coordinate families', () => {
     expect(() => createReplayAnimationPhasePlan({
       key: 'CrossPlane:0',
+      kind: 'AttachedMove',
       view: gameView(),
       durationMs: 360,
       motions: [
@@ -213,6 +218,7 @@ describe('replay animation phase plans', () => {
   it('validates nested reveal session timing explicitly', () => {
     const plan = createReplayAnimationPhasePlan({
       key: 'DeckSearchReveal:0',
+      kind: 'DeckSearchReveal',
       view: gameView(),
       durationMs: 900,
       motions: [
@@ -258,6 +264,7 @@ describe('replay animation phase plans', () => {
   it('rejects negative nested reveal session timing', () => {
     expect(() => createReplayAnimationPhasePlan({
       key: 'BadReveal',
+      kind: 'DeckReveal',
       view: gameView(),
       durationMs: 100,
       motions: [

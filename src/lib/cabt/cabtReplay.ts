@@ -1,6 +1,7 @@
 import cardRows from './cardData.generated.json';
 import attackRows from './attackData.generated.json';
 import {
+  actionAnimationPhaseKind,
   actionAnimationPhaseDurationMs as animationPhaseDurationMs,
   actionAnimationPhaseKey as animationPhaseKey,
   actionAnimationPhaseMayHavePlan,
@@ -14,6 +15,7 @@ import {
   isBoardToDeckMove,
   isKnockOutMove,
   isSpecialConditionEvent,
+  type ActionAnimationPhaseKind,
 } from './actionAnimationPhases';
 import { actionAnimationStartMs } from './actionAnimationSchedule';
 import { cabtLogsToTimeline } from './logFormat';
@@ -1290,14 +1292,14 @@ function persistentActionLabel(label: string, events: ReplayStep['actionTimeline
   }
   const phases = animationEventPhases(events);
   const hasEffectPhase = phases.some((phase) =>
-    phase.key.startsWith('HandToDeck:')
-    || phase.key.startsWith('DeckDiscard:')
-    || phase.key.startsWith('DeckReveal:')
-    || phase.key.startsWith('DeckSearchReveal:')
-    || phase.key.startsWith('DeckBoardPlace:')
-    || phase.key.startsWith('DeckRevealReturn:')
-    || phase.key.startsWith('DeckRevealTake:')
-    || phase.key.startsWith('Draw:')
+    phase.kind === 'HandToDeck'
+    || phase.kind === 'DeckDiscard'
+    || phase.kind === 'DeckReveal'
+    || phase.kind === 'DeckSearchReveal'
+    || phase.kind === 'DeckBoardPlace'
+    || phase.kind === 'DeckRevealReturn'
+    || phase.kind === 'DeckRevealTake'
+    || phase.kind === 'Draw',
   );
   if (!hasEffectPhase) {
     return label;
@@ -1310,56 +1312,56 @@ function persistentActionLabel(label: string, events: ReplayStep['actionTimeline
   let handToDeckWasSummarized = false;
 
   for (const phase of phases) {
-    if (phase.key.startsWith('Play:')) {
+    if (phase.kind === 'Play') {
       continue;
     }
     const count = phase.events.filter((event) => animationPhaseKey(event) === phase.key).length;
-    if (phase.key.startsWith('HandToDeck:')) {
+    if (phase.kind === 'HandToDeck') {
       clauses.push(`shuffled ${count} ${plural(count, 'card')} from hand into their deck`);
       handToDeckWasSummarized = true;
       continue;
     }
-    if (phase.key.startsWith('Draw:')) {
+    if (phase.kind === 'Draw') {
       clauses.push(`drew ${count} ${plural(count, 'card')}`);
       continue;
     }
-    if (phase.key.startsWith('DeckSearchReveal:')) {
+    if (phase.kind === 'DeckSearchReveal') {
       clauses.push(count === 1
         ? 'revealed a card from their deck and put it into their hand'
         : `revealed ${count} cards from their deck and put them into their hand`);
       continue;
     }
-    if (phase.key.startsWith('DeckBoardPlace:')) {
+    if (phase.kind === 'DeckBoardPlace') {
       clauses.push(count === 1
         ? 'put a Pokemon from their deck onto the board'
         : `put ${count} Pokemon from their deck onto the board`);
       continue;
     }
-    if (phase.key.startsWith('DeckRevealReturn:')) {
+    if (phase.kind === 'DeckRevealReturn') {
       clauses.push(`returned ${count} revealed ${plural(count, 'card')} to their deck`);
       continue;
     }
-    if (phase.key.startsWith('DeckRevealTake:')) {
+    if (phase.kind === 'DeckRevealTake') {
       clauses.push(count === 1
         ? 'put a revealed card into their hand'
         : `put ${count} revealed cards into their hand`);
       continue;
     }
-    if (phase.key.startsWith('DeckReveal:')) {
+    if (phase.kind === 'DeckReveal') {
       clauses.push(`revealed the top ${count} ${plural(count, 'card')} of their deck`);
       continue;
     }
-    if (phase.key.startsWith('DeckDiscard:')) {
+    if (phase.kind === 'DeckDiscard') {
       clauses.push(`discarded ${count} ${plural(count, 'card')} from their deck`);
       continue;
     }
-    if (phase.key.startsWith('Attach:')) {
+    if (phase.kind === 'Attach') {
       clauses.push(...phase.events
         .filter((event) => animationPhaseKey(event) === phase.key)
         .map((event) => eventMessageWithoutActor(event, actor)));
       continue;
     }
-    if (phase.key.startsWith('Shuffle:') && !handToDeckWasSummarized) {
+    if (phase.kind === 'Shuffle' && !handToDeckWasSummarized) {
       clauses.push('shuffled their deck');
     }
   }
@@ -1478,6 +1480,7 @@ function groupedStepAnimationPhases(
     const durationMs = Math.max(phase.durationMs, replayAnimationMotionSpanMs(motions));
     phases.push({
       key: phase.key,
+      kind: phase.kind,
       label,
       view,
       actionTimeline: phase.events,
@@ -1485,7 +1488,7 @@ function groupedStepAnimationPhases(
       animationPlan: replayAnimationPlanForPhase(phase, view, label, group.events, { motions, durationMs }),
     });
     phaseStartView = projectedViewForEvents(phaseStartView, currentView, phase.events, {
-      deferSpecialConditionState: eventPhases.slice(phaseIndex + 1).some((laterPhase) => laterPhase.key.startsWith('Condition:')),
+      deferSpecialConditionState: eventPhases.slice(phaseIndex + 1).some((laterPhase) => laterPhase.kind === 'Condition'),
     });
   }
   return phases;
@@ -1507,6 +1510,7 @@ function replayAnimationPlanForPhase(
   }
   return createReplayAnimationPhasePlan({
     key: phase.key,
+    kind: phase.kind,
     label,
     view,
     durationMs: options.durationMs ?? phase.durationMs,
@@ -1532,70 +1536,56 @@ function animationPhaseMotions(
   view: GameView,
   stepEvents: ActionTimelineEvent[] = phase.events,
 ): AnimationMotion[] {
-  if (
-    phase.key.startsWith('BoardMove:')
-    || phase.key.startsWith('BoardToDeck:')
-    || phase.key.startsWith('DeckDiscard:')
-    || phase.key.startsWith('DeckBoardPlace:')
-    || phase.key.startsWith('DeckPrizePlace:')
-    || phase.key.startsWith('StadiumMove:')
-    || phase.key.startsWith('AttachedMove:')
-    || phase.key.startsWith('DiscardRecover:')
-    || phase.key.startsWith('KnockOut:')
-  ) {
-    return boardCardMoveMotions(phase, view);
+  switch (phase.kind) {
+    case 'BoardMove':
+    case 'BoardToDeck':
+    case 'DeckDiscard':
+    case 'DeckBoardPlace':
+    case 'DeckPrizePlace':
+    case 'StadiumMove':
+    case 'AttachedMove':
+    case 'DiscardRecover':
+    case 'KnockOut':
+      return boardCardMoveMotions(phase, view);
+    case 'Draw':
+      return drawCardMoveMotions(phase, view);
+    case 'Ability':
+      return abilityPulseMotions(phase, view);
+    case 'Attack':
+      return attackPulseMotions(phase, view);
+    case 'Coin':
+      return coinPulseMotions(phase);
+    case 'Change':
+      return changePulseMotions(phase, view);
+    case 'Devolve':
+    case 'MoveAttached':
+      return boardMutationPulseMotions(phase, view);
+    case 'Condition':
+      return conditionPulseMotions(phase, view);
+    case 'Damage':
+      return damagePulseMotions(phase, view, stepEvents);
+    case 'Shuffle':
+      return shuffleMotions(phase);
+    case 'PrizeTake':
+      return prizeTakeCardMoveMotions(phase, view);
+    case 'HandToDeck':
+      return handToDeckCardMoveMotions(phase, view);
+    case 'Play':
+    case 'HandMove':
+    case 'Evolve':
+      return handPlayCardMoveMotions(phase, view);
+    case 'Attach':
+      return [
+        ...handPlayCardMoveMotions(phase, view),
+        ...revealSessionMotions(phase, view, stepEvents),
+      ];
+    case 'DeckReveal':
+    case 'DeckSearchReveal':
+    case 'DeckRevealReturn':
+    case 'DeckRevealTake':
+      return revealSessionMotions(phase, view, stepEvents);
   }
-  if (phase.key.startsWith('Draw:')) {
-    return drawCardMoveMotions(phase, view);
-  }
-  if (phase.key.startsWith('Ability:')) {
-    return abilityPulseMotions(phase, view);
-  }
-  if (phase.key.startsWith('Attack:')) {
-    return attackPulseMotions(phase, view);
-  }
-  if (phase.key.startsWith('Coin:')) {
-    return coinPulseMotions(phase);
-  }
-  if (phase.key.startsWith('Change:')) {
-    return changePulseMotions(phase, view);
-  }
-  if (phase.key.startsWith('Devolve:') || phase.key.startsWith('MoveAttached:')) {
-    return boardMutationPulseMotions(phase, view);
-  }
-  if (phase.key.startsWith('Condition:')) {
-    return conditionPulseMotions(phase, view);
-  }
-  if (phase.key.startsWith('Damage:')) {
-    return damagePulseMotions(phase, view, stepEvents);
-  }
-  if (phase.key.startsWith('Shuffle:')) {
-    return shuffleMotions(phase);
-  }
-  if (phase.key.startsWith('PrizeTake:')) {
-    return prizeTakeCardMoveMotions(phase, view);
-  }
-  if (phase.key.startsWith('HandToDeck:')) {
-    return handToDeckCardMoveMotions(phase, view);
-  }
-  if (phase.key.startsWith('Play:') || phase.key.startsWith('HandMove:') || phase.key.startsWith('Evolve:')) {
-    return handPlayCardMoveMotions(phase, view);
-  }
-  if (phase.key.startsWith('Attach:')) {
-    return [
-      ...handPlayCardMoveMotions(phase, view),
-      ...revealSessionMotions(phase, view, stepEvents),
-    ];
-  }
-  if (
-    phase.key.startsWith('DeckReveal:')
-    || phase.key.startsWith('DeckSearchReveal:')
-    || phase.key.startsWith('DeckRevealReturn:')
-    || phase.key.startsWith('DeckRevealTake:')
-  ) {
-    return revealSessionMotions(phase, view, stepEvents);
-  }
-  return [];
+  return assertUnhandledActionAnimationPhaseKind(phase.kind);
 }
 
 function abilityPulseMotions(phase: AnimationEventPhase, view: GameView): AnimationMotion[] {
@@ -2299,7 +2289,7 @@ function revealSessionStepsForPhase(
   stepEvents: ActionTimelineEvent[],
   revealIndexes: ReadonlyMap<number, number>,
 ): RevealSessionStep[] {
-  if (phase.key.startsWith('DeckReveal:')) {
+  if (phase.kind === 'DeckReveal') {
     return phase.events
       .filter((event) => isRevealSourceEvent(event, playerIndex))
       .map((event) => revealSessionStep(event, phase, 'reveal', {
@@ -2309,7 +2299,7 @@ function revealSessionStepsForPhase(
       }));
   }
 
-  if (phase.key.startsWith('DeckSearchReveal:')) {
+  if (phase.kind === 'DeckSearchReveal') {
     return phase.events
       .filter((event) => isDeckToHandSearchEvent(event, playerIndex))
       .map((event) => revealSessionStep(event, phase, 'take', {
@@ -2319,7 +2309,7 @@ function revealSessionStepsForPhase(
       }));
   }
 
-  if (phase.key.startsWith('DeckRevealReturn:')) {
+  if (phase.kind === 'DeckRevealReturn') {
     const returningSerials = new Set(
       phase.events
         .filter((event) => isRevealReturnEvent(event, playerIndex))
@@ -2348,7 +2338,7 @@ function revealSessionStepsForPhase(
     return [...selectSteps, ...returnSteps];
   }
 
-  if (phase.key.startsWith('DeckRevealTake:')) {
+  if (phase.kind === 'DeckRevealTake') {
     return phase.events
       .filter((event) => isRevealTakeEvent(event, playerIndex))
       .map((event) => revealSessionStep(event, phase, 'take', {
@@ -2358,7 +2348,7 @@ function revealSessionStepsForPhase(
       }));
   }
 
-  if (phase.key.startsWith('Attach:')) {
+  if (phase.kind === 'Attach') {
     return phase.events
       .filter((event) => isRevealAttachEvent(event, playerIndex, revealIndexes))
       .map((event) => revealSessionStep(event, phase, 'attach', {
@@ -2511,7 +2501,7 @@ function boardCardMoveMotionsForEvent(
   const toArea = Number(params?.toArea);
   const serial = finiteNumber(params?.serial);
   const cardId = finiteNumber(params?.cardId);
-  if (phase.key.startsWith('KnockOut:') && !isKnockOutMove(fromArea, toArea)) {
+  if (phase.kind === 'KnockOut' && !isKnockOutMove(fromArea, toArea)) {
     return [];
   }
   const isHiddenPrizePlacement = fromArea === CabtAreaType.DECK && toArea === CabtAreaType.PRIZE;
@@ -2968,6 +2958,7 @@ function boardPokemonDestinationForEvent(
 
 type AnimationEventPhase = {
   key: string;
+  kind: ActionAnimationPhaseKind;
   events: ActionTimelineEvent[];
   durationMs: number;
   usesSourceView: boolean;
@@ -2986,6 +2977,10 @@ function animationEventPhases(events: ActionTimelineEvent[]): AnimationEventPhas
       }
       continue;
     }
+    const kind = actionAnimationPhaseKind(key);
+    if (!kind) {
+      continue;
+    }
     const last = phases.at(-1);
     if (last && last.key === key) {
       last.events.push(event);
@@ -2994,6 +2989,7 @@ function animationEventPhases(events: ActionTimelineEvent[]): AnimationEventPhas
     }
     phases.push({
       key,
+      kind,
       events: [event],
       durationMs: animationPhaseDurationMs(key, 1),
       usesSourceView: animationPhaseUsesSourceView(key),
@@ -3014,55 +3010,56 @@ function animationPhaseLabel(phase: AnimationEventPhase): string | undefined {
   const actor = playerLabel(event.playerIndex);
   const cardEventCount = phase.events.filter((candidate) => animationPhaseKey(candidate) === phase.key).length;
 
-  if (
-    phase.key.startsWith('Play:')
-    || phase.key.startsWith('Attach:')
-    || phase.key.startsWith('Evolve:')
-    || phase.key.startsWith('Shuffle:')
-    || phase.key.startsWith('Attack:')
-    || phase.key.startsWith('Coin:')
-    || phase.key.startsWith('Condition:')
-    || phase.key.startsWith('Damage:')
-    || phase.key.startsWith('KnockOut:')
-  ) {
-    return event.message;
+  switch (phase.kind) {
+    case 'Ability':
+    case 'Play':
+    case 'Attach':
+    case 'Evolve':
+    case 'Shuffle':
+    case 'Attack':
+    case 'AttachedMove':
+    case 'BoardMove':
+    case 'BoardToDeck':
+    case 'Coin':
+    case 'Condition':
+    case 'Damage':
+    case 'Change':
+    case 'Devolve':
+    case 'DiscardRecover':
+    case 'HandMove':
+    case 'KnockOut':
+    case 'MoveAttached':
+    case 'PrizeTake':
+    case 'StadiumMove':
+      return event.message;
+    case 'HandToDeck':
+      return `${actor} put ${cardEventCount} ${plural(cardEventCount, 'card')} from hand into their deck.`;
+    case 'Draw':
+      return cardEventCount === 1 ? event.message : `${actor} drew ${cardEventCount} cards.`;
+    case 'DeckDiscard':
+      return cardEventCount === 1 ? event.message : `${actor} discarded ${cardEventCount} cards from the deck.`;
+    case 'DeckRevealReturn':
+      return `${actor} returned ${cardEventCount} revealed ${plural(cardEventCount, 'card')} to their deck.`;
+    case 'DeckRevealTake':
+      return cardEventCount === 1
+        ? `${actor} put a revealed card into their hand.`
+        : `${actor} put ${cardEventCount} revealed cards into their hand.`;
+    case 'DeckSearchReveal':
+      return cardEventCount === 1
+        ? `${actor} revealed a card from their deck and put it into their hand.`
+        : `${actor} revealed ${cardEventCount} cards from their deck and put them into their hand.`;
+    case 'DeckBoardPlace':
+      return cardEventCount === 1
+        ? event.message
+        : `${actor} put ${cardEventCount} Pokemon from their deck onto the board.`;
+    case 'DeckPrizePlace':
+      return cardEventCount === 1
+        ? event.message
+        : `${actor} set ${cardEventCount} Prize cards.`;
+    case 'DeckReveal':
+      return `${actor} revealed the top ${cardEventCount} ${plural(cardEventCount, 'card')} of their deck.`;
   }
-  if (phase.key.startsWith('HandToDeck:')) {
-    return `${actor} put ${cardEventCount} ${plural(cardEventCount, 'card')} from hand into their deck.`;
-  }
-  if (phase.key.startsWith('Draw:')) {
-    return cardEventCount === 1 ? event.message : `${actor} drew ${cardEventCount} cards.`;
-  }
-  if (phase.key.startsWith('DeckDiscard:')) {
-    return cardEventCount === 1 ? event.message : `${actor} discarded ${cardEventCount} cards from the deck.`;
-  }
-  if (phase.key.startsWith('DeckRevealReturn:')) {
-    return `${actor} returned ${cardEventCount} revealed ${plural(cardEventCount, 'card')} to their deck.`;
-  }
-  if (phase.key.startsWith('DeckRevealTake:')) {
-    return cardEventCount === 1
-      ? `${actor} put a revealed card into their hand.`
-      : `${actor} put ${cardEventCount} revealed cards into their hand.`;
-  }
-  if (phase.key.startsWith('DeckSearchReveal:')) {
-    return cardEventCount === 1
-      ? `${actor} revealed a card from their deck and put it into their hand.`
-      : `${actor} revealed ${cardEventCount} cards from their deck and put them into their hand.`;
-  }
-  if (phase.key.startsWith('DeckBoardPlace:')) {
-    return cardEventCount === 1
-      ? event.message
-      : `${actor} put ${cardEventCount} Pokemon from their deck onto the board.`;
-  }
-  if (phase.key.startsWith('DeckPrizePlace:')) {
-    return cardEventCount === 1
-      ? event.message
-      : `${actor} set ${cardEventCount} Prize cards.`;
-  }
-  if (phase.key.startsWith('DeckReveal:')) {
-    return `${actor} revealed the top ${cardEventCount} ${plural(cardEventCount, 'card')} of their deck.`;
-  }
-  return event.message;
+  return assertUnhandledActionAnimationPhaseKind(phase.kind);
 }
 
 function playerLabel(playerIndex: number | undefined): string {
@@ -3086,52 +3083,60 @@ function animationSourceViewForPhase(
   currentView: GameView,
   phase: AnimationEventPhase,
 ): GameView {
-  if (phase.key.startsWith('Evolve:')) {
-    return handPlaySourceView(phaseStartView, currentView, phase);
+  switch (phase.kind) {
+    case 'Evolve':
+      return handPlaySourceView(phaseStartView, currentView, phase);
+    case 'Ability':
+    case 'Attack':
+    case 'Change':
+    case 'Devolve':
+    case 'MoveAttached':
+    case 'Condition':
+    case 'Damage':
+      return projectedViewForEvents(phaseStartView, currentView, phase.events, { deferBoardStateEvents: true });
+    case 'KnockOut':
+    case 'BoardToDeck':
+    case 'StadiumMove':
+      return projectedViewForEvents(phaseStartView, currentView, phase.events, { deferMoveCardEvents: true });
+    case 'BoardMove':
+      return boardMoveSourceView(
+        projectedViewForEvents(phaseStartView, currentView, phase.events, {
+          deferBoardStateEvents: true,
+          deferMoveCardEvents: true,
+        }),
+        phaseStartView,
+        currentView,
+      );
+    case 'AttachedMove':
+      if (phase.events.some(isAttachedToHandMoveEvent)) {
+        return attachedToHandSourceView(phaseStartView, currentView, phase);
+      }
+      return projectedViewForEvents(phaseStartView, currentView, phase.events, { deferMoveCardEvents: true });
+    case 'PrizeTake':
+      return prizeTakeSourceView(phaseStartView, currentView, phase);
+    case 'Play':
+    case 'HandMove':
+    case 'Attach':
+      return handPlaySourceView(phaseStartView, currentView, phase);
+    case 'Coin':
+    case 'DeckBoardPlace':
+    case 'DeckDiscard':
+    case 'DeckPrizePlace':
+    case 'DeckReveal':
+    case 'DeckRevealReturn':
+    case 'DeckRevealTake':
+    case 'DeckSearchReveal':
+    case 'DiscardRecover':
+    case 'Draw':
+    case 'HandToDeck':
+    case 'Shuffle':
+      return phaseStartView;
   }
-  if (
-    phase.key.startsWith('Ability:')
-    || phase.key.startsWith('Attack:')
-    || phase.key.startsWith('Change:')
-    || phase.key.startsWith('Devolve:')
-    || phase.key.startsWith('MoveAttached:')
-    || phase.key.startsWith('Condition:')
-    || phase.key.startsWith('Damage:')
-  ) {
-    return projectedViewForEvents(phaseStartView, currentView, phase.events, { deferBoardStateEvents: true });
-  }
-  if (phase.key.startsWith('KnockOut:')) {
-    return projectedViewForEvents(phaseStartView, currentView, phase.events, { deferMoveCardEvents: true });
-  }
-  if (phase.key.startsWith('BoardToDeck:')) {
-    return projectedViewForEvents(phaseStartView, currentView, phase.events, { deferMoveCardEvents: true });
-  }
-  if (phase.key.startsWith('BoardMove:')) {
-    return boardMoveSourceView(
-      projectedViewForEvents(phaseStartView, currentView, phase.events, {
-        deferBoardStateEvents: true,
-        deferMoveCardEvents: true,
-      }),
-      phaseStartView,
-      currentView,
-    );
-  }
-  if (phase.key.startsWith('AttachedMove:')) {
-    if (phase.events.some(isAttachedToHandMoveEvent)) {
-      return attachedToHandSourceView(phaseStartView, currentView, phase);
-    }
-    return projectedViewForEvents(phaseStartView, currentView, phase.events, { deferMoveCardEvents: true });
-  }
-  if (phase.key.startsWith('StadiumMove:')) {
-    return projectedViewForEvents(phaseStartView, currentView, phase.events, { deferMoveCardEvents: true });
-  }
-  if (phase.key.startsWith('PrizeTake:')) {
-    return prizeTakeSourceView(phaseStartView, currentView, phase);
-  }
-  if (phase.key.startsWith('Play:') || phase.key.startsWith('HandMove:') || phase.key.startsWith('Attach:')) {
-    return handPlaySourceView(phaseStartView, currentView, phase);
-  }
-  return phaseStartView;
+  return assertUnhandledActionAnimationPhaseKind(phase.kind);
+}
+
+function assertUnhandledActionAnimationPhaseKind(kind: never): never {
+  throw new Error(`Unhandled replay animation phase kind: ${kind}`);
 }
 
 function handPlaySourceView(
@@ -3392,7 +3397,7 @@ function applyKnockOutDiscardTopOrdering(steps: ReplayStep[]): void {
     }
     if (step.animationPhases?.length) {
       step.animationPhases = step.animationPhases.map((phase) => {
-        if (!phase.key.startsWith('KnockOut:')) {
+        if (actionAnimationPhaseKind(phase.key) !== 'KnockOut') {
           return phase;
         }
         return {

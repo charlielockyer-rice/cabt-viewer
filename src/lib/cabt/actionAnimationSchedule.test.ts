@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  actionAnimationPhaseKind,
+  actionAnimationPhaseKinds,
   actionAnimationPhaseKey,
   actionAnimationPhaseMayHavePlan,
   actionAnimationPhaseNeedsDedicatedView,
@@ -297,6 +299,17 @@ describe('actionAnimationBatchEvents', () => {
 });
 
 describe('actionAnimationPhaseKey', () => {
+  it('classifies phase keys through the shared phase-kind table', () => {
+    expect(actionAnimationPhaseKind('BoardMove:0')).toBe('BoardMove');
+    expect(actionAnimationPhaseKind(`AttachedMove:0:${CabtAreaType.TOOL}->${CabtAreaType.DISCARD}`)).toBe('AttachedMove');
+    expect(actionAnimationPhaseKind('Unknown:0')).toBeNull();
+    expect(actionAnimationPhaseKind('Draw')).toBeNull();
+
+    for (const kind of actionAnimationPhaseKinds) {
+      expect(actionAnimationPhaseKind(`${kind}:0`)).toBe(kind);
+    }
+  });
+
   it('uses the same semantic phase keys for scheduling and replay rendering', () => {
     expect(actionAnimationPhaseKey(event(1, 'MoveCard', {
       fromArea: CabtAreaType.ACTIVE,

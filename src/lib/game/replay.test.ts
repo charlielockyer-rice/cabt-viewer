@@ -26,6 +26,7 @@ function step(phaseDurations: number[]): ReplayStep {
     payload: {},
     animationPhases: phaseDurations.map((durationMs, index) => ({
       key: `phase-${index}`,
+      kind: 'Draw',
       view: {
         players: [],
         activePlayerIndex: 0,

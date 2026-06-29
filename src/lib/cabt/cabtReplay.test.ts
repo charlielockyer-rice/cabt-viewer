@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { actionAnimationPhaseKind } from './actionAnimationPhases';
 import { cabtReplayToSnapshot } from './cabtReplay';
 import { CabtAreaType } from './types';
 
@@ -230,6 +231,7 @@ describe('cabtReplayToSnapshot', () => {
       index: 0,
     });
     expect(step.animationPhases?.map((phase) => phase.key)).toEqual(['Ability:0', 'Draw:0', 'BoardToDeck:0', 'Shuffle:0']);
+    expect(step.animationPhases?.every((phase) => phase.kind === actionAnimationPhaseKind(phase.key))).toBe(true);
     expect(step.animationPhases?.[0].view.players[0].active.pokemon?.serial).toBe(14);
     expect(step.animationPhases?.[0].animationPlan?.motions).toMatchObject([
       {
@@ -2822,7 +2824,7 @@ describe('cabtReplayToSnapshot', () => {
     const playStep = snapshot.steps.find((step) => step.label === 'Player 1 played Mega Signal.');
     expect(playStep?.stateIndex).toBe(1);
     expect(playStep?.actionTimeline?.map((event) => event.kind)).toEqual(['Play']);
-    expect(playStep?.animationPhases?.some((phase) => phase.key.startsWith('DeckSearchReveal:')) ?? false).toBe(false);
+    expect(playStep?.animationPhases?.some((phase) => phase.kind === 'DeckSearchReveal') ?? false).toBe(false);
     expect(snapshot.steps.some((step) => step.actionTimeline?.some((event) => event.kind === 'MoveCard'))).toBe(true);
   });
 
