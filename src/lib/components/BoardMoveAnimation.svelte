@@ -33,7 +33,7 @@
     animationPlan?: ReplayAnimationPhasePlan;
   };
 
-  type BoardMoveSprite = {
+  type BoardMoveSpriteBase = {
     id: string;
     html?: string;
     fallbackName: string;
@@ -46,7 +46,6 @@
     startScale: number;
     correctionX: number;
     correctionY: number;
-    liveHandoff?: LiveBoardMoveHandoff;
     toDeck: boolean;
     fromDeck: boolean;
     opponentSide: boolean;
@@ -56,6 +55,10 @@
     card?: Pick<CardView, 'id' | 'serial' | 'name' | 'fullName' | 'cardImage' | 'imageUrl'>;
     faceDown?: boolean;
   };
+
+  type PlannedBoardMoveSprite = BoardMoveSpriteBase & { lifecycle: { kind: 'planned' } };
+  type LiveBoardMoveSprite = BoardMoveSpriteBase & { lifecycle: { kind: 'live'; handoff: LiveBoardMoveHandoff } };
+  type BoardMoveSprite = PlannedBoardMoveSprite | LiveBoardMoveSprite;
 
   type LiveBoardMoveHandoff = {
     destinationCardId: number;
@@ -193,7 +196,7 @@
     sourceElement: HTMLElement,
     targetElement: HTMLElement,
     generation: number,
-  ): BoardMoveSprite | undefined {
+  ): PlannedBoardMoveSprite | undefined {
     const boardPlane = motionLayer?.parentElement;
     if (!boardPlane || motion.spriteVisual.kind !== 'card') {
       return undefined;
@@ -229,6 +232,7 @@
       measuring: true,
       card,
       faceDown,
+      lifecycle: { kind: 'planned' },
     };
   }
 
@@ -344,7 +348,7 @@
       return;
     }
 
-    const sprite: BoardMoveSprite = {
+    const sprite: LiveBoardMoveSprite = {
       id: `${generation}:${instruction.key}`,
       html: spriteHtml(instruction.source, instruction.target, instruction.fromDeck),
       fallbackName: instruction.fallbackName ?? (instruction.cardId !== undefined ? cabtCardToView(instruction.cardId).name : 'Card'),
@@ -357,17 +361,20 @@
       startScale: sourceRect.width / targetRect.width,
       correctionX: 0,
       correctionY: 0,
-      liveHandoff: {
-        destinationCardId: instruction.cardId ?? 0,
-        destinationSerial: instruction.serial,
-        waitForDestinationCard: instruction.waitForDestinationCard,
-      },
       toDeck: instruction.toDeck,
       fromDeck: instruction.fromDeck,
       opponentSide: instruction.opponentSide,
       delayMs: instruction.delayMs,
       durationMs: instruction.durationMs,
       measuring: true,
+      lifecycle: {
+        kind: 'live',
+        handoff: {
+          destinationCardId: instruction.cardId ?? 0,
+          destinationSerial: instruction.serial,
+          waitForDestinationCard: instruction.waitForDestinationCard,
+        },
+      },
     };
 
     const startTimer = setTimeout(async () => {
@@ -810,15 +817,15 @@
   function handOffLiveBoardMoveWhenDestinationReady(
     source: HTMLElement,
     target: HTMLElement,
-    sprite: BoardMoveSprite,
+    sprite: LiveBoardMoveSprite,
     startTime: number,
     generation: number,
   ) {
     if (generation !== animationGeneration) {
       return;
     }
-    const destinationReady = sprite.liveHandoff?.waitForDestinationCard
-      ? liveDestinationContainsCard(target, sprite.liveHandoff)
+    const destinationReady = sprite.lifecycle.handoff.waitForDestinationCard
+      ? liveDestinationContainsCard(target, sprite.lifecycle.handoff)
       : sprite.toDeck
         ? true
       : !!target.querySelector('.card-tile');
