@@ -9,7 +9,7 @@
     releaseElementVisibilityClaim,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
-  import { replayAnimationScopeExitSettleMs } from '../animations/replayAnimationHandoff';
+  import { replayAnimationScopeExitSettleMs, replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
   import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -183,12 +183,6 @@
       return;
     }
     const generation = animationGeneration;
-    const latestDeckPlacementStartMs = Math.max(
-      0,
-      ...motions
-        .filter((motion) => motion.sourceAnchor.kind === 'deck-top')
-        .map((motion) => motion.startMs),
-    );
     for (const motion of motions) {
       const sourceElement = elementForAnchor(motion.sourceAnchor);
       const targetElement = elementForAnchor(motion.targetAnchor);
@@ -212,17 +206,13 @@
         faceDown: motion.spriteVisual.kind === 'card' ? motion.spriteVisual.faceDown : undefined,
         key: motion.id,
         planned: true,
-      }, generation, plannedBoardMoveHandoffDelayMs(motion, latestDeckPlacementStartMs));
+      }, generation, plannedBoardMoveHandoffDelayMs(motion));
     }
   }
 
-  function plannedBoardMoveHandoffDelayMs(motion: CardMoveAnimationMotion, latestDeckPlacementStartMs: number) {
-    if (motion.sourceAnchor.kind !== 'deck-top') {
-      return motion.durationMs + replayHandoffHoldMs();
-    }
-    return motion.durationMs
-      + Math.max(0, latestDeckPlacementStartMs - motion.startMs)
-      + replayHandoffHoldMs();
+  function plannedBoardMoveHandoffDelayMs(motion: CardMoveAnimationMotion) {
+    const removeMs = replayAnimationSpriteRemovalMs(motion, animationPlan?.durationMs);
+    return removeMs === undefined ? motion.durationMs : Math.max(0, removeMs - motion.startMs);
   }
 
   function startBoardMoves(animationEvents: ActionTimelineEvent[]) {

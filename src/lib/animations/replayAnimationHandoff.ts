@@ -15,6 +15,7 @@ export type ReplayAnimationClaimTiming = {
 };
 
 export const replayAnimationScopeExitSettleMs = 40;
+export const replayAnimationArrivalSettleMs = 24;
 
 export function replayAnimationClaimTiming(
   plan: ReplayAnimationPhasePlan,
@@ -28,6 +29,22 @@ export function replayAnimationClaimTiming(
     startMs: replayAnimationClaimStartMs(motion, claim),
     releaseMs: replayAnimationClaimReleaseMs(plan, motion, claim),
   };
+}
+
+export function replayAnimationSpriteRemovalMs(
+  motion: Pick<ClaimTimingMotion, 'startMs' | 'durationMs' | 'handoffPolicy'>,
+  phaseDurationMs?: number,
+): number | undefined {
+  if (motion.handoffPolicy.removeSprite === 'scope-exit') {
+    return undefined;
+  }
+  if (motion.handoffPolicy.removeSprite === 'phase-end') {
+    return phaseDurationMs ?? (motion.startMs + motion.durationMs);
+  }
+  if (motion.handoffPolicy.removeSprite === 'arrival') {
+    return motion.startMs + motion.durationMs + replayAnimationArrivalSettleMs;
+  }
+  return motion.startMs + motion.durationMs;
 }
 
 export function replayAnimationMotionForClaim(
@@ -95,7 +112,7 @@ function replayAnimationClaimReleaseMs(
     return motion.startMs + motion.durationMs;
   }
   if (motion.handoffPolicy.hideDestinationUntil === 'arrival') {
-    return motion.startMs + motion.durationMs + 24;
+    return motion.startMs + motion.durationMs + replayAnimationArrivalSettleMs;
   }
   return 0;
 }

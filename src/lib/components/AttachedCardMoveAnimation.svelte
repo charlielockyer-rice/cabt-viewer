@@ -12,6 +12,7 @@
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
   import type { AnimationVisibilityRole } from '../animations/animationVisibility';
+  import { replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
   import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
@@ -49,6 +50,7 @@
     hiddenElement?: HTMLElement;
     destinationCardElement?: HTMLElement;
     planned: boolean;
+    removeMs?: number;
   };
 
   type ActiveAttachedMoveSprite = AttachedMoveSprite & {
@@ -215,7 +217,7 @@
         releaseActiveSprite(activeSprite);
         element.remove();
         activeSprites = activeSprites.filter((item) => item.element !== element);
-      }, sprite.delayMs + sprite.durationMs + replayHandoffHoldMs());
+      }, sprite.removeMs ?? (sprite.delayMs + sprite.durationMs + replayHandoffHoldMs()));
       timers.push(startTimer, cleanupTimer);
     }
     return true;
@@ -248,6 +250,7 @@
       delayMs: motion.startMs,
       durationMs: motion.durationMs,
       planned: true,
+      removeMs: replayAnimationSpriteRemovalMs(motion, animationPlan?.durationMs),
     });
   }
 
@@ -280,6 +283,7 @@
     delayMs: number;
     durationMs: number;
     planned: boolean;
+    removeMs?: number;
   }): AttachedMoveSprite[] {
     const source = input.source;
     const target = input.target;
@@ -331,6 +335,7 @@
       hiddenElement: source.hiddenElement,
       destinationCardElement: destinationCardElementFor(target, serial, cardId),
       planned: input.planned,
+      removeMs: input.removeMs,
     }];
   }
 

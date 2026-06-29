@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { replayAnimationClaimTiming } from './replayAnimationHandoff';
+import { replayAnimationClaimTiming, replayAnimationSpriteRemovalMs } from './replayAnimationHandoff';
 import { createReplayAnimationPhasePlan, type AnimationMotion } from './replayAnimationPlan';
 import type { GameView } from '../game/types';
 
@@ -42,6 +42,33 @@ describe('replay animation handoff timing', () => {
       startMs: 90,
       releaseMs: undefined,
     });
+  });
+
+  it('derives sprite removal timing from the same handoff policy', () => {
+    expect(replayAnimationSpriteRemovalMs(cardMoveMotion({
+      id: 'prepaint',
+      startMs: 100,
+      durationMs: 250,
+      removeSprite: 'prepaint',
+    }))).toBe(350);
+    expect(replayAnimationSpriteRemovalMs(cardMoveMotion({
+      id: 'arrival',
+      startMs: 100,
+      durationMs: 250,
+      removeSprite: 'arrival',
+    }))).toBe(374);
+    expect(replayAnimationSpriteRemovalMs(cardMoveMotion({
+      id: 'phase-end',
+      startMs: 100,
+      durationMs: 250,
+      removeSprite: 'phase-end',
+    }), 900)).toBe(900);
+    expect(replayAnimationSpriteRemovalMs(cardMoveMotion({
+      id: 'scope-exit',
+      startMs: 100,
+      durationMs: 250,
+      removeSprite: 'scope-exit',
+    }))).toBeUndefined();
   });
 
   it('rejects claims whose identity does not match the owning motion', () => {
@@ -119,6 +146,7 @@ function cardMoveMotion(input: {
   durationMs: number;
   hideSourceUntil?: 'none' | 'snapshot' | 'phase-end' | 'scope-exit';
   hideDestinationUntil?: 'none' | 'arrival' | 'prepaint';
+  removeSprite?: 'arrival' | 'prepaint' | 'phase-end' | 'scope-exit';
 }): AnimationMotion {
   return {
     id: input.id,
@@ -133,7 +161,7 @@ function cardMoveMotion(input: {
     handoffPolicy: {
       hideSourceUntil: input.hideSourceUntil ?? 'none',
       hideDestinationUntil: input.hideDestinationUntil ?? 'prepaint',
-      removeSprite: 'prepaint',
+      removeSprite: input.removeSprite ?? 'prepaint',
       prepaintFrames: 2,
     },
   };

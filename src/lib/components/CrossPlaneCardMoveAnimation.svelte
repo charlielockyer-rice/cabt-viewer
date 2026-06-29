@@ -6,8 +6,8 @@
     centerOf,
     isConcealedHandTarget,
   } from '../animations/viewportCardMotion';
+  import { replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
   import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
-  import { replayAnimationPhaseGapMs } from '../game/replay';
   import type { CardView } from '../game/types';
   import CardTile from './CardTile.svelte';
 
@@ -97,12 +97,16 @@
       if (!sprite) {
         continue;
       }
+      const removeMs = replayAnimationSpriteRemovalMs(motion, animationPlan?.durationMs);
+      if (removeMs === undefined) {
+        continue;
+      }
       const finishTimer = setTimeout(() => {
         if (nextGeneration !== generation) {
           return;
         }
         removeSpriteAfterPrepaint(sprite.id, nextGeneration);
-      }, motion.startMs + motion.durationMs + handoffSettleMs(motion));
+      }, removeMs);
       timers.push(finishTimer);
     }
   }
@@ -156,13 +160,6 @@
 
   function isOpponentSide(element: HTMLElement): boolean {
     return !!element.closest('.player-panel.top, .top-active-slot, .bench-row.opponent');
-  }
-
-  function handoffSettleMs(motion: CardMoveAnimationMotion): number {
-    if (motion.handoffPolicy.removeSprite === 'arrival') {
-      return 24;
-    }
-    return replayMode ? replayAnimationPhaseGapMs + 40 : 40;
   }
 
   function removeSpriteAfterPrepaint(spriteIdToRemove: string, currentGeneration: number) {

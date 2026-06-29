@@ -6,6 +6,7 @@
     releaseElementVisibilityClaim,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
+  import { replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
   import { replayAnimationPlanHasPhase, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import {
     animationElementForMotionAnchor,
@@ -194,10 +195,12 @@
     };
     draws = [...draws, animation];
 
+    const removalMs = Math.max(...motions.map((motion) =>
+      replayAnimationSpriteRemovalMs(motion, animationPlan?.durationMs) ?? (motion.startMs + motion.durationMs)));
     const timer = setTimeout(() => {
       showTargets(animation.hiddenTargets);
       draws = draws.filter((item) => item.id !== animation.id);
-    }, Math.max(...sprites.map((sprite) => sprite.delayMs + Math.round(sprite.durationMs * 0.88))));
+    }, removalMs);
     timers.push(timer);
     return true;
   }

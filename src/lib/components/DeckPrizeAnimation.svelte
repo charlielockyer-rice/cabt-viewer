@@ -6,6 +6,7 @@
     releaseElementVisibilityClaim,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
+  import { replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
   import { replayAnimationPlanHasPhase, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import {
     animationElementForMotionAnchor,
@@ -316,9 +317,11 @@
     };
     prizeTakes = [...prizeTakes, animation];
 
+    const removalMs = Math.max(...motions.map((motion) =>
+      replayAnimationSpriteRemovalMs(motion, animationPlan?.durationMs) ?? (motion.startMs + motion.durationMs)));
     const timer = setTimeout(() => {
       prizeTakes = prizeTakes.filter((item) => item.id !== animation.id);
-    }, Math.max(...sprites.map((sprite) => sprite.delayMs + sprite.durationMs)) + 24);
+    }, removalMs);
     timers.push(timer);
     return true;
   }
