@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte';
-  import { serializeAnimationAnchor } from '../animations/animationAnchors';
-  import { replayAnimationVisibility, type AnimationVisibilityClaim, type AnimationVisibilityToken } from '../animations/animationVisibility';
+  import { replayAnimationVisibility, type AnimationVisibilityToken } from '../animations/animationVisibility';
   import { releaseAnimationVisibilityScope } from '../animations/animationVisibilityClaims';
-  import type { AnimationHandoffPolicy, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
+  import { replayAnimationClaimTiming } from '../animations/replayAnimationHandoff';
+  import type { ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
 
   type Props = {
     active?: boolean;
@@ -26,13 +26,6 @@
   const staleScopeReleaseTimers: ReturnType<typeof setTimeout>[] = [];
   let refreshGeneration = 0;
   let reduceMotion = $state(false);
-
-  type TargetMotionTiming = {
-    identity?: { serial?: number; cardId?: number };
-    startMs: number;
-    durationMs: number;
-    handoffPolicy: AnimationHandoffPolicy;
-  };
 
   onMount(() => {
     if (typeof window.matchMedia !== 'function') {
@@ -91,17 +84,17 @@
       // Reduced motion renders no replacement sprite, so the final DOM stays visible.
       const claims = reduceMotion ? [] : currentPlan.visibilityClaims;
       for (const claim of claims) {
-        const motion = matchingMotionForClaim(currentPlan, claim);
-        if (!motion) {
+        const timing = replayAnimationClaimTiming(currentPlan, claim);
+        if (!timing) {
           continue;
         }
-        const startMs = visibilityClaimStartMs(motion, claim);
+        const startMs = timing.startMs;
         const startClaim = () => {
           const token = replayAnimationVisibility.hide({
             ...claim,
             scopeKey: currentScopeKey,
           });
-          const releaseMs = visibilityClaimReleaseMs(currentPlan, motion, claim);
+          const releaseMs = timing.releaseMs;
           planTokens = [...planTokens, token];
           if (releaseMs === undefined) {
             return;
@@ -148,94 +141,6 @@
       replayAnimationVisibility.release(token);
     }
     planTokens = [];
-  }
-
-  function visibilityClaimStartMs(motion: TargetMotionTiming, claim: AnimationVisibilityClaim): number {
-    if (claim.role !== 'source') {
-      return 0;
-    }
-    return motion.startMs;
-  }
-
-  function visibilityClaimReleaseMs(
-    plan: ReplayAnimationPhasePlan,
-    motion: TargetMotionTiming,
-    claim: AnimationVisibilityClaim,
-  ): number | undefined {
-    if (claim.role === 'source') {
-      if (motion.handoffPolicy.hideSourceUntil === 'scope-exit') {
-        return undefined;
-      }
-      if (motion.handoffPolicy.hideSourceUntil === 'phase-end') {
-        return plan.durationMs;
-      }
-      if (motion.handoffPolicy.hideSourceUntil === 'snapshot') {
-        return motion.startMs;
-      }
-      return 0;
-    }
-    if (motion.handoffPolicy.hideDestinationUntil === 'prepaint') {
-      return motion.startMs + Math.round(motion.durationMs * 0.88);
-    }
-    if (motion.handoffPolicy.hideDestinationUntil === 'arrival') {
-      return motion.startMs + motion.durationMs + 24;
-    }
-    return 0;
-  }
-
-  function matchingMotionForClaim(plan: ReplayAnimationPhasePlan, claim: AnimationVisibilityClaim): TargetMotionTiming | undefined {
-    if (!claim.motionId) {
-      return undefined;
-    }
-    const motion = plan.motions.find((candidate) => candidate.id === claim.motionId);
-    if (!motion) {
-      return undefined;
-    }
-    if (motion.kind === 'card-move') {
-      const motionAnchor = claim.role === 'source' ? motion.sourceAnchor : motion.targetAnchor;
-      if (!anchorMatchesClaim(motionAnchor, claim) || !motionIdentityMatchesClaim(motion.identity, claim)) {
-        return undefined;
-      }
-      return motion;
-    }
-    if (motion.kind === 'reveal-session') {
-      const step = claim.stepId ? motion.steps.find((candidate) => candidate.id === claim.stepId) : undefined;
-      if (!step?.handoffPolicy) {
-        return undefined;
-      }
-      const stepAnchor = claim.role === 'source' ? step.sourceAnchor : step.targetAnchor;
-      if (!stepAnchor || !anchorMatchesClaim(stepAnchor, claim) || !motionIdentityMatchesClaim(step.identity, claim)) {
-        return undefined;
-      }
-      return {
-        identity: step.identity,
-        startMs: motion.startMs + step.startMs,
-        durationMs: step.durationMs,
-        handoffPolicy: step.handoffPolicy,
-      };
-    }
-    return undefined;
-  }
-
-  function anchorMatchesClaim(anchor: AnimationVisibilityClaim['anchor'], claim: AnimationVisibilityClaim): boolean {
-    return serializeAnimationAnchor(anchor) === serializeAnimationAnchor(claim.anchor);
-  }
-
-  function motionIdentityMatchesClaim(
-    identity: { serial?: number; cardId?: number } | undefined,
-    claim: AnimationVisibilityClaim,
-  ): boolean {
-    const claimIdentity = claim.identity;
-    if (!identity || !claimIdentity) {
-      return true;
-    }
-    if (identity.serial !== undefined && claimIdentity.serial !== undefined) {
-      return identity.serial === claimIdentity.serial;
-    }
-    if (identity.cardId !== undefined && claimIdentity.cardId !== undefined) {
-      return identity.cardId === claimIdentity.cardId;
-    }
-    return true;
   }
 
   function scheduleStaleScopeRelease(scopeKey: string) {
