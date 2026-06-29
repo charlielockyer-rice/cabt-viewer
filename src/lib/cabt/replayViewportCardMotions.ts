@@ -6,13 +6,17 @@ import {
   prizeSourceAnchorForEvent,
 } from './replayAnimationAnchors';
 import { compactAnimationMotions } from './replayAnimationMotionUtils';
-import { isMoveCardKind } from './replayActionGroups';
 import {
   isCabtPokemonCard,
   isCabtStadiumCard,
   isCabtToolCard,
 } from './replayCardData';
 import { cardViewFromEvent } from './replayCardIdentity';
+import {
+  isReplayMoveBetween,
+  replayEventMoveAreas,
+  replayEventSerial,
+} from './replayEventAreas';
 import { finiteNumber, stringValue } from './replayEventParams';
 import type { AnimationEventPhase } from './replayAnimationPhases';
 import { CabtAreaType } from './types';
@@ -34,7 +38,7 @@ function drawCardMoveMotionForEvent(
   }
   const playerIndex = event.playerIndex;
   const params = event.params as Record<string, unknown> | undefined;
-  const serial = finiteNumber(params?.serial);
+  const serial = replayEventSerial(event);
   const cardId = finiteNumber(params?.cardId);
   const targetAnchor = handDestinationAnchorForEvent(view, event);
   if (playerIndex === undefined || cardId === undefined || !targetAnchor) {
@@ -79,16 +83,12 @@ function prizeTakeCardMoveMotionForEvent(
   view: GameView,
   event: ActionTimelineEvent,
 ): AnimationMotion | null | undefined {
-  if (!isMoveCardKind(event.kind)) {
+  if (!isPrizeToHandMoveEvent(event)) {
     return undefined;
   }
   const playerIndex = event.playerIndex;
   const params = event.params as Record<string, unknown> | undefined;
-  if (
-    playerIndex === undefined
-    || Number(params?.fromArea) !== CabtAreaType.PRIZE
-    || Number(params?.toArea) !== CabtAreaType.HAND
-  ) {
+  if (playerIndex === undefined) {
     return undefined;
   }
 
@@ -98,7 +98,7 @@ function prizeTakeCardMoveMotionForEvent(
     return null;
   }
   const targetCard = view.players[playerIndex]?.hand[targetAnchor.kind === 'hand-card' ? targetAnchor.handIndex ?? -1 : -1];
-  const serial = finiteNumber(params?.serial) ?? targetCard?.serial;
+  const serial = replayEventSerial(event) ?? targetCard?.serial;
   const cardId = finiteNumber(params?.cardId) ?? targetCard?.id;
 
   return {
@@ -149,7 +149,7 @@ function handToDeckCardMoveMotionForEvent(
   }
   const params = event.params as Record<string, unknown> | undefined;
   const sourceCard = view.players[playerIndex]?.hand[sourceAnchor.kind === 'hand-card' ? sourceAnchor.handIndex ?? -1 : -1];
-  const serial = finiteNumber(params?.serial) ?? sourceCard?.serial;
+  const serial = replayEventSerial(event) ?? sourceCard?.serial;
   const cardId = finiteNumber(params?.cardId) ?? sourceCard?.id;
   if (cardId === undefined) {
     return null;
@@ -207,7 +207,7 @@ function handPlayCardMoveMotionForEvent(
   }
   const params = event.params as Record<string, unknown> | undefined;
   const sourceCard = view.players[playerIndex]?.hand[sourceAnchor.kind === 'hand-card' ? sourceAnchor.handIndex ?? -1 : -1];
-  const serial = finiteNumber(params?.serial) ?? sourceCard?.serial;
+  const serial = replayEventSerial(event) ?? sourceCard?.serial;
   const cardId = finiteNumber(params?.cardId) ?? sourceCard?.id;
   const isEvolution = event.kind === 'Evolve';
   if (cardId === undefined) {
@@ -251,8 +251,8 @@ function handPlayIdentityKind(event: ActionTimelineEvent): AnimationIdentity['ki
   if (event.kind === 'Play' && cardId !== undefined && isCabtPokemonCard(cardId)) {
     return 'pokemon';
   }
-  const toArea = Number(params?.toArea);
-  if (toArea === CabtAreaType.ACTIVE || toArea === CabtAreaType.BENCH) {
+  const areas = replayEventMoveAreas(event);
+  if (areas?.toArea === CabtAreaType.ACTIVE || areas?.toArea === CabtAreaType.BENCH) {
     return 'pokemon';
   }
   if (event.kind === 'Play' && cardId !== undefined && isCabtToolCard(cardId)) {
@@ -269,11 +269,9 @@ function handPlayIdentityKind(event: ActionTimelineEvent): AnimationIdentity['ki
 
 function isHandToDeckMoveEvent(event: ActionTimelineEvent): boolean {
   const params = event.params as Record<string, unknown> | undefined;
-  return isMoveCardKind(event.kind)
-    && event.playerIndex !== undefined
-    && Number(params?.fromArea) === CabtAreaType.HAND
-    && Number(params?.toArea) === CabtAreaType.DECK
-    && finiteNumber(params?.serial) !== undefined
+  return event.playerIndex !== undefined
+    && isReplayMoveBetween(event, CabtAreaType.HAND, CabtAreaType.DECK)
+    && replayEventSerial(event) !== undefined
     && finiteNumber(params?.cardId) !== undefined;
 }
 
@@ -286,35 +284,31 @@ export function isPlannedHandPlayMoveEvent(event: ActionTimelineEvent): boolean 
   }
   if (event.kind === 'Attach') {
     const params = event.params as Record<string, unknown> | undefined;
-    return finiteNumber(params?.serial) !== undefined
+    return replayEventSerial(event) !== undefined
       && finiteNumber(params?.cardId) !== undefined;
   }
   if (event.kind === 'Evolve') {
     const params = event.params as Record<string, unknown> | undefined;
-    return finiteNumber(params?.serial) !== undefined
+    return replayEventSerial(event) !== undefined
       && finiteNumber(params?.cardId) !== undefined
       && finiteNumber(params?.serialTarget) !== undefined
       && finiteNumber(params?.cardIdTarget) !== undefined;
   }
-  if (!isMoveCardKind(event.kind)) {
+  const areas = replayEventMoveAreas(event);
+  if (!areas) {
     return false;
   }
   const params = event.params as Record<string, unknown> | undefined;
-  const fromArea = Number(params?.fromArea);
-  const toArea = Number(params?.toArea);
-  return fromArea === CabtAreaType.HAND
+  return areas.fromArea === CabtAreaType.HAND
     && (
-      toArea === CabtAreaType.DISCARD
-      || toArea === CabtAreaType.ACTIVE
-      || toArea === CabtAreaType.BENCH
+      areas.toArea === CabtAreaType.DISCARD
+      || areas.toArea === CabtAreaType.ACTIVE
+      || areas.toArea === CabtAreaType.BENCH
     )
-    && finiteNumber(params?.serial) !== undefined
+    && replayEventSerial(event) !== undefined
     && finiteNumber(params?.cardId) !== undefined;
 }
 
 export function isPrizeToHandMoveEvent(event: ActionTimelineEvent): boolean {
-  const params = event.params as Record<string, unknown> | undefined;
-  return isMoveCardKind(event.kind)
-    && Number(params?.fromArea) === CabtAreaType.PRIZE
-    && Number(params?.toArea) === CabtAreaType.HAND;
+  return isReplayMoveBetween(event, CabtAreaType.PRIZE, CabtAreaType.HAND);
 }
