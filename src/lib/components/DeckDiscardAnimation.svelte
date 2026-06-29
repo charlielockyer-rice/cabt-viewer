@@ -45,8 +45,12 @@
   type DiscardAnimation = {
     id: number;
     sprites: DiscardSprite[];
-    liveDestinationClaims: ElementVisibilityClaim[];
   };
+  type PlannedDiscardAnimation = DiscardAnimation & { lifecycle: { kind: 'planned' } };
+  type LiveDiscardAnimation = DiscardAnimation & {
+    lifecycle: { kind: 'live'; destinationClaims: ElementVisibilityClaim[] };
+  };
+  type ActiveDiscardAnimation = PlannedDiscardAnimation | LiveDiscardAnimation;
 
   let {
     events = [],
@@ -61,7 +65,7 @@
 
   const timers: ReturnType<typeof setTimeout>[] = [];
   const cardMoveDurationMs = 300;
-  let discards = $state<DiscardAnimation[]>([]);
+  let discards = $state<ActiveDiscardAnimation[]>([]);
   let nextAnimationId = 1;
   let motionLayer = $state<HTMLElement>();
   const replayPlanRunner = createReplayPhasePlanRunner({
@@ -164,10 +168,13 @@
       };
     });
 
-    const animation: DiscardAnimation = {
+    const animation: LiveDiscardAnimation = {
       id: nextAnimationId++,
       sprites,
-      liveDestinationClaims: discardEvents.flatMap((event) => liveDestinationClaimsForEvent(event)),
+      lifecycle: {
+        kind: 'live',
+        destinationClaims: discardEvents.flatMap((event) => liveDestinationClaimsForEvent(event)),
+      },
     };
 
     discards = [...discards, animation];
@@ -192,10 +199,10 @@
       return;
     }
 
-    const animation: DiscardAnimation = {
+    const animation: PlannedDiscardAnimation = {
       id: nextAnimationId++,
       sprites,
-      liveDestinationClaims: [],
+      lifecycle: { kind: 'planned' },
     };
 
     discards = [...discards, animation];
@@ -298,9 +305,12 @@
     return target instanceof HTMLElement ? target : null;
   }
 
-  function releaseLiveDestinationClaims(animation: DiscardAnimation) {
-    releaseElementVisibilityClaims(animation.liveDestinationClaims);
-    animation.liveDestinationClaims = [];
+  function releaseLiveDestinationClaims(animation: ActiveDiscardAnimation) {
+    if (animation.lifecycle.kind !== 'live') {
+      return;
+    }
+    releaseElementVisibilityClaims(animation.lifecycle.destinationClaims);
+    animation.lifecycle.destinationClaims = [];
   }
 
   function spriteStyle(sprite: DiscardSprite) {

@@ -35,7 +35,7 @@
     animationPlan?: ReplayAnimationPhasePlan;
   };
 
-  type DrawSprite = {
+  type DrawSpriteBase = {
     id: string;
     card?: CardView;
     reveal: boolean;
@@ -51,13 +51,16 @@
     scale: number;
     arcY: number;
     rotation: number;
-    targetElement?: HTMLElement;
   };
+
+  type PlannedDrawSprite = DrawSpriteBase & { lifecycle: { kind: 'planned' } };
+  type LiveDrawSprite = DrawSpriteBase & { lifecycle: { kind: 'live'; targetElement?: HTMLElement } };
+  type DrawSprite = PlannedDrawSprite | LiveDrawSprite;
 
   type DrawAnimation = {
     id: number;
     sprites: DrawSprite[];
-    liveHiddenTargets: LiveHiddenDrawTarget[];
+    lifecycle: DrawAnimationLifecycle;
   };
 
   type PlayerDrawSprites = {
@@ -66,6 +69,9 @@
   };
 
   type LiveHiddenDrawTarget = ElementVisibilityClaim;
+  type DrawAnimationLifecycle =
+    | { kind: 'planned' }
+    | { kind: 'live'; hiddenTargets: LiveHiddenDrawTarget[] };
 
   let {
     events = [],
@@ -146,7 +152,7 @@
     const animation: DrawAnimation = {
       id: nextAnimationId++,
       sprites,
-      liveHiddenTargets: [],
+      lifecycle: { kind: 'planned' },
     };
     draws = [...draws, animation];
 
@@ -159,7 +165,7 @@
     });
   }
 
-  function plannedSpriteForMotion(motion: CardMoveAnimationMotion, index: number): DrawSprite | undefined {
+  function plannedSpriteForMotion(motion: CardMoveAnimationMotion, index: number): PlannedDrawSprite | undefined {
     const sourceElement = strictVisualElementForMotionAnchor(motion.sourceAnchor, motion.identity);
     const targetElement = strictVisualElementForMotionAnchor(motion.targetAnchor, motion.identity);
     if (!sourceElement || !targetElement) {
@@ -194,7 +200,7 @@
       scale: Math.max(0.5, Math.min(1.5, targetRect.width / spriteWidth)),
       arcY: motion.sourceAnchor.playerIndex === 0 ? -18 : 18,
       rotation: motion.sourceAnchor.playerIndex === 0 ? -3 : 3,
-      targetElement,
+      lifecycle: { kind: 'planned' },
     };
   }
 
@@ -229,20 +235,21 @@
     const animation: DrawAnimation = {
       id: nextAnimationId++,
       sprites,
-      liveHiddenTargets,
+      lifecycle: { kind: 'live', hiddenTargets: liveHiddenTargets },
     };
     draws = [...draws, animation];
     for (const sprite of sprites) {
-      if (!sprite.targetElement) {
+      const targetElement = sprite.lifecycle.targetElement;
+      if (!targetElement) {
         continue;
       }
       const timer = setTimeout(() => {
-        showLiveTargets(liveHiddenTargets.filter((target) => target.element === sprite.targetElement));
+        showLiveTargets(liveHiddenTargets.filter((target) => target.element === targetElement));
       }, sprite.delayMs + cardHandoffMs);
       timers.push(timer);
     }
     const timer = setTimeout(() => {
-      showLiveTargets(animation.liveHiddenTargets);
+      showDrawLiveTargets(animation);
       draws = draws.filter((item) => item.id !== animation.id);
     }, Math.max(...sprites.map((sprite) => sprite.delayMs)) + cardMoveDurationMs + 120);
     timers.push(timer);
@@ -254,7 +261,7 @@
     }
     timers.length = 0;
     for (const draw of draws) {
-      showLiveTargets(draw.liveHiddenTargets);
+      showDrawLiveTargets(draw);
     }
     draws = [];
   }
@@ -271,9 +278,17 @@
   function removeDraws(ids: ReadonlySet<number>) {
     const removed = draws.filter((item) => ids.has(item.id));
     for (const animation of removed) {
-      showLiveTargets(animation.liveHiddenTargets);
+      showDrawLiveTargets(animation);
     }
     draws = draws.filter((item) => !ids.has(item.id));
+  }
+
+  function showDrawLiveTargets(animation: DrawAnimation) {
+    if (animation.lifecycle.kind !== 'live') {
+      return;
+    }
+    showLiveTargets(animation.lifecycle.hiddenTargets);
+    animation.lifecycle.hiddenTargets = [];
   }
 
   function spritesForPlayer(playerIndex: number, playerEvents: ActionTimelineEvent[], animationEvents: ActionTimelineEvent[]): PlayerDrawSprites {
@@ -327,7 +342,7 @@
         scale: Math.max(0.5, Math.min(1.5, targetRect.width / spriteWidth)),
         arcY: playerIndex === 0 ? -18 : 18,
         rotation: playerIndex === 0 ? -3 : 3,
-        targetElement,
+        lifecycle: { kind: 'live', targetElement },
       };
     });
     return { sprites, liveHiddenTargets };

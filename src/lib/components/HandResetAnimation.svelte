@@ -48,7 +48,7 @@
     topHand: boolean;
   };
 
-  type ResetSprite = {
+  type ResetSpriteBase = {
     id: string;
     card?: CardView;
     concealed: boolean;
@@ -62,8 +62,11 @@
     scale: number;
     delayMs: number;
     durationMs: number;
-    sourceElement: HTMLElement;
   };
+
+  type PlannedResetSprite = ResetSpriteBase & { lifecycle: { kind: 'planned' } };
+  type LiveResetSprite = ResetSpriteBase & { lifecycle: { kind: 'live'; sourceElement: HTMLElement } };
+  type ResetSprite = PlannedResetSprite | LiveResetSprite;
 
   type ResetAnimation = {
     id: number;
@@ -154,7 +157,7 @@
     if (sprites.some((sprite) => !sprite)) {
       return;
     }
-    const plannedSprites = sprites.filter((sprite): sprite is ResetSprite => !!sprite);
+    const plannedSprites = sprites.filter((sprite): sprite is PlannedResetSprite => !!sprite);
 
     const animation: ResetAnimation = {
       id: nextAnimationId++,
@@ -188,7 +191,7 @@
       id: nextAnimationId++,
       sprites,
     };
-    const animationSources = hideLiveSources(sprites.map((sprite) => sprite.sourceElement));
+    const animationSources = hideLiveSources(sprites.map((sprite) => sprite.lifecycle.sourceElement));
     resets = [...resets, animation];
     const timer = setTimeout(() => {
       showLiveSources(animationSources);
@@ -239,7 +242,7 @@
     event: ActionTimelineEvent,
     hands: Map<number, HandSnapshot>,
     animationEvents: ActionTimelineEvent[],
-  ): ResetSprite[] {
+  ): LiveResetSprite[] {
     if (event.playerIndex === undefined) {
       return [];
     }
@@ -278,11 +281,11 @@
       scale: Math.max(0.5, Math.min(1.2, deckRect.width / card.width)),
       delayMs: actionAnimationStartMs(animationEvents, event),
       durationMs: cardMoveDurationMs,
-      sourceElement: card.sourceElement,
+      lifecycle: { kind: 'live', sourceElement: card.sourceElement },
     }];
   }
 
-  function plannedResetSpriteForMotion(motion: CardMoveAnimationMotion): ResetSprite | undefined {
+  function plannedResetSpriteForMotion(motion: CardMoveAnimationMotion): PlannedResetSprite | undefined {
     const sourceElement = strictVisualElementForMotionAnchor(motion.sourceAnchor, motion.identity);
     const deck = strictVisualElementForMotionAnchor(motion.targetAnchor, motion.identity);
     if (!sourceElement || !deck) {
@@ -313,7 +316,7 @@
       scale: Math.max(0.5, Math.min(1.2, deckRect.width / sourceRect.width)),
       delayMs: motion.startMs,
       durationMs: motion.durationMs,
-      sourceElement,
+      lifecycle: { kind: 'planned' },
     };
   }
 
