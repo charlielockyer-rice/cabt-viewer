@@ -10,6 +10,7 @@
     type AnimationAnchorRef,
   } from '../animations/animationAnchors';
   import { afterTwoAnimationFrames } from '../animations/animationFrames';
+  import { replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
   import type { ReplayAnimationPhasePlan, RevealSessionAnimationMotion, RevealSessionStep } from '../animations/replayAnimationPlan';
   import {
     cardHeightToWidthRatio,
@@ -59,6 +60,7 @@
     exitY: number;
     exitScale: number;
     rotation: number;
+    removeMs?: number;
   };
 
   type RevealAnimation = {
@@ -80,6 +82,7 @@
     serial?: number;
     startMs: number;
     toHand: boolean;
+    removeMs?: number;
   };
 
   type RevealCardAction = {
@@ -90,6 +93,7 @@
     targetAnchor?: AnimationAnchorRef;
     serialTarget?: number;
     cardIdTarget?: number;
+    removeMs?: number;
   };
 
   type RevealCardAnchor = Extract<AnimationAnchorRef, { kind: 'reveal-card' }>;
@@ -248,6 +252,7 @@
         serial: step.identity?.serial ?? card.serial,
         startMs: motion.startMs + step.startMs,
         toHand: step.kind === 'take',
+        removeMs: removalMsForStep(motion, step),
       }];
     });
   }
@@ -271,8 +276,23 @@
         serial,
         startMs: motion.startMs + step.startMs,
         targetAnchor: step.targetAnchor,
+        removeMs: removalMsForStep(motion, step),
       }];
     });
+  }
+
+  function removalMsForStep(
+    motion: RevealSessionAnimationMotion,
+    step: RevealSessionStep,
+  ): number | undefined {
+    if (!step.handoffPolicy) {
+      return undefined;
+    }
+    return replayAnimationSpriteRemovalMs({
+      startMs: motion.startMs + step.startMs,
+      durationMs: step.durationMs,
+      handoffPolicy: step.handoffPolicy,
+    }, animationPlan?.durationMs);
   }
 
   function seedHeldRevealSprites(motions: RevealSessionAnimationMotion[]) {
@@ -516,7 +536,7 @@
           showTargets(hiddenSearchTargets.filter((hidden) => hidden.element === target));
         }
         removeSpritesAfterPrepaint((item) => item.id === sprite.id);
-      }, sprite.delayMs + revealMs + handoffSettleMs);
+      }, sprite.removeMs ?? (sprite.delayMs + revealMs + handoffSettleMs));
       timers.push(handoffTimer);
     }
 
@@ -555,7 +575,7 @@
         : item);
       const timer = setTimeout(() => {
         removeSprites((item) => item.serial === action.serial);
-      }, delayMs + actionAnimationTiming.handMoveMs + 80);
+      }, action.removeMs ?? (delayMs + actionAnimationTiming.handMoveMs + 80));
       timers.push(timer);
     }
   }
@@ -592,7 +612,7 @@
           showTargets(hiddenTakeTargets);
         }
         removeSpritesAfterPrepaint((item) => item.serial === action.serial);
-      }, delayMs + actionAnimationTiming.handMoveMs + handoffSettleMs);
+      }, action.removeMs ?? (delayMs + actionAnimationTiming.handMoveMs + handoffSettleMs));
       timers.push(timer);
     }
   }
@@ -634,7 +654,7 @@
           : item);
         const timer = setTimeout(() => {
           removeSprites((item) => item.serial === action.serial);
-        }, delayMs + actionAnimationTiming.deckRevealReturnMs + 80);
+        }, action.removeMs ?? (delayMs + actionAnimationTiming.deckRevealReturnMs + 80));
         timers.push(timer);
       }
     }
@@ -851,6 +871,7 @@
         exitY: 0,
         exitScale: 1,
         rotation: target.rotation,
+        removeMs: action.removeMs,
       };
     });
   }
