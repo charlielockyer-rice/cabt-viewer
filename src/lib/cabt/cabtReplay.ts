@@ -162,6 +162,7 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
         baseView: currentView,
         actionTimeline: continuation.group.events,
         hasAnimationPhases: shouldBuildGroupedStepAnimationPhases(views[index - 1], continuation.group),
+        resolvingFinalizers: resolvingPlayedCardsForEvents([continuation.resolvingPlayEvent]),
         resolving: resolvingPlayedCards,
       });
       resolvingPlayedCards = resolvingContext.nextResolving;
@@ -190,6 +191,7 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
           baseView: view,
           actionTimeline: group.events,
           hasAnimationPhases: shouldBuildGroupedStepAnimationPhases(views[index - 1], group),
+          resolvingFinalizers: resolvingFinalizerCardsForGroup(group),
           resolving: resolvingPlayedCards,
         });
         resolvingPlayedCards = resolvingContext.nextResolving;
@@ -214,6 +216,7 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
         baseView: view,
         actionTimeline: undefined,
         hasAnimationPhases: false,
+        resolvingFinalizers: [],
         resolving: resolvingPlayedCards,
       });
       resolvingPlayedCards = resolvingContext.nextResolving;
@@ -272,6 +275,7 @@ type ReplayFrameEntry = {
 type CardEffectContinuation = {
   endIndex: number;
   group: ReplayActionGroup;
+  resolvingPlayEvent?: ActionTimelineEvent;
 };
 
 function logsWithSynthesizedAbility(
@@ -521,23 +525,26 @@ function cardEffectContinuation(entries: ReplayFrameEntry[], startIndex: number)
   }
 
   if (isCompleteDeckSearchEffect(firstGroup.events, playerIndex)) {
-    return { endIndex: startIndex, group: firstGroup };
+    return { endIndex: startIndex, group: firstGroup, resolvingPlayEvent: playEvent };
   }
 
   const deckSearchContinuation = deckSearchContinuationFrom(entries, startIndex, firstGroup, playerIndex);
   if (deckSearchContinuation) {
-    return deckSearchContinuation;
+    return withResolvingPlayEvent(deckSearchContinuation, playEvent);
   }
 
   const deckRevealContinuation = deckRevealContinuationFrom(entries, startIndex, firstGroup, playerIndex);
   if (deckRevealContinuation) {
-    return deckRevealContinuation;
+    return withResolvingPlayEvent(deckRevealContinuation, playEvent);
   }
 
   const resolvingContinuation = resolvingTrainerContinuationFrom(entries, startIndex, firstGroup, playEvent);
   if (resolvingContinuation) {
-    return triggeredEvolutionAbilityContinuationFrom(entries, resolvingContinuation.endIndex, resolvingContinuation.group)
-      ?? resolvingContinuation;
+    return withResolvingPlayEvent(
+      triggeredEvolutionAbilityContinuationFrom(entries, resolvingContinuation.endIndex, resolvingContinuation.group)
+        ?? resolvingContinuation,
+      playEvent,
+    );
   }
 
   for (let index = startIndex + 1; index < entries.length; index += 1) {
@@ -548,6 +555,7 @@ function cardEffectContinuation(entries: ReplayFrameEntry[], startIndex: number)
     if (groups.length === 1 && isCardEffectContinuationGroup(groups[0], playerIndex, firstGroup)) {
       return {
         endIndex: index,
+        resolvingPlayEvent: playEvent,
         group: {
           ...firstGroup,
           events: [...firstGroup.events, ...groups[0].events],
@@ -557,6 +565,13 @@ function cardEffectContinuation(entries: ReplayFrameEntry[], startIndex: number)
     return null;
   }
   return null;
+}
+
+function withResolvingPlayEvent(continuation: CardEffectContinuation, resolvingPlayEvent: ActionTimelineEvent): CardEffectContinuation {
+  return {
+    ...continuation,
+    resolvingPlayEvent,
+  };
 }
 
 function triggeredEvolutionAbilityContinuationFrom(
@@ -3363,10 +3378,11 @@ function resolvingContextForStep(
     baseView: GameView | undefined;
     actionTimeline: ReplayStep['actionTimeline'];
     hasAnimationPhases: boolean;
+    resolvingFinalizers: ResolvingPlayedCard[];
     resolving: ResolvingPlayedCard[];
   },
 ): ResolvingPlayedCardContext {
-  const { baseView, actionTimeline, hasAnimationPhases, resolving: currentResolving } = input;
+  const { baseView, actionTimeline, hasAnimationPhases, resolvingFinalizers, resolving: currentResolving } = input;
   if (!baseView) {
     return emptyResolvingPlayedCardContext(currentResolving);
   }
@@ -3379,11 +3395,11 @@ function resolvingContextForStep(
     }
   }
 
-  const displayResolved = resolving.filter((entry) => shouldResolveCardInDisplay(actionTimeline, hasAnimationPhases, entry));
+  const displayResolved = resolving.filter((entry) => shouldResolveCardInDisplay(hasAnimationPhases, resolvingFinalizers, entry));
   const displayResolving = resolving.filter((entry) =>
     !displayResolved.some((resolvedEntry) => sameResolvingCard(resolvedEntry, entry))
     && shouldShowResolvingCardInDisplay(actionTimeline, baseView, entry));
-  const phaseResolving = resolving.filter((entry) => shouldShowResolvingCardInPhase(actionTimeline, hasAnimationPhases, baseView, entry));
+  const phaseResolving = resolving.filter((entry) => shouldShowResolvingCardInPhase(actionTimeline, hasAnimationPhases, resolvingFinalizers, baseView, entry));
   const visibleResolving = [...displayResolving, ...phaseResolving];
   const nextResolving = resolving.flatMap((entry) => {
     if (!visibleResolving.some((visibleEntry) => sameResolvingCard(visibleEntry, entry))) {
@@ -3491,6 +3507,36 @@ function resolvingPlayedCardForEvent(view: GameView, event: ActionTimelineEvent)
     return undefined;
   }
   return { playerIndex: event.playerIndex, card };
+}
+
+function resolvingPlayedCardsForEvents(events: Array<ActionTimelineEvent | undefined>): ResolvingPlayedCard[] {
+  return events.flatMap((event) => {
+    const card = event ? resolvingPlayedCardFromPlayEvent(event) : undefined;
+    return card ? [card] : [];
+  });
+}
+
+function resolvingPlayedCardFromPlayEvent(event: ActionTimelineEvent): ResolvingPlayedCard | undefined {
+  if (event.kind !== 'Play' || event.playerIndex === undefined) {
+    return undefined;
+  }
+  const card = cardViewFromEvent(event);
+  if (!card || card.id === undefined || !isResolvingTrainerCard(card.id)) {
+    return undefined;
+  }
+  return { playerIndex: event.playerIndex, card };
+}
+
+function resolvingFinalizerCardsForGroup(group: ReplayActionGroup): ResolvingPlayedCard[] {
+  const playEvent = resolvingTrainerPlayEvent(group);
+  const playerIndex = playEvent?.playerIndex;
+  if (!playEvent || playerIndex === undefined) {
+    return [];
+  }
+  if (!startGroupHasTerminalResolvingEffect(group) && !isCompleteDeckSearchEffect(group.events, playerIndex)) {
+    return [];
+  }
+  return resolvingPlayedCardsForEvents([playEvent]);
 }
 
 function isResolvingTrainerCard(cardId: number): boolean {
@@ -3620,12 +3666,11 @@ function resolvingDiscardCardMoveMotion(
 }
 
 function shouldResolveCardInDisplay(
-  actionTimeline: ReplayStep['actionTimeline'],
   hasAnimationPhases: boolean,
+  resolvingFinalizers: ResolvingPlayedCard[],
   entry: ResolvingPlayedCard,
 ): boolean {
-  return hasAnimationPhases
-    && (actionTimelineContainsPlayForCard(actionTimeline, entry.card) || isCardEffectContinuationTimeline(actionTimeline));
+  return hasAnimationPhases && resolvingFinalizers.some((finalizer) => sameResolvingCard(finalizer, entry));
 }
 
 function shouldShowResolvingCardInDisplay(
@@ -3642,6 +3687,7 @@ function shouldShowResolvingCardInDisplay(
 function shouldShowResolvingCardInPhase(
   actionTimeline: ReplayStep['actionTimeline'],
   hasAnimationPhases: boolean,
+  resolvingFinalizers: ResolvingPlayedCard[],
   baseView: GameView,
   entry: ResolvingPlayedCard,
 ): boolean {
@@ -3650,24 +3696,11 @@ function shouldShowResolvingCardInPhase(
   }
   return shouldShowResolvingCardInDisplay(actionTimeline, baseView, entry)
     || actionTimelineContainsPlayForCard(actionTimeline, entry.card)
-    || isCardEffectContinuationTimeline(actionTimeline);
+    || resolvingFinalizers.some((finalizer) => sameResolvingCard(finalizer, entry));
 }
 
 function actionTimelineContainsPlayForCard(actionTimeline: ReplayStep['actionTimeline'], card: CardView): boolean {
   return (actionTimeline ?? []).some((event) => event.kind === 'Play' && eventCardMatches(card, event));
-}
-
-function isCardEffectContinuationTimeline(actionTimeline: ReplayStep['actionTimeline']): boolean {
-  return (actionTimeline ?? []).some((event) => [
-    'Switch',
-    'MoveCard',
-    'MoveCardReverse',
-    'Draw',
-    'DrawReverse',
-    'Shuffle',
-    'HpChange',
-    'HPChange',
-  ].includes(event.kind ?? ''));
 }
 
 function sameResolvingCard(left: ResolvingPlayedCard, right: ResolvingPlayedCard): boolean {
