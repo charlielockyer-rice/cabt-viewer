@@ -33,6 +33,13 @@ import { applyKnockOutDiscardTopOrdering } from './replayResolvingDiscardMotions
 import { type GameView, type LogView } from '../game/types';
 import type { ReplaySnapshot, ReplayStep } from '../game/replay';
 
+type CabtReplayStepPayload = {
+  events?: ReplayStep['actionTimeline'];
+  select: CabtVisualizeFrame['select'];
+  selected: CabtVisualizeFrame['selected'];
+  action: CabtVisualizeFrame['action'];
+};
+
 export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
   const visualFrames = extractVisualizeFrames(input);
   if (!visualFrames.length) {
@@ -171,7 +178,7 @@ function replayStepForFrame({
   stateIndex: number;
   label: string;
   type: string;
-  payload: unknown;
+  payload: CabtReplayStepPayload;
   actionTimeline?: ReplayStep['actionTimeline'];
   displayView?: ReplayStep['displayView'];
   animationPhases?: ReplayStep['animationPhases'];
@@ -194,7 +201,7 @@ function replayStepForFrame({
   };
 }
 
-function replayStepPayload(frame: CabtVisualizeFrame, events?: ReplayStep['actionTimeline']): unknown {
+function replayStepPayload(frame: CabtVisualizeFrame, events?: ReplayStep['actionTimeline']): CabtReplayStepPayload {
   return {
     ...(events ? { events } : {}),
     select: frame.select,
