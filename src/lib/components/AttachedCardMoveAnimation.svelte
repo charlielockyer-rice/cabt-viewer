@@ -17,6 +17,7 @@
   import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
   import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
   import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
+  import { actionAnimationTimelinePhaseKeyForEvent } from '../cabt/actionAnimationPhases';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -145,6 +146,7 @@
     const animationEvents = actionAnimationBatchEvents(currentEvents, runState.seenEventIds);
     const moveEvents = animationEvents.filter((event) =>
       isAttachedMoveEvent(event)
+      && actionAnimationTimelinePhaseKeyForEvent(animationEvents, event)?.startsWith('AttachedMove:')
       && !runState.hasSeen(event));
 
     runState.markEventsSeen(currentEvents);

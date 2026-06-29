@@ -1,6 +1,6 @@
 import type { GameView } from '../lib/game/types';
 import { replayAnimationPhaseGapMs, replayStepPlaybackDelayMs, type ReplayAnimationPhase, type ReplaySnapshot, type ReplayStep } from '../lib/game/replay';
-import { actionAnimationTiming } from '../lib/cabt/actionAnimationSchedule';
+import { actionAnimationPhaseCardDurationMs } from '../lib/cabt/actionAnimationPhases';
 import { cabtReplayToSnapshot } from '../lib/cabt/cabtReplay';
 
 class ReplayStore {
@@ -298,52 +298,5 @@ function replayPhaseDurationMs(phase: ReplayAnimationPhase): number {
   if (Number.isFinite(phase.durationMs) && phase.durationMs > 0) {
     return phase.durationMs;
   }
-  const key = phase.key;
-  if (key.startsWith('Shuffle:')) {
-    return actionAnimationTiming.deckShuffleMs;
-  }
-  if (key.startsWith('Draw:')) {
-    return actionAnimationTiming.deckDrawMs;
-  }
-  if (key.startsWith('DeckDiscard:')) {
-    return actionAnimationTiming.deckDiscardMs;
-  }
-  if (key.startsWith('DeckReveal:') || key.startsWith('DeckSearchReveal:')) {
-    return actionAnimationTiming.deckRevealMs;
-  }
-  if (key.startsWith('DeckRevealReturn:')) {
-    return actionAnimationTiming.deckRevealReturnMs;
-  }
-  if (key.startsWith('DeckRevealTake:')
-    || key.startsWith('HandMove:')
-    || key.startsWith('HandToDeck:')
-    || key.startsWith('AttachedMove:')
-    || key.startsWith('Play:')
-    || key.startsWith('Attach:')) {
-    return actionAnimationTiming.handMoveMs;
-  }
-  if (key.startsWith('DeckBoardPlace:')
-    || key.startsWith('BoardToDeck:')
-    || key.startsWith('BoardMove:')) {
-    return actionAnimationTiming.boardMoveMs;
-  }
-  if (key.startsWith('StadiumMove:')) {
-    return actionAnimationTiming.stadiumMoveMs;
-  }
-  if (key.startsWith('Evolve:')) {
-    return actionAnimationTiming.evolveMs;
-  }
-  if (key.startsWith('Attack:')) {
-    return actionAnimationTiming.attackAnnounceMs;
-  }
-  if (key.startsWith('Ability:')) {
-    return actionAnimationTiming.abilityAnnounceMs;
-  }
-  if (key.startsWith('Damage:')) {
-    return actionAnimationTiming.damageVisualMs;
-  }
-  if (key.startsWith('KnockOut:')) {
-    return actionAnimationTiming.knockOutMs;
-  }
-  return actionAnimationTiming.handMoveMs;
+  return actionAnimationPhaseCardDurationMs(phase.key);
 }

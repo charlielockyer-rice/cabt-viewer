@@ -10,6 +10,7 @@
   import { createPrefersReducedMotion } from '../animations/prefersReducedMotion.svelte';
   import { pulseMotionPlanKey, ScheduledAnimationEffectRunner } from '../animations/plannedPulseEffects';
   import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
+  import { actionAnimationTimelinePhaseKeyForEvent } from '../cabt/actionAnimationPhases';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { replayAnimationPlanHasPhase, type PulseAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import type { ActionTimelineEvent } from '../game/types';
@@ -184,7 +185,10 @@
 
   function startDamageAnimations(animationEvents: ActionTimelineEvent[]) {
     const attackEvent = stepEvents.find((event) => event.kind === 'Attack');
-    for (const event of animationEvents.filter(isDamageEvent)) {
+    const damageEvents = animationEvents.filter((event) =>
+      isDamageEvent(event)
+      && actionAnimationTimelinePhaseKeyForEvent(animationEvents, event)?.startsWith('Damage:'));
+    for (const event of damageEvents) {
       const target = slotElementForEvent(event);
       const attacker = attackEvent ? slotElementForEvent(attackEvent) : null;
       if (!target) {

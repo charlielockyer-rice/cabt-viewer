@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, tick } from 'svelte';
   import CardTile from './CardTile.svelte';
+  import { actionAnimationTimelinePhaseKeyForEvent } from '../cabt/actionAnimationPhases';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { resolveExactAnimationAnchorElement, type AnimationAnchorRef } from '../animations/animationAnchors';
   import { afterTwoAnimationFrames } from '../animations/animationFrames';
@@ -195,7 +196,9 @@
       return;
     }
     const generation = animationGeneration;
-    const moveEvents = animationEvents.filter(isBoardMoveEvent);
+    const moveEvents = animationEvents.filter((event) =>
+      isBoardMoveEvent(event)
+      && ownsLiveBoardMovePhase(animationEvents, event));
     for (const instruction of moveEvents.flatMap((event) => liveMoveInstructionsForEvent(event, moveEvents))) {
       const sourceElement = instruction.source;
       const targetElement = instruction.target;
@@ -392,6 +395,16 @@
           || (fromArea === CabtAreaType.STADIUM && toArea === CabtAreaType.DISCARD)
         )
       );
+  }
+
+  function ownsLiveBoardMovePhase(animationEvents: ActionTimelineEvent[], event: ActionTimelineEvent): boolean {
+    const key = actionAnimationTimelinePhaseKeyForEvent(animationEvents, event);
+    return key?.startsWith('BoardMove:')
+      || key?.startsWith('BoardToDeck:')
+      || key?.startsWith('DeckBoardPlace:')
+      || key?.startsWith('StadiumMove:')
+      || key?.startsWith('KnockOut:')
+      || false;
   }
 
   function isDeckBoardPlacementEvent(event: ActionTimelineEvent) {

@@ -1,4 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import {
+  actionAnimationPhaseKey,
+  actionAnimationPhaseMayHavePlan,
+  actionAnimationPhaseNeedsDedicatedView,
+  actionAnimationPhaseUsesSourceView,
+  actionAnimationTimelinePhaseKey,
+  actionAnimationTimelinePhaseKeyForEvent,
+} from './actionAnimationPhases';
 import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from './actionAnimationSchedule';
 import { CabtAreaType } from './types';
 import type { ActionTimelineEvent } from '../game/types';
@@ -61,6 +69,26 @@ describe('actionAnimationStartMs', () => {
         + actionAnimationTiming.deckDiscardMs
         + actionAnimationTiming.deckDiscardStepMs
         + actionAnimationTiming.damageVisualMs,
+    );
+  });
+
+  it('uses shared timeline filtering so knockout-owned attachments do not create a competing phase', () => {
+    const events: ActionTimelineEvent[] = [
+      event(1, 'Attack', { cardId: 721 }),
+      event(2, 'HpChange', { value: -200 }),
+      event(3, 'MoveCard', { cardId: 721, serial: 64, fromArea: CabtAreaType.ACTIVE, toArea: CabtAreaType.DISCARD }),
+      event(4, 'MoveCard', { cardId: 3, serial: 96, fromArea: CabtAreaType.ENERGY, toArea: CabtAreaType.DISCARD }),
+      event(5, 'Draw', { cardId: 3, serial: 12 }),
+    ];
+
+    expect(actionAnimationStartMs(events, events[1])).toBe(actionAnimationTiming.attackAnnounceMs);
+    expect(actionAnimationStartMs(events, events[2])).toBe(
+      actionAnimationTiming.attackAnnounceMs + actionAnimationTiming.damageVisualMs,
+    );
+    expect(actionAnimationStartMs(events, events[4])).toBe(
+      actionAnimationTiming.attackAnnounceMs
+        + actionAnimationTiming.damageVisualMs
+        + actionAnimationTiming.knockOutMs,
     );
   });
 
@@ -256,6 +284,79 @@ describe('actionAnimationBatchEvents', () => {
     );
   });
 
+});
+
+describe('actionAnimationPhaseKey', () => {
+  it('uses the same semantic phase keys for scheduling and replay rendering', () => {
+    expect(actionAnimationPhaseKey(event(1, 'MoveCard', {
+      fromArea: CabtAreaType.ACTIVE,
+      toArea: CabtAreaType.BENCH,
+    }))).toBe('BoardMove:1');
+    expect(actionAnimationPhaseKey(event(2, 'MoveCard', {
+      fromArea: CabtAreaType.ENERGY,
+      toArea: CabtAreaType.HAND,
+    }))).toBe(`AttachedMove:1:${CabtAreaType.ENERGY}->${CabtAreaType.HAND}`);
+    expect(actionAnimationPhaseKey(event(3, 'MoveCard', {
+      fromArea: CabtAreaType.HAND,
+      toArea: CabtAreaType.DECK,
+    }))).toBe('HandToDeck:1');
+    expect(actionAnimationPhaseKey(event(4, 'Poisoned', {}))).toBe('Condition:1');
+  });
+
+  it('keeps board and attached motions on source-owned phase views with animation plans', () => {
+    const keys = [
+      'BoardMove:0',
+      'BoardToDeck:0',
+      `AttachedMove:0:${CabtAreaType.TOOL}->${CabtAreaType.DISCARD}`,
+      'StadiumMove:0:6->3',
+    ];
+
+    for (const key of keys) {
+      expect(actionAnimationPhaseUsesSourceView(key)).toBe(true);
+      expect(actionAnimationPhaseNeedsDedicatedView(key)).toBe(true);
+      expect(actionAnimationPhaseMayHavePlan(key)).toBe(true);
+    }
+  });
+
+  it('centralizes timeline-only suppression for non-attack damage and knockout-owned attachment moves', () => {
+    const attack = event(1, 'Attack', {});
+    const damage = event(2, 'HpChange', {});
+    const knockOut = event(3, 'MoveCard', {
+      fromArea: CabtAreaType.ACTIVE,
+      toArea: CabtAreaType.DISCARD,
+    });
+    const attachedDiscard = event(4, 'MoveCard', {
+      fromArea: CabtAreaType.ENERGY,
+      toArea: CabtAreaType.DISCARD,
+    });
+
+    expect(actionAnimationTimelinePhaseKey(damage, [])).toBeNull();
+    expect(actionAnimationTimelinePhaseKey(knockOut, [])).toBeNull();
+    expect(actionAnimationTimelinePhaseKey(attack, [])).toBe('Attack:1');
+    expect(actionAnimationTimelinePhaseKey(damage, ['Attack:1'])).toBe('Damage:1');
+    expect(actionAnimationTimelinePhaseKey(damage, ['Condition:1'])).toBe('Damage:1');
+    expect(actionAnimationTimelinePhaseKey(knockOut, ['Attack:1', 'Damage:1'])).toBe('KnockOut:1');
+    expect(actionAnimationTimelinePhaseKey(attachedDiscard, ['Attack:1', 'Damage:1', 'KnockOut:1'])).toBeNull();
+  });
+
+  it('can classify an event against its full timeline batch for live component ownership checks', () => {
+    const events = [
+      event(1, 'Attack', {}),
+      event(2, 'HpChange', {}),
+      event(3, 'MoveCard', {
+        fromArea: CabtAreaType.ACTIVE,
+        toArea: CabtAreaType.DISCARD,
+      }),
+      event(4, 'MoveCard', {
+        fromArea: CabtAreaType.ENERGY,
+        toArea: CabtAreaType.DISCARD,
+      }),
+    ];
+
+    expect(actionAnimationTimelinePhaseKeyForEvent(events, events[1])).toBe('Damage:1');
+    expect(actionAnimationTimelinePhaseKeyForEvent(events, events[2])).toBe('KnockOut:1');
+    expect(actionAnimationTimelinePhaseKeyForEvent(events, events[3])).toBeNull();
+  });
 });
 
 function event(id: number, kind: string, params: Record<string, unknown>): ActionTimelineEvent {

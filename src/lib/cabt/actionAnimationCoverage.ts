@@ -1,3 +1,4 @@
+import { isAttachedCardArea, isAttachedCardMoveDestination } from './actionAnimationPhases';
 import { CabtAreaType } from './types';
 import type { ActionTimelineEvent } from '../game/types';
 
@@ -119,7 +120,7 @@ export function classifyAnimationCoverage(
       return { key, level: 'polished', label: 'Deck Pokemon placement to board', notes };
     }
 
-    if (isAttachedCardArea(fromArea) && isAttachedMoveDestination(toArea)) {
+    if (isAttachedCardArea(fromArea) && isAttachedCardMoveDestination(toArea)) {
       if (!hasFiniteNumber(params?.serial)) {
         notes.push('Attached-card moves need serials to find the visible source badge or tool preview.');
         return { key, level: 'conditional', label: 'Attached card move', notes };
@@ -315,14 +316,4 @@ function moveKey(fromArea: number, toArea: number): string {
 
 function hasFiniteNumber(value: unknown): boolean {
   return Number.isFinite(Number(value));
-}
-
-function isAttachedMoveDestination(area: number): boolean {
-  return area === CabtAreaType.DISCARD
-    || area === CabtAreaType.DECK;
-}
-
-function isAttachedCardArea(area: number): boolean {
-  return area === CabtAreaType.ENERGY
-    || area === CabtAreaType.TOOL;
 }

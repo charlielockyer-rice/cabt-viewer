@@ -1,6 +1,21 @@
 import cardRows from './cardData.generated.json';
 import attackRows from './attackData.generated.json';
-import { actionAnimationStartMs, actionAnimationTiming } from './actionAnimationSchedule';
+import {
+  actionAnimationPhaseDurationMs as animationPhaseDurationMs,
+  actionAnimationPhaseKey as animationPhaseKey,
+  actionAnimationPhaseMayHavePlan,
+  actionAnimationPhaseNeedsDedicatedView,
+  actionAnimationTimelinePhaseKey,
+  actionAnimationPhaseUsesSourceView as animationPhaseUsesSourceView,
+  actionAnimationTiming,
+  isAttachedCardArea,
+  isAttachedCardMoveDestination,
+  isBoardPositionMove,
+  isBoardToDeckMove,
+  isKnockOutMove,
+  isSpecialConditionEvent,
+} from './actionAnimationPhases';
+import { actionAnimationStartMs } from './actionAnimationSchedule';
 import { cabtLogsToTimeline } from './logFormat';
 import { CabtAreaType, CabtOptionType, CabtSelectContext } from './types';
 import {
@@ -2784,14 +2799,6 @@ function conditionPulseLabel(event: ActionTimelineEvent): string {
   return event.kind ?? 'Condition';
 }
 
-function isSpecialConditionEvent(kind: string | undefined): boolean {
-  return kind === 'Poisoned'
-    || kind === 'Burned'
-    || kind === 'Asleep'
-    || kind === 'Paralyzed'
-    || kind === 'Confused';
-}
-
 function boardPokemonDestinationForEvent(
   player: PlayerView | undefined,
   event: ActionTimelineEvent,
@@ -2843,20 +2850,7 @@ function animationEventPhases(events: ActionTimelineEvent[]): AnimationEventPhas
 }
 
 function animationPhaseKeyForReplayEvent(event: ActionTimelineEvent, phases: AnimationEventPhase[]): string | null {
-  const key = animationPhaseKey(event);
-  if (!key) {
-    return null;
-  }
-  if (key.startsWith('Damage:') && !phases.some((phase) => phase.key.startsWith('Attack:'))) {
-    return null;
-  }
-  if (key.startsWith('KnockOut:') && !phases.some((phase) => phase.key.startsWith('Attack:'))) {
-    return null;
-  }
-  if (key.startsWith('AttachedMove:') && phases.some((phase) => phase.key.startsWith('KnockOut:'))) {
-    return null;
-  }
-  return key;
+  return actionAnimationTimelinePhaseKey(event, phases.map((phase) => phase.key));
 }
 
 function animationPhaseLabel(phase: AnimationEventPhase): string | undefined {
@@ -2926,149 +2920,12 @@ function plural(count: number, singular: string): string {
   return count === 1 ? singular : `${singular}s`;
 }
 
-function animationPhaseKey(event: ActionTimelineEvent): string | null {
-  const params = event.params as Record<string, unknown> | undefined;
-  const fromArea = Number(params?.fromArea);
-  const toArea = Number(params?.toArea);
-  const playerKey = event.playerIndex ?? 'unknown';
-
-  if (event.kind === 'Play' || event.kind === 'Attach' || event.kind === 'Evolve') {
-    return `${event.kind}:${playerKey}`;
-  }
-  if (event.kind === 'Attack') {
-    return `Attack:${playerKey}`;
-  }
-  if (event.kind === 'Ability') {
-    return `Ability:${playerKey}`;
-  }
-  if (event.kind === 'Coin') {
-    return `Coin:${playerKey}`;
-  }
-  if (isSpecialConditionEvent(event.kind)) {
-    return `Condition:${playerKey}`;
-  }
-  if (event.kind === 'Switch') {
-    return `BoardMove:${playerKey}`;
-  }
-  if (event.kind === 'HpChange' || event.kind === 'HPChange') {
-    return `Damage:${playerKey}`;
-  }
-  if (isMoveCardKind(event.kind)) {
-    if (isBoardPositionMove(fromArea, toArea)) {
-      return `BoardMove:${playerKey}`;
-    }
-    if (isBoardToDeckMove(fromArea, toArea)) {
-      return `BoardToDeck:${playerKey}`;
-    }
-    if (isKnockOutMove(fromArea, toArea)) {
-      return `KnockOut:${playerKey}`;
-    }
-    if (fromArea === CabtAreaType.HAND && toArea === CabtAreaType.DECK) {
-      return `HandToDeck:${playerKey}`;
-    }
-    if (fromArea === CabtAreaType.DISCARD && (toArea === CabtAreaType.HAND || toArea === CabtAreaType.DECK)) {
-      return `DiscardRecover:${playerKey}:${toArea}`;
-    }
-    if (fromArea === CabtAreaType.HAND) {
-      return `HandMove:${playerKey}:${toArea}`;
-    }
-    if (fromArea === CabtAreaType.DECK && toArea === CabtAreaType.DISCARD) {
-      return `DeckDiscard:${playerKey}`;
-    }
-    if (fromArea === CabtAreaType.DECK && toArea === CabtAreaType.LOOKING) {
-      return `DeckReveal:${playerKey}`;
-    }
-    if (fromArea === CabtAreaType.DECK && toArea === CabtAreaType.HAND) {
-      return `DeckSearchReveal:${playerKey}`;
-    }
-    if (fromArea === CabtAreaType.DECK && (toArea === CabtAreaType.ACTIVE || toArea === CabtAreaType.BENCH)) {
-      return `DeckBoardPlace:${playerKey}`;
-    }
-    if (fromArea === CabtAreaType.DECK && toArea === CabtAreaType.PRIZE) {
-      return `DeckPrizePlace:${playerKey}`;
-    }
-    if (fromArea === CabtAreaType.LOOKING && toArea === CabtAreaType.DECK) {
-      return `DeckRevealReturn:${playerKey}`;
-    }
-    if (fromArea === CabtAreaType.LOOKING && toArea === CabtAreaType.HAND) {
-      return `DeckRevealTake:${playerKey}`;
-    }
-    if (isAttachedCardArea(fromArea) && isAttachedCardMoveDestination(toArea)) {
-      return `AttachedMove:${playerKey}:${fromArea}->${toArea}`;
-    }
-    if (fromArea === CabtAreaType.STADIUM && toArea === CabtAreaType.DISCARD) {
-      return `StadiumMove:${playerKey}:${fromArea}->${toArea}`;
-    }
-    if (fromArea === CabtAreaType.PRIZE && toArea === CabtAreaType.HAND) {
-      return `PrizeTake:${playerKey}`;
-    }
-  }
-  if (event.kind === 'Shuffle') {
-    return `Shuffle:${playerKey}`;
-  }
-  if (event.kind === 'Draw' || event.kind === 'DrawReverse') {
-    return `Draw:${playerKey}`;
-  }
-  return null;
-}
-
-function animationPhaseUsesSourceView(key: string): boolean {
-  return key.startsWith('HandToDeck:')
-    || key.startsWith('Play:')
-    || key.startsWith('HandMove:')
-    || key.startsWith('Attach:')
-    || key.startsWith('Evolve:')
-    || key.startsWith('Ability:')
-    || key.startsWith('Attack:')
-    || key.startsWith('Condition:')
-    || key.startsWith('Damage:')
-    || key.startsWith('KnockOut:')
-    || key.startsWith('BoardToDeck:')
-    || key.startsWith('BoardMove:')
-    || key.startsWith('AttachedMove:')
-    || key.startsWith('DiscardRecover:')
-    || key.startsWith('StadiumMove:')
-    || key.startsWith('PrizeTake:');
-}
-
 function animationPhaseNeedsDedicatedView(phase: AnimationEventPhase): boolean {
-  return phase.key.startsWith('Evolve:')
-    || phase.key.startsWith('Ability:')
-    || phase.key.startsWith('Attack:')
-    || phase.key.startsWith('Coin:')
-    || phase.key.startsWith('Condition:')
-    || phase.key.startsWith('Damage:')
-    || phase.key.startsWith('KnockOut:')
-    || phase.key.startsWith('BoardToDeck:')
-    || phase.key.startsWith('BoardMove:')
-    || phase.key.startsWith('AttachedMove:')
-    || phase.key.startsWith('DiscardRecover:')
-    || phase.key.startsWith('StadiumMove:')
-    || phase.key.startsWith('PrizeTake:');
+  return actionAnimationPhaseNeedsDedicatedView(phase.key);
 }
 
 function animationPhaseMayHavePlan(phase: AnimationEventPhase): boolean {
-  return phase.key.startsWith('HandToDeck:')
-    || phase.key.startsWith('Play:')
-    || phase.key.startsWith('HandMove:')
-    || phase.key.startsWith('Attach:')
-    || phase.key.startsWith('Evolve:')
-    || phase.key.startsWith('Ability:')
-    || phase.key.startsWith('Attack:')
-    || phase.key.startsWith('Coin:')
-    || phase.key.startsWith('Condition:')
-    || phase.key.startsWith('Damage:')
-    || phase.key.startsWith('Draw:')
-    || phase.key.startsWith('Shuffle:')
-    || phase.key.startsWith('DeckDiscard:')
-    || phase.key.startsWith('DeckBoardPlace:')
-    || phase.key.startsWith('DeckPrizePlace:')
-    || phase.key.startsWith('DiscardRecover:')
-    || phase.key.startsWith('DeckReveal:')
-    || phase.key.startsWith('DeckSearchReveal:')
-    || phase.key.startsWith('DeckRevealReturn:')
-    || phase.key.startsWith('DeckRevealTake:')
-    || phase.key.startsWith('PrizeTake:');
+  return actionAnimationPhaseMayHavePlan(phase.key);
 }
 
 function animationSourceViewForPhase(
@@ -3242,149 +3099,6 @@ function mergedKnownCards(left: CardView[], right: CardView[]): CardView[] {
     ...left,
     ...right.filter((card) => !left.some((existing) => sameKnownCard(existing, card))),
   ];
-}
-
-function animationPhaseDurationMs(key: string, count: number): number {
-  const durationMs = animationPhaseCardDurationMs(key);
-  const stepMs = animationPhaseStepMs(key);
-  return count <= 0 ? 0 : durationMs + Math.max(0, count - 1) * stepMs;
-}
-
-function animationPhaseCardDurationMs(key: string): number {
-  if (key.startsWith('Shuffle:')) {
-    return actionAnimationTiming.deckShuffleMs;
-  }
-  if (key.startsWith('Draw:')) {
-    return actionAnimationTiming.deckDrawMs;
-  }
-  if (key.startsWith('DeckDiscard:')) {
-    return actionAnimationTiming.deckDiscardMs;
-  }
-  if (key.startsWith('DeckReveal:')) {
-    return actionAnimationTiming.deckRevealMs;
-  }
-  if (key.startsWith('DeckSearchReveal:')) {
-    return actionAnimationTiming.deckRevealMs;
-  }
-  if (key.startsWith('DeckBoardPlace:')) {
-    return actionAnimationTiming.boardMoveMs;
-  }
-  if (key.startsWith('DeckPrizePlace:')) {
-    return actionAnimationTiming.boardMoveMs;
-  }
-  if (key.startsWith('DeckRevealReturn:')) {
-    return actionAnimationTiming.deckRevealReturnMs;
-  }
-  if (key.startsWith('DeckRevealTake:')) {
-    return actionAnimationTiming.handMoveMs;
-  }
-  if (key.startsWith('AttachedMove:')) {
-    return actionAnimationTiming.handMoveMs;
-  }
-  if (key.startsWith('DiscardRecover:')) {
-    return actionAnimationTiming.handMoveMs;
-  }
-  if (key.startsWith('PrizeTake:')) {
-    return actionAnimationTiming.prizeTakeMs;
-  }
-  if (key.startsWith('StadiumMove:')) {
-    return actionAnimationTiming.stadiumMoveMs;
-  }
-  if (key.startsWith('Evolve:')) {
-    return actionAnimationTiming.evolveMs;
-  }
-  if (key.startsWith('Attack:')) {
-    return actionAnimationTiming.attackAnnounceMs;
-  }
-  if (key.startsWith('Ability:')) {
-    return actionAnimationTiming.abilityAnnounceMs;
-  }
-  if (key.startsWith('Coin:')) {
-    return actionAnimationTiming.coinAnnounceMs;
-  }
-  if (key.startsWith('Condition:')) {
-    return actionAnimationTiming.conditionAnnounceMs;
-  }
-  if (key.startsWith('Damage:')) {
-    return actionAnimationTiming.damageVisualMs;
-  }
-  if (key.startsWith('KnockOut:')) {
-    return actionAnimationTiming.knockOutMs;
-  }
-  if (key.startsWith('BoardToDeck:')) {
-    return actionAnimationTiming.boardMoveMs;
-  }
-  if (key.startsWith('BoardMove:')) {
-    return actionAnimationTiming.boardMoveMs;
-  }
-  return actionAnimationTiming.handMoveMs;
-}
-
-function animationPhaseStepMs(key: string): number {
-  if (key.startsWith('Draw:')) {
-    return actionAnimationTiming.deckDrawStepMs;
-  }
-  if (key.startsWith('DeckDiscard:')) {
-    return actionAnimationTiming.deckDiscardStepMs;
-  }
-  if (key.startsWith('DeckReveal:')) {
-    return actionAnimationTiming.deckRevealStepMs;
-  }
-  if (key.startsWith('DeckSearchReveal:')) {
-    return actionAnimationTiming.deckRevealStepMs;
-  }
-  if (key.startsWith('DeckBoardPlace:')) {
-    return actionAnimationTiming.handMoveStepMs;
-  }
-  if (key.startsWith('DeckPrizePlace:')) {
-    return actionAnimationTiming.handMoveStepMs;
-  }
-  if (key.startsWith('DeckRevealReturn:')) {
-    return actionAnimationTiming.deckRevealReturnStepMs;
-  }
-  if (key.startsWith('DeckRevealTake:')) {
-    return actionAnimationTiming.handMoveStepMs;
-  }
-  if (key.startsWith('AttachedMove:')) {
-    return actionAnimationTiming.handMoveStepMs;
-  }
-  if (key.startsWith('DiscardRecover:')) {
-    return actionAnimationTiming.handMoveStepMs;
-  }
-  if (key.startsWith('PrizeTake:')) {
-    return actionAnimationTiming.prizeTakeStepMs;
-  }
-  if (key.startsWith('StadiumMove:')) {
-    return actionAnimationTiming.handMoveStepMs;
-  }
-  if (key.startsWith('Shuffle:')) {
-    return actionAnimationTiming.deckShuffleMs;
-  }
-  if (key.startsWith('Attack:')) {
-    return actionAnimationTiming.attackAnnounceMs;
-  }
-  if (key.startsWith('Ability:')) {
-    return actionAnimationTiming.abilityAnnounceMs;
-  }
-  if (key.startsWith('Coin:')) {
-    return actionAnimationTiming.coinAnnounceMs;
-  }
-  if (key.startsWith('Condition:')) {
-    return actionAnimationTiming.conditionAnnounceMs;
-  }
-  if (key.startsWith('Damage:')) {
-    return actionAnimationTiming.damageVisualMs;
-  }
-  if (key.startsWith('KnockOut:')) {
-    return actionAnimationTiming.knockOutMs;
-  }
-  if (key.startsWith('BoardToDeck:')) {
-    return actionAnimationTiming.handMoveStepMs;
-  }
-  if (key.startsWith('BoardMove:')) {
-    return 0;
-  }
-  return actionAnimationTiming.handMoveStepMs;
 }
 
 function projectedViewForEvents(
@@ -3907,21 +3621,6 @@ function shallowArrayEqual(left: readonly unknown[], right: readonly unknown[]):
   return left.length === right.length && left.every((item, index) => item === right[index]);
 }
 
-function isKnockOutMove(fromArea: number, toArea: number): boolean {
-  return toArea === CabtAreaType.DISCARD
-    && (fromArea === CabtAreaType.ACTIVE || fromArea === CabtAreaType.BENCH);
-}
-
-function isBoardPositionMove(fromArea: number, toArea: number): boolean {
-  return (fromArea === CabtAreaType.ACTIVE && toArea === CabtAreaType.BENCH)
-    || (fromArea === CabtAreaType.BENCH && toArea === CabtAreaType.ACTIVE);
-}
-
-function isBoardToDeckMove(fromArea: number, toArea: number): boolean {
-  return toArea === CabtAreaType.DECK
-    && (fromArea === CabtAreaType.ACTIVE || fromArea === CabtAreaType.BENCH);
-}
-
 function isRevealSourceEvent(event: ActionTimelineEvent, playerIndex: number): boolean {
   const params = event.params as Record<string, unknown> | undefined;
   return event.playerIndex === playerIndex
@@ -3967,17 +3666,6 @@ function isRevealAttachEvent(
     && event.kind === 'Attach'
     && serial !== undefined
     && revealIndexes.has(serial);
-}
-
-function isAttachedCardArea(area: number): boolean {
-  return area === CabtAreaType.ENERGY
-    || area === CabtAreaType.TOOL;
-}
-
-function isAttachedCardMoveDestination(area: number): boolean {
-  return area === CabtAreaType.DISCARD
-    || area === CabtAreaType.DECK
-    || area === CabtAreaType.HAND;
 }
 
 function isAttachedToHandMoveEvent(event: ActionTimelineEvent): boolean {
