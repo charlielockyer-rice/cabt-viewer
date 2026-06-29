@@ -1,6 +1,8 @@
-import { isMoveCardKind, type ReplayActionGroup } from './replayActionGroups';
+import { type ReplayActionGroup } from './replayActionGroups';
 import { cardViewFromEvent, eventCardMatches, sameKnownCard } from './replayCardIdentity';
 import { cabtFaceDownCard } from './replayCardData';
+import { replayEventMoveAreas, replayEventSerial } from './replayEventAreas';
+import { finiteNumber } from './replayEventParams';
 import { CabtAreaType } from './types';
 import type { ActionTimelineEvent, CardView, GameView, PlayerView, PokemonSlotView } from '../game/types';
 
@@ -112,18 +114,17 @@ export function applyReplayEvent(
     return;
   }
 
-  if (!isMoveCardKind(event.kind)) {
-    return;
-  }
   if (options.deferMoveCardEvents) {
     return;
   }
 
-  const params = event.params as Record<string, unknown> | undefined;
-  const fromArea = Number(params?.fromArea);
-  const toArea = Number(params?.toArea);
-  applyReplayAreaDelta(player, currentPlayer, fromArea, -1, event);
-  applyReplayAreaDelta(player, currentPlayer, toArea, 1, event);
+  const areas = replayEventMoveAreas(event);
+  if (!areas) {
+    return;
+  }
+
+  applyReplayAreaDelta(player, currentPlayer, areas.fromArea, -1, event);
+  applyReplayAreaDelta(player, currentPlayer, areas.toArea, 1, event);
 }
 
 export function playerHasCardInPlay(player: PlayerView, event: ActionTimelineEvent): boolean {
@@ -189,8 +190,8 @@ function shallowArrayEqual(left: readonly unknown[], right: readonly unknown[]):
 
 function applyDamageReplayEvent(player: PlayerView, event: ActionTimelineEvent): boolean {
   const params = event.params as Record<string, unknown> | undefined;
-  const serial = Number(params?.serial);
-  const cardId = Number(params?.cardId);
+  const serial = replayEventSerial(event);
+  const cardId = finiteNumber(params?.cardId);
   const value = Number(params?.value);
   if (!Number.isFinite(value)) {
     return false;
@@ -198,9 +199,9 @@ function applyDamageReplayEvent(player: PlayerView, event: ActionTimelineEvent):
 
   let updated = false;
   const updateSlot = (slot: PokemonSlotView): PokemonSlotView => {
-    const matches = Number.isFinite(serial)
+    const matches = serial !== undefined
       ? slot.pokemon?.serial === serial
-      : Number.isFinite(cardId) && slot.pokemon?.id === cardId;
+      : cardId !== undefined && slot.pokemon?.id === cardId;
     if (!matches) {
       return slot;
     }
@@ -278,13 +279,13 @@ function applyReplayAreaDelta(
 
 function removeMovedCardFromZone(cards: CardView[], event: ActionTimelineEvent | undefined): CardView[] {
   const params = event?.params as Record<string, unknown> | undefined;
-  const serial = Number(params?.serial);
-  if (Number.isFinite(serial)) {
+  const serial = event ? replayEventSerial(event) : undefined;
+  if (serial !== undefined) {
     return cards.filter((card) => card.serial !== serial);
   }
 
-  const cardId = Number(params?.cardId);
-  if (Number.isFinite(cardId)) {
+  const cardId = finiteNumber(params?.cardId);
+  if (cardId !== undefined) {
     const index = cards.findIndex((card) => card.id === cardId);
     return index >= 0 ? removeAt(cards, index) : cards;
   }
@@ -294,16 +295,16 @@ function removeMovedCardFromZone(cards: CardView[], event: ActionTimelineEvent |
 
 function removeMovedCardFromHand(hand: CardView[], event: ActionTimelineEvent | undefined): CardView[] {
   const params = event?.params as Record<string, unknown> | undefined;
-  const serial = Number(params?.serial);
-  if (Number.isFinite(serial)) {
+  const serial = event ? replayEventSerial(event) : undefined;
+  if (serial !== undefined) {
     const index = hand.findIndex((card) => card.serial === serial);
     if (index >= 0) {
       return removeAt(hand, index);
     }
   }
 
-  const cardId = Number(params?.cardId);
-  if (Number.isFinite(cardId)) {
+  const cardId = finiteNumber(params?.cardId);
+  if (cardId !== undefined) {
     const index = hand.findIndex((card) => card.id === cardId);
     if (index >= 0) {
       return removeAt(hand, index);
@@ -334,17 +335,18 @@ function addCardToDiscard(player: PlayerView, currentPlayer: PlayerView, event: 
 
 function addCardToBench(player: PlayerView, currentPlayer: PlayerView, event: ActionTimelineEvent | undefined): PokemonSlotView[] {
   const params = event?.params as Record<string, unknown> | undefined;
-  const explicitIndex = Number(params?.toIndex ?? params?.index ?? params?.benchIndex);
+  const explicitIndex = finiteNumber(params?.toIndex ?? params?.index ?? params?.benchIndex);
   const currentSlot = currentPlayer.bench.find((slot) => slot.pokemon && event && eventCardMatches(slot.pokemon, event));
   if (!currentSlot) {
     return player.bench;
   }
 
-  const index = Number.isInteger(explicitIndex)
-    ? explicitIndex
-    : Number.isInteger(currentSlot.index)
-      ? currentSlot.index
-      : player.bench.findIndex((slot) => slot.empty);
+  let index = player.bench.findIndex((slot) => slot.empty);
+  if (explicitIndex !== undefined && Number.isInteger(explicitIndex)) {
+    index = explicitIndex;
+  } else if (currentSlot.index !== undefined && Number.isInteger(currentSlot.index)) {
+    index = currentSlot.index;
+  }
   if (!Number.isInteger(index) || index < 0) {
     return player.bench;
   }
