@@ -19,6 +19,7 @@ export const actionAnimationTiming = {
   evolveMs: 680,
   attackAnnounceMs: 520,
   abilityAnnounceMs: 560,
+  coinAnnounceMs: 520,
   damageMs: 320,
   damageVisualMs: 560,
   knockOutMs: 620,
@@ -101,6 +102,14 @@ function animationPhaseForEvent(event: ActionTimelineEvent): AnimationPhase | nu
       key: `Ability:${playerKey}`,
       durationMs: actionAnimationTiming.abilityAnnounceMs,
       stepMs: actionAnimationTiming.abilityAnnounceMs,
+    };
+  }
+
+  if (event.kind === 'Coin') {
+    return {
+      key: `Coin:${playerKey}`,
+      durationMs: actionAnimationTiming.coinAnnounceMs,
+      stepMs: actionAnimationTiming.coinAnnounceMs,
     };
   }
 

@@ -109,6 +109,13 @@ describe('classifyAnimationCoverage', () => {
     expect(coverage.label).toBe('Ability announcement');
   });
 
+  it('recognizes coin flips as polished announcements', () => {
+    const coverage = classifyAnimationCoverage(event('Coin', { head: true }));
+
+    expect(coverage.level).toBe('polished');
+    expect(coverage.label).toBe('Coin flip announcement');
+  });
+
   it('recognizes board Pokemon returning to deck as polished', () => {
     const coverage = classifyAnimationCoverage(event('MoveCard', {
       fromArea: CabtAreaType.ACTIVE,

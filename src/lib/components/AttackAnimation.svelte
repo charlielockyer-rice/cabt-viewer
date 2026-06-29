@@ -8,6 +8,7 @@
     type AnimationElementEffectClaim,
   } from '../animations/animationElementEffects';
   import { createPrefersReducedMotion } from '../animations/prefersReducedMotion.svelte';
+  import { pulseMotionPlanKey, ScheduledAnimationEffectRunner } from '../animations/plannedPulseEffects';
   import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { replayAnimationPlanHasPhase, type PulseAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
@@ -29,6 +30,13 @@
     delayMs: number;
   };
 
+  type AttackAnnouncementMotion = PulseAnimationMotion | {
+    startMs: number;
+    durationMs: number;
+    event: ActionTimelineEvent;
+    label: string;
+  };
+
   let {
     events = [],
     stepEvents = [],
@@ -39,11 +47,11 @@
 
   const timers: ReturnType<typeof setTimeout>[] = [];
   const runState = new ReplayAnimationRunState();
+  const attackAnnouncementRunner = new ScheduledAnimationEffectRunner<AttackAnnouncementMotion>();
   const prefersReducedMotion = createPrefersReducedMotion();
   let reduceMotion = $derived(prefersReducedMotion.current);
   let damageSprites = $state<DamageSprite[]>([]);
   let animationGeneration = 0;
-  const activeAttackAnnouncements = new Set<AnimationElementEffectClaim>();
   const activeAttackLunges = new Set<AnimationElementEffectClaim>();
 
   onDestroy(() => {
@@ -54,7 +62,7 @@
     const currentEvents = events;
     const currentScopeKey = scopeKey;
     const plannedPulses = attackPulseMotions(animationPlan);
-    const planKey = attackPulsePlanKey(plannedPulses);
+    const planKey = pulseMotionPlanKey(plannedPulses);
     const run = runState.update(currentScopeKey, planKey);
     if (run.scopeChanged || run.planChanged) {
       clearAttackAnimations();
@@ -101,10 +109,6 @@
     );
   }
 
-  function attackPulsePlanKey(motions: PulseAnimationMotion[]): string {
-    return motions.map((motion) => `${motion.id}:${motion.startMs}:${motion.durationMs}:${motion.spriteVisual.kind === 'pulse' ? motion.spriteVisual.tone : ''}`).join('|');
-  }
-
   function startPlannedPulses(motions: PulseAnimationMotion[]) {
     for (const motion of motions) {
       if (motion.spriteVisual.kind !== 'pulse') {
@@ -120,25 +124,10 @@
   }
 
   function startPlannedAttackAnnouncement(motion: PulseAnimationMotion) {
-    const generation = animationGeneration;
-    const timer = setTimeout(() => {
-      if (generation !== animationGeneration) {
-        return;
-      }
-      const attacker = slotElementForMotion(motion);
-      if (!attacker) {
-        return;
-      }
-      const claim = activateAttackAnnouncement(attacker, motion.label ?? 'Attack');
-      const cleanup = setTimeout(() => {
-        if (generation !== animationGeneration) {
-          return;
-        }
-        clearAttackAnnouncement(claim);
-      }, motion.durationMs);
-      timers.push(cleanup);
-    }, motion.startMs);
-    timers.push(timer);
+    attackAnnouncementRunner.start([motion], {
+      resolveElement: (candidate) => 'event' in candidate ? slotElementForEvent(candidate.event) : slotElementForMotion(candidate),
+      activate: (element, candidate) => activateAttackAnnouncement(element, candidate.label ?? 'Attack'),
+    });
   }
 
   function startPlannedDamageAnimation(motion: PulseAnimationMotion) {
@@ -180,21 +169,17 @@
   }
 
   function startAttackAnnouncements(animationEvents: ActionTimelineEvent[]) {
-    for (const event of animationEvents.filter((candidate) => candidate.kind === 'Attack')) {
-      const attacker = slotElementForEvent(event);
-      if (!attacker) {
-        continue;
-      }
-      const delayMs = actionAnimationStartMs(animationEvents, event);
-      const timer = setTimeout(() => {
-        const claim = activateAttackAnnouncement(attacker, attackNameForEvent(event));
-        const cleanup = setTimeout(() => {
-          clearAttackAnnouncement(claim);
-        }, actionAnimationTiming.attackAnnounceMs);
-        timers.push(cleanup);
-      }, delayMs);
-      timers.push(timer);
-    }
+    attackAnnouncementRunner.start(animationEvents
+      .filter((candidate) => candidate.kind === 'Attack')
+      .map((event) => ({
+        event,
+        label: attackNameForEvent(event),
+        startMs: actionAnimationStartMs(animationEvents, event),
+        durationMs: actionAnimationTiming.attackAnnounceMs,
+      })), {
+        resolveElement: (motion) => 'event' in motion ? slotElementForEvent(motion.event) : slotElementForMotion(motion),
+        activate: (element, motion) => activateAttackAnnouncement(element, motion.label ?? 'Attack'),
+      });
   }
 
   function startDamageAnimations(animationEvents: ActionTimelineEvent[]) {
@@ -260,26 +245,18 @@
       clearTimeout(timer);
     }
     timers.length = 0;
-    releaseAnimationElementEffectClaims(activeAttackAnnouncements);
+    attackAnnouncementRunner.clear();
     releaseAnimationElementEffectClaims(activeAttackLunges);
-    activeAttackAnnouncements.clear();
     activeAttackLunges.clear();
     damageSprites = [];
   }
 
   function activateAttackAnnouncement(element: HTMLElement, attackName: string) {
-    const claim = claimAnimationElementEffect({
+    return claimAnimationElementEffect({
       element,
       attributes: { 'data-attack-announce-active': 'true' },
       styles: { '--attack-name': JSON.stringify(attackName) },
     });
-    activeAttackAnnouncements.add(claim);
-    return claim;
-  }
-
-  function clearAttackAnnouncement(claim: AnimationElementEffectClaim) {
-    releaseAnimationElementEffectClaim(claim);
-    activeAttackAnnouncements.delete(claim);
   }
 
   function clearAttackLunge(claim: AnimationElementEffectClaim) {

@@ -9,6 +9,7 @@
   import BoardPromptStrip from './lib/components/prompts/BoardPromptStrip.svelte';
   import CrossPlaneCardMoveAnimation from './lib/components/CrossPlaneCardMoveAnimation.svelte';
   import EndGamePrompt from './lib/components/EndGamePrompt.svelte';
+  import EventPulseAnimation from './lib/components/EventPulseAnimation.svelte';
   import DeckDrawAnimation from './lib/components/DeckDrawAnimation.svelte';
   import DeckPrizeAnimation from './lib/components/DeckPrizeAnimation.svelte';
   import DeckRevealAnimation from './lib/components/DeckRevealAnimation.svelte';
@@ -1444,6 +1445,12 @@
         />
 
         <CrossPlaneCardMoveAnimation
+          scopeKey={animationScopeKey}
+          animationPlan={replayAnimationPlan}
+          {replayMode}
+        />
+
+        <EventPulseAnimation
           scopeKey={animationScopeKey}
           animationPlan={replayAnimationPlan}
           {replayMode}

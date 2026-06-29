@@ -1,13 +1,9 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
-  import {
-    claimAnimationElementEffect,
-    releaseAnimationElementEffectClaim,
-    releaseAnimationElementEffectClaims,
-    type AnimationElementEffectClaim,
-  } from '../animations/animationElementEffects';
+  import { claimAnimationElementEffect } from '../animations/animationElementEffects';
   import { resolveExactAnimationAnchorElement } from '../animations/animationAnchors';
+  import { pulseMotionPlanKey, ScheduledAnimationEffectRunner } from '../animations/plannedPulseEffects';
   import { createPrefersReducedMotion } from '../animations/prefersReducedMotion.svelte';
   import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
   import { replayAnimationPlanHasPhase, type PulseAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
@@ -20,6 +16,13 @@
     animationPlan?: ReplayAnimationPhasePlan;
   };
 
+  type AbilityEffectMotion = PulseAnimationMotion | {
+    startMs: number;
+    durationMs: number;
+    event: ActionTimelineEvent;
+    label: string;
+  };
+
   let {
     events = [],
     scopeKey = '',
@@ -27,12 +30,10 @@
     animationPlan,
   }: Props = $props();
 
-  const timers: ReturnType<typeof setTimeout>[] = [];
   const runState = new ReplayAnimationRunState();
+  const effectRunner = new ScheduledAnimationEffectRunner<AbilityEffectMotion>();
   const prefersReducedMotion = createPrefersReducedMotion();
   let reduceMotion = $derived(prefersReducedMotion.current);
-  let animationGeneration = 0;
-  const activeAbilityClaims = new Set<AnimationElementEffectClaim>();
 
   onDestroy(() => {
     clearAbilityAnimations();
@@ -43,7 +44,7 @@
     const currentScopeKey = scopeKey;
     const currentPlan = animationPlan;
     const plannedPulses = abilityPulseMotions(currentPlan);
-    const planKey = abilityPulsePlanKey(plannedPulses);
+    const planKey = pulseMotionPlanKey(plannedPulses);
     const run = runState.update(currentScopeKey, planKey);
     if (run.scopeChanged || run.planChanged) {
       clearAbilityAnimations();
@@ -86,57 +87,26 @@
     );
   }
 
-  function abilityPulsePlanKey(motions: PulseAnimationMotion[]): string {
-    return motions.map((motion) => `${motion.id}:${motion.startMs}:${motion.durationMs}`).join('|');
-  }
-
   function startPlannedAbilityAnnouncements(motions: PulseAnimationMotion[]) {
-    const generation = animationGeneration;
-    for (const motion of motions) {
-      const timer = setTimeout(() => {
-        if (generation !== animationGeneration) {
-          return;
-        }
-        const source = slotElementForMotion(motion);
-        if (!source) {
-          return;
-        }
-        const claim = activateAbilityElement(source, motion.label ?? 'Ability');
-        const cleanup = setTimeout(() => {
-          if (generation !== animationGeneration) {
-            return;
-          }
-          clearAbilityElement(claim);
-        }, motion.durationMs);
-        timers.push(cleanup);
-      }, motion.startMs);
-      timers.push(timer);
-    }
+    startAbilityEffectMotions(motions);
   }
 
   function startAbilityAnnouncements(animationEvents: ActionTimelineEvent[]) {
-    const generation = animationGeneration;
-    for (const event of animationEvents.filter((candidate) => candidate.kind === 'Ability')) {
-      const source = slotElementForEvent(event);
-      if (!source) {
-        continue;
-      }
-      const delayMs = actionAnimationStartMs(animationEvents, event);
-      const timer = setTimeout(() => {
-        if (generation !== animationGeneration) {
-          return;
-        }
-        const claim = activateAbilityElement(source, abilityNameForEvent(event));
-        const cleanup = setTimeout(() => {
-          if (generation !== animationGeneration) {
-            return;
-          }
-          clearAbilityElement(claim);
-        }, actionAnimationTiming.abilityAnnounceMs);
-        timers.push(cleanup);
-      }, delayMs);
-      timers.push(timer);
-    }
+    startAbilityEffectMotions(animationEvents
+      .filter((candidate) => candidate.kind === 'Ability')
+      .map((event) => ({
+        event,
+        label: abilityNameForEvent(event),
+        startMs: actionAnimationStartMs(animationEvents, event),
+        durationMs: actionAnimationTiming.abilityAnnounceMs,
+      })));
+  }
+
+  function startAbilityEffectMotions(motions: AbilityEffectMotion[]) {
+    effectRunner.start(motions, {
+      resolveElement: (motion) => 'event' in motion ? slotElementForEvent(motion.event) : slotElementForMotion(motion),
+      activate: (element, motion) => activateAbilityElement(element, motion.label ?? 'Ability'),
+    });
   }
 
   function slotElementForMotion(motion: PulseAnimationMotion): HTMLElement | null {
@@ -145,28 +115,15 @@
   }
 
   function clearAbilityAnimations() {
-    animationGeneration += 1;
-    for (const timer of timers) {
-      clearTimeout(timer);
-    }
-    timers.length = 0;
-    releaseAnimationElementEffectClaims(activeAbilityClaims);
-    activeAbilityClaims.clear();
+    effectRunner.clear();
   }
 
   function activateAbilityElement(element: HTMLElement, abilityName: string) {
-    const claim = claimAnimationElementEffect({
+    return claimAnimationElementEffect({
       element,
       attributes: { 'data-ability-announce-active': 'true' },
       styles: { '--ability-name': JSON.stringify(abilityName) },
     });
-    activeAbilityClaims.add(claim);
-    return claim;
-  }
-
-  function clearAbilityElement(claim: AnimationElementEffectClaim) {
-    releaseAnimationElementEffectClaim(claim);
-    activeAbilityClaims.delete(claim);
   }
 
   function slotElementForEvent(event: ActionTimelineEvent): HTMLElement | null {

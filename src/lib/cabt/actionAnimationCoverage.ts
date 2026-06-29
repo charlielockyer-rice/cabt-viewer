@@ -197,6 +197,10 @@ export function classifyAnimationCoverage(
     return { key: kind, level: 'polished', label: 'Ability announcement', notes };
   }
 
+  if (kind === 'Coin') {
+    return { key: kind, level: 'polished', label: 'Coin flip announcement', notes };
+  }
+
   if (kind === 'Switch') {
     if (
       (!hasFiniteNumber(params?.serialActive) && !hasFiniteNumber(params?.cardIdActive))
@@ -228,12 +232,12 @@ export function classifyAnimationCoverage(
     return { key: kind, level: 'static', label: 'Timeline/state-only phase marker', notes };
   }
 
-  if (['Poisoned', 'Burned', 'Asleep', 'Paralyzed', 'Confused', 'Coin'].includes(kind)) {
+  if (['Poisoned', 'Burned', 'Asleep', 'Paralyzed', 'Confused'].includes(kind)) {
     return {
       key: kind,
       level: 'static',
       label: 'Checkup or special-condition state change',
-      notes: ['The board state updates, but there is no dedicated condition/coin animation yet.'],
+      notes: ['The board state updates, but there is no dedicated condition animation yet.'],
     };
   }
 

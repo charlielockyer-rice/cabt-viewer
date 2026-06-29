@@ -369,6 +369,72 @@ describe('cabtReplayToSnapshot', () => {
     ]);
   });
 
+  it('plans coin flips as neutral deck-anchored pulses', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [],
+            benchMax: 5,
+            hand: [],
+            deckCount: 40,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 60,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'Coin', playerIndex: 0, head: true },
+          { type: 'Draw', playerIndex: 0, cardId: 3, serial: 101 },
+        ],
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [],
+            benchMax: 5,
+            hand: [{ id: 3, serial: 101 }],
+            deckCount: 39,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 60,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    const step = snapshot.steps[1];
+    expect(step.animationPhases?.map((phase) => phase.key)).toEqual(['Coin:0']);
+    expect(step.animationPhases?.[0].animationPlan?.motions).toMatchObject([
+      {
+        kind: 'pulse',
+        coordinateSpace: 'board',
+        anchor: { kind: 'deck-top', playerIndex: 0 },
+        spriteVisual: { kind: 'pulse', tone: 'neutral' },
+        label: 'Heads',
+      },
+    ]);
+  });
+
   it('keeps played Stadium cards in the stadium zone instead of the resolving discard path', () => {
     const snapshot = cabtReplayToSnapshot({
       visualize: [{

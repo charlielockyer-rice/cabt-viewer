@@ -1535,6 +1535,9 @@ function animationPhaseMotions(
   if (phase.key.startsWith('Attack:')) {
     return attackPulseMotions(phase, view);
   }
+  if (phase.key.startsWith('Coin:')) {
+    return coinPulseMotions(phase);
+  }
   if (phase.key.startsWith('Damage:')) {
     return damagePulseMotions(phase, view, stepEvents);
   }
@@ -1675,6 +1678,25 @@ function damagePulseMotions(phase: AnimationEventPhase, view: GameView, stepEven
       value: damageValueForEvent(event),
       startMs: actionAnimationStartMs(phase.events, event),
       durationMs: actionAnimationTiming.damageVisualMs,
+    } satisfies AnimationMotion];
+  });
+  return compactAnimationMotions(motions);
+}
+
+function coinPulseMotions(phase: AnimationEventPhase): AnimationMotion[] {
+  const motions = phase.events.map((event) => {
+    if (event.kind !== 'Coin' || event.playerIndex === undefined) {
+      return [];
+    }
+    return [{
+      kind: 'pulse',
+      id: `${phase.key}:${event.id}:coin`,
+      anchor: { kind: 'deck-top', playerIndex: event.playerIndex },
+      coordinateSpace: 'board',
+      spriteVisual: { kind: 'pulse', tone: 'neutral' },
+      label: coinResultLabel(event),
+      startMs: actionAnimationStartMs(phase.events, event),
+      durationMs: actionAnimationTiming.coinAnnounceMs,
     } satisfies AnimationMotion];
   });
   return compactAnimationMotions(motions);
@@ -2705,6 +2727,17 @@ function damageValueForEvent(event: ActionTimelineEvent): number {
   return Number.isFinite(value) ? Math.abs(Math.min(0, value)) : 0;
 }
 
+function coinResultLabel(event: ActionTimelineEvent): string {
+  const params = event.params as Record<string, unknown> | undefined;
+  if (params?.head === true) {
+    return 'Heads';
+  }
+  if (params?.head === false) {
+    return 'Tails';
+  }
+  return 'Coin';
+}
+
 function boardPokemonDestinationForEvent(
   player: PlayerView | undefined,
   event: ActionTimelineEvent,
@@ -2786,6 +2819,7 @@ function animationPhaseLabel(phase: AnimationEventPhase): string | undefined {
     || phase.key.startsWith('Evolve:')
     || phase.key.startsWith('Shuffle:')
     || phase.key.startsWith('Attack:')
+    || phase.key.startsWith('Coin:')
     || phase.key.startsWith('Damage:')
     || phase.key.startsWith('KnockOut:')
   ) {
@@ -2851,6 +2885,9 @@ function animationPhaseKey(event: ActionTimelineEvent): string | null {
   }
   if (event.kind === 'Ability') {
     return `Ability:${playerKey}`;
+  }
+  if (event.kind === 'Coin') {
+    return `Coin:${playerKey}`;
   }
   if (event.kind === 'Switch') {
     return `BoardMove:${playerKey}`;
@@ -2939,6 +2976,7 @@ function animationPhaseNeedsDedicatedView(phase: AnimationEventPhase): boolean {
   return phase.key.startsWith('Evolve:')
     || phase.key.startsWith('Ability:')
     || phase.key.startsWith('Attack:')
+    || phase.key.startsWith('Coin:')
     || phase.key.startsWith('Damage:')
     || phase.key.startsWith('KnockOut:')
     || phase.key.startsWith('BoardToDeck:')
@@ -2957,6 +2995,7 @@ function animationPhaseMayHavePlan(phase: AnimationEventPhase): boolean {
     || phase.key.startsWith('Evolve:')
     || phase.key.startsWith('Ability:')
     || phase.key.startsWith('Attack:')
+    || phase.key.startsWith('Coin:')
     || phase.key.startsWith('Damage:')
     || phase.key.startsWith('Draw:')
     || phase.key.startsWith('Shuffle:')
@@ -3199,6 +3238,9 @@ function animationPhaseCardDurationMs(key: string): number {
   if (key.startsWith('Ability:')) {
     return actionAnimationTiming.abilityAnnounceMs;
   }
+  if (key.startsWith('Coin:')) {
+    return actionAnimationTiming.coinAnnounceMs;
+  }
   if (key.startsWith('Damage:')) {
     return actionAnimationTiming.damageVisualMs;
   }
@@ -3259,6 +3301,9 @@ function animationPhaseStepMs(key: string): number {
   }
   if (key.startsWith('Ability:')) {
     return actionAnimationTiming.abilityAnnounceMs;
+  }
+  if (key.startsWith('Coin:')) {
+    return actionAnimationTiming.coinAnnounceMs;
   }
   if (key.startsWith('Damage:')) {
     return actionAnimationTiming.damageVisualMs;

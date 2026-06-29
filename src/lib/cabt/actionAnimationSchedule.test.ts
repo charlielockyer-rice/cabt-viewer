@@ -88,6 +88,16 @@ describe('actionAnimationStartMs', () => {
     );
   });
 
+  it('announces coin flips before their follow-up effects', () => {
+    const events: ActionTimelineEvent[] = [
+      event(1, 'Coin', { head: true }),
+      event(2, 'Draw', { cardId: 3, serial: 12 }),
+    ];
+
+    expect(actionAnimationStartMs(events, events[0])).toBe(0);
+    expect(actionAnimationStartMs(events, events[1])).toBe(actionAnimationTiming.coinAnnounceMs);
+  });
+
   it('sequences board Pokemon returning to deck before follow-up effects', () => {
     const events: ActionTimelineEvent[] = [
       event(1, 'MoveCard', { cardId: 66, serial: 14, fromArea: CabtAreaType.ACTIVE, toArea: CabtAreaType.DECK }),
