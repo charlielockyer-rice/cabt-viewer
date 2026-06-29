@@ -6,7 +6,11 @@ import { isMoveCardKind, type ReplayActionGroup } from './replayActionGroups';
 import { cabtEvolutionTriggeredDrawSkill, isCabtResolvingTrainerCard } from './replayCardData';
 import { eventCardMatches } from './replayCardIdentity';
 import { deckRevealContinuationFrom } from './replayDeckRevealContinuations';
-import { isReplayMoveBetween } from './replayEventAreas';
+import {
+  isReplayMoveBetween,
+  isReplayMoveFromToAny,
+  replayEventMoveAreas,
+} from './replayEventAreas';
 import { type CabtVisualizeFrame } from './replayInput';
 import { CabtAreaType, CabtSelectContext } from './types';
 import type { ActionTimelineEvent, GameView } from '../game/types';
@@ -213,15 +217,12 @@ function isResolvingTrainerTerminalGroup(group: ReplayActionGroup, continuationE
 }
 
 function isTerminalResolvingMoveEvent(event: ActionTimelineEvent): boolean {
-  const params = event.params as Record<string, unknown> | undefined;
-  const fromArea = Number(params?.fromArea);
-  const toArea = Number(params?.toArea);
-  return isMoveCardKind(event.kind)
-    && (
-      toArea === CabtAreaType.DISCARD
-      || isBoardPositionMove(fromArea, toArea)
-      || isAttachedCardArea(fromArea)
-    );
+  const areas = replayEventMoveAreas(event);
+  return !!areas && (
+    areas.toArea === CabtAreaType.DISCARD
+    || isBoardPositionMove(areas.fromArea, areas.toArea)
+    || isAttachedCardArea(areas.fromArea)
+  );
 }
 
 function isResolvingTrainerContinuationGroup(group: ReplayActionGroup): boolean {
@@ -258,22 +259,16 @@ function groupHasDeckSearchStyleMove(group: ReplayActionGroup): boolean {
 }
 
 function isDeckSearchStyleMove(event: ActionTimelineEvent): boolean {
-  if (!isMoveCardKind(event.kind)) {
-    return false;
-  }
-  const params = event.params as Record<string, unknown> | undefined;
-  const fromArea = Number(params?.fromArea);
-  const toArea = Number(params?.toArea);
-  return (fromArea === CabtAreaType.DECK && (
-    toArea === CabtAreaType.HAND
-    || toArea === CabtAreaType.ACTIVE
-    || toArea === CabtAreaType.BENCH
-    || toArea === CabtAreaType.LOOKING
-  ))
-    || (fromArea === CabtAreaType.LOOKING && (
-      toArea === CabtAreaType.HAND
-      || toArea === CabtAreaType.DECK
-    ));
+  return isReplayMoveFromToAny(event, CabtAreaType.DECK, [
+    CabtAreaType.HAND,
+    CabtAreaType.ACTIVE,
+    CabtAreaType.BENCH,
+    CabtAreaType.LOOKING,
+  ])
+    || isReplayMoveFromToAny(event, CabtAreaType.LOOKING, [
+      CabtAreaType.HAND,
+      CabtAreaType.DECK,
+    ]);
 }
 
 export function viewHasEventCardInDiscard(view: GameView, event: ActionTimelineEvent): boolean {
