@@ -21,7 +21,6 @@
   import { CabtAreaType } from '../cabt/types';
   import { elementRectInPlane, type PlaneRect } from '../dom/planeGeometry';
   import { cardFaceImageUrl } from '../game/cardAssets';
-  import { replayAnimationPhaseGapMs } from '../game/replay';
   import type { ActionTimelineEvent } from '../game/types';
 
   type Props = {
@@ -80,6 +79,7 @@
   let previousAttachedRects = new Map<number, RectSnapshot>();
   let motionLayer = $state<HTMLElement>();
   const runState = new ReplayAnimationRunState();
+  const liveAttachedMoveHandoffHoldMs = 90;
   let reduceMotion = $state(false);
   let activeSprites: ActiveAttachedMoveSprite[] = [];
   let nextSpriteInstanceId = 1;
@@ -212,7 +212,7 @@
       }, sprite.delayMs);
       const cleanupDelayMs = sprite.planned
         ? sprite.removeMs
-        : sprite.delayMs + sprite.durationMs + replayHandoffHoldMs();
+        : sprite.delayMs + sprite.durationMs + liveAttachedMoveHandoffHoldMs;
       if (cleanupDelayMs !== undefined) {
         const cleanupTimer = setTimeout(() => {
           removeActiveSpritesByInstanceIds(new Set([activeSprite.instanceId]));
@@ -338,10 +338,6 @@
       planned: input.planned,
       removeMs: input.removeMs,
     }];
-  }
-
-  function replayHandoffHoldMs() {
-    return replayMode ? replayAnimationPhaseGapMs + 40 : 90;
   }
 
   function isAttachedMoveEvent(event: ActionTimelineEvent): boolean {

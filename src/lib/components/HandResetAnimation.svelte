@@ -228,9 +228,7 @@
     const animationSources = hideSources(sprites.map((sprite) => sprite.sourceElement));
     resets = [...resets, animation];
     const timer = setTimeout(() => {
-      if (!replayMode) {
-        showSources(animationSources);
-      }
+      showSources(animationSources);
       resets = resets.filter((item) => item.id !== animation.id);
     }, Math.max(...sprites.map((sprite) => sprite.delayMs)) + cardMoveDurationMs + 120);
     timers.push(timer);

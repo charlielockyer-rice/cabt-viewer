@@ -16,7 +16,6 @@
   import { CabtAreaType } from '../cabt/types';
   import { elementRectInPlane } from '../dom/planeGeometry';
   import { cardBackCssVar } from '../game/cardAssets';
-  import { replayAnimationPhaseGapMs } from '../game/replay';
   import type { ActionTimelineEvent, CardView } from '../game/types';
 
   type Props = {
@@ -148,7 +147,7 @@
       return;
     }
 
-    startBoardMoves(animationEvents);
+    startLiveBoardMoves(animationEvents);
   });
 
   function currentPlanKey(plan: ReplayAnimationPhasePlan | undefined) {
@@ -201,14 +200,14 @@
     return removeMs === undefined ? undefined : Math.max(0, removeMs - motion.startMs);
   }
 
-  function startBoardMoves(animationEvents: ActionTimelineEvent[]) {
+  function startLiveBoardMoves(animationEvents: ActionTimelineEvent[]) {
     const boardPlane = motionLayer?.parentElement;
     if (!motionLayer || !boardPlane) {
       return;
     }
     const generation = animationGeneration;
     const moveEvents = animationEvents.filter(isBoardMoveEvent);
-    for (const instruction of moveEvents.flatMap((event) => moveInstructionsForEvent(event, moveEvents))) {
+    for (const instruction of moveEvents.flatMap((event) => liveMoveInstructionsForEvent(event, moveEvents))) {
       const sourceElement = instruction.source;
       const targetElement = instruction.target;
       const sourceRect = elementRectInPlane(sourceElement, boardPlane);
@@ -232,7 +231,7 @@
         durationMs: actionAnimationTiming.boardMoveMs,
         key: `${instruction.event.id}-${instruction.key}`,
         planned: false,
-      }, generation, boardMoveHandoffDelayMs(animationEvents, instruction, delayMs));
+      }, generation, liveBoardMoveHandoffDelayMs(animationEvents, instruction, delayMs));
     }
   }
 
@@ -326,7 +325,7 @@
       }
       const resolvedHandoffDelayMs = handoffDelayMs ?? (instruction.planned
         ? undefined
-        : instruction.durationMs + replayHandoffHoldMs());
+        : instruction.durationMs);
       if (resolvedHandoffDelayMs === undefined) {
         return;
       }
@@ -370,13 +369,13 @@
     return !!element && isOpponentSide(element);
   }
 
-  function boardMoveHandoffDelayMs(
+  function liveBoardMoveHandoffDelayMs(
     animationEvents: ActionTimelineEvent[],
     instruction: BoardMoveInstruction,
     delayMs: number,
   ) {
     if (!instruction.fromDeck) {
-      return actionAnimationTiming.boardMoveMs + replayHandoffHoldMs();
+      return actionAnimationTiming.boardMoveMs;
     }
     const latestDeckPlacementStartMs = Math.max(
       0,
@@ -385,12 +384,7 @@
         .map((event) => actionAnimationStartMs(animationEvents, event)),
     );
     return actionAnimationTiming.boardMoveMs
-      + Math.max(0, latestDeckPlacementStartMs - delayMs)
-      + replayHandoffHoldMs();
-  }
-
-  function replayHandoffHoldMs() {
-    return replayMode ? replayAnimationPhaseGapMs + replayAnimationScopeExitSettleMs : 0;
+      + Math.max(0, latestDeckPlacementStartMs - delayMs);
   }
 
   function isBoardMoveEvent(event: ActionTimelineEvent) {
@@ -420,21 +414,7 @@
       && (toArea === CabtAreaType.ACTIVE || toArea === CabtAreaType.BENCH);
   }
 
-  function isBoardPositionMoveEvent(event: ActionTimelineEvent) {
-    const params = event.params as Record<string, unknown> | undefined;
-    const fromArea = Number(params?.fromArea);
-    const toArea = Number(params?.toArea);
-    return event.kind === 'Switch'
-      || (
-        event.kind === 'MoveCard'
-        && (
-          (fromArea === CabtAreaType.BENCH && toArea === CabtAreaType.ACTIVE)
-          || (fromArea === CabtAreaType.ACTIVE && toArea === CabtAreaType.BENCH)
-        )
-      );
-  }
-
-  function moveInstructionsForEvent(event: ActionTimelineEvent, moveEvents: ActionTimelineEvent[]): BoardMoveInstruction[] {
+  function liveMoveInstructionsForEvent(event: ActionTimelineEvent, moveEvents: ActionTimelineEvent[]): BoardMoveInstruction[] {
     if (event.kind === 'Switch') {
       return switchMoveInstructions(event);
     }
@@ -453,7 +433,7 @@
       cardId,
       serial: Number.isFinite(Number(params?.serial)) ? Number(params?.serial) : undefined,
       waitForDestinationCard: Number(params?.toArea) === CabtAreaType.DISCARD,
-      holdUntilScopeChange: replayMode && isBoardPositionMoveEvent(event),
+      holdUntilScopeChange: false,
       toDeck: Number(params?.toArea) === CabtAreaType.DECK,
       fromDeck: Number(params?.fromArea) === CabtAreaType.DECK,
       key: `${params?.serial ?? cardId}`,
@@ -478,7 +458,7 @@
         cardId: activeCardId,
         serial: Number.isFinite(Number(params?.serialActive)) ? Number(params?.serialActive) : undefined,
         waitForDestinationCard: false,
-        holdUntilScopeChange: replayMode,
+        holdUntilScopeChange: false,
         toDeck: false,
         fromDeck: false,
         key: `active-${params?.serialActive ?? activeCardId}`,
@@ -491,7 +471,7 @@
         cardId: benchCardId,
         serial: Number.isFinite(Number(params?.serialBench)) ? Number(params?.serialBench) : undefined,
         waitForDestinationCard: false,
-        holdUntilScopeChange: replayMode,
+        holdUntilScopeChange: false,
         toDeck: false,
         fromDeck: false,
         key: `bench-${params?.serialBench ?? benchCardId}`,
