@@ -1,16 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isDeckRevealEvent,
+  isRevealAttachEventForSerials,
+  isRevealReturnEvent,
+  isRevealTakeEvent,
   plannedRevealCards,
+  revealCardActionForEvent,
   revealCardActionsForSteps,
   revealSessionMotions,
   revealSessionPlanKey,
   revealSessionPlanSteps,
+  revealStartActionForEvent,
   revealStartActionsForSteps,
-} from './revealSessionPlanActions';
+} from './revealSessionActions';
 import type { RevealSessionAnimationMotion, ReplayAnimationPhasePlan } from './replayAnimationPlan';
-import type { GameView } from '../game/types';
+import { CabtAreaType } from '../cabt/types';
+import type { ActionTimelineEvent, GameView } from '../game/types';
 
-describe('reveal session plan actions', () => {
+describe('reveal session actions', () => {
   it('filters reveal session motions and builds a stable plan key', () => {
     const revealMotion = revealSessionMotion();
     const plan = {
@@ -128,7 +135,85 @@ describe('reveal session plan actions', () => {
       anchor: { playerIndex: 0, revealIndex: 0, serial: 11 },
     });
   });
+
+  it('derives live deck reveal start actions from CABT events', () => {
+    const reveal = event(1, 'MoveCard', {
+      playerIndex: 0,
+      cardId: 66,
+      serial: 11,
+      fromArea: CabtAreaType.DECK,
+      toArea: CabtAreaType.LOOKING,
+    });
+    const directTake = event(2, 'MoveCard', {
+      playerIndex: 0,
+      cardId: 70,
+      serial: 12,
+      fromArea: CabtAreaType.DECK,
+      toArea: CabtAreaType.HAND,
+    });
+
+    expect(isDeckRevealEvent(reveal)).toBe(true);
+    expect(isDeckRevealEvent(directTake)).toBe(true);
+    expect(revealStartActionForEvent(reveal, [reveal])).toMatchObject({
+      id: '1',
+      playerIndex: 0,
+      card: { id: 66, serial: 11, playerIndex: 0 },
+      serial: 11,
+      startMs: 0,
+      toHand: false,
+    });
+    expect(revealStartActionForEvent(directTake, [directTake])).toMatchObject({
+      id: '2',
+      serial: 12,
+      toHand: true,
+    });
+  });
+
+  it('derives live reveal follow-up actions from CABT events', () => {
+    const attach = event(3, 'Attach', {
+      playerIndex: 0,
+      serial: 11,
+      serialTarget: 64,
+      cardIdTarget: 721,
+      targetAnchor: { kind: 'pokemon-card', playerIndex: 0, slot: 'active', slotIndex: 0, serial: 64 },
+    });
+    const take = event(4, 'MoveCard', {
+      playerIndex: 0,
+      serial: 12,
+      fromArea: CabtAreaType.LOOKING,
+      toArea: CabtAreaType.HAND,
+    });
+    const returned = event(5, 'MoveCard', {
+      playerIndex: 0,
+      serial: 13,
+      fromArea: CabtAreaType.LOOKING,
+      toArea: CabtAreaType.DECK,
+    });
+
+    expect(isRevealAttachEventForSerials(attach, new Set([11]))).toBe(true);
+    expect(isRevealAttachEventForSerials(attach, new Set([12]))).toBe(false);
+    expect(isRevealTakeEvent(take)).toBe(true);
+    expect(isRevealReturnEvent(returned)).toBe(true);
+    expect(revealCardActionForEvent(attach, [attach])).toMatchObject({
+      id: '3',
+      playerIndex: 0,
+      serial: 11,
+      serialTarget: 64,
+      cardIdTarget: 721,
+      targetAnchor: { kind: 'pokemon-card', slot: 'active', slotIndex: 0, serial: 64 },
+    });
+  });
 });
+
+function event(id: number, kind: string, params: Record<string, unknown>): ActionTimelineEvent {
+  return {
+    id,
+    message: kind,
+    kind,
+    playerIndex: typeof params.playerIndex === 'number' ? params.playerIndex : undefined,
+    params,
+  };
+}
 
 function revealSessionMotion(
   overrides: Partial<RevealSessionAnimationMotion> = {},

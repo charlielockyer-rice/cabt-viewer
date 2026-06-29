@@ -1,13 +1,18 @@
 import { replayAnimationSpriteRemovalMs } from './replayAnimationHandoff';
 import type {
+  AnimationAnchorRef,
   AnimationIdentity,
   RevealSessionAnimationMotion,
   RevealSessionStep,
   ReplayAnimationPhasePlan,
 } from './replayAnimationPlan';
 import { replayAnimationPlanOwnsMotion } from './replayAnimationPlan';
+import { actionAnimationStartMs } from '../cabt/actionAnimationSchedule';
 import { cabtCardToView } from '../cabt/cardView';
-import type { CardView } from '../game/types';
+import { replayEventMoveAreas } from '../cabt/replayEventAreas';
+import { finiteNumber } from '../cabt/replayEventParams';
+import { CabtAreaType } from '../cabt/types';
+import type { ActionTimelineEvent, CardView } from '../game/types';
 
 export type RevealCardAnchor = Extract<NonNullable<RevealSessionStep['sourceAnchor']>, { kind: 'reveal-card' }>;
 
@@ -38,6 +43,11 @@ export type RevealCardAction = {
   sourceAnchor?: RevealSessionStep['sourceAnchor'];
   targetAnchor?: RevealSessionStep['targetAnchor'];
   removeMs?: number;
+};
+
+export type LiveRevealCardAction = RevealCardAction & {
+  serialTarget?: number;
+  cardIdTarget?: number;
 };
 
 export type PlannedRevealCard = {
@@ -144,6 +154,88 @@ export function plannedRevealCards(motions: RevealSessionAnimationMotion[]): Pla
     left.anchor.playerIndex - right.anchor.playerIndex
     || left.anchor.revealIndex - right.anchor.revealIndex,
   );
+}
+
+export function isDeckRevealEvent(event: ActionTimelineEvent): boolean {
+  const cardId = finiteNumber((event.params as Record<string, unknown> | undefined)?.cardId);
+  const areas = replayEventMoveAreas(event);
+  return event.kind === 'MoveCard'
+    && areas?.fromArea === CabtAreaType.DECK
+    && (areas.toArea === CabtAreaType.LOOKING || areas.toArea === CabtAreaType.HAND)
+    && cardId !== undefined;
+}
+
+export function isRevealAttachEventForSerials(
+  event: ActionTimelineEvent,
+  revealedSerials: ReadonlySet<number>,
+): boolean {
+  const serial = finiteNumber((event.params as Record<string, unknown> | undefined)?.serial);
+  return event.kind === 'Attach'
+    && serial !== undefined
+    && revealedSerials.has(serial);
+}
+
+export function isRevealReturnEvent(event: ActionTimelineEvent): boolean {
+  const serial = finiteNumber((event.params as Record<string, unknown> | undefined)?.serial);
+  const areas = replayEventMoveAreas(event);
+  return event.kind === 'MoveCard'
+    && areas?.fromArea === CabtAreaType.LOOKING
+    && areas.toArea === CabtAreaType.DECK
+    && serial !== undefined;
+}
+
+export function isRevealTakeEvent(event: ActionTimelineEvent): boolean {
+  const serial = finiteNumber((event.params as Record<string, unknown> | undefined)?.serial);
+  const areas = replayEventMoveAreas(event);
+  return event.kind === 'MoveCard'
+    && areas?.fromArea === CabtAreaType.LOOKING
+    && areas.toArea === CabtAreaType.HAND
+    && serial !== undefined;
+}
+
+export function revealStartActionForEvent(
+  event: ActionTimelineEvent,
+  animationEvents: readonly ActionTimelineEvent[],
+): RevealStartAction | undefined {
+  const params = event.params as Record<string, unknown> | undefined;
+  const cardId = finiteNumber(params?.cardId);
+  if (event.playerIndex === undefined || cardId === undefined) {
+    return undefined;
+  }
+  const serial = finiteNumber(params?.serial);
+  const areas = replayEventMoveAreas(event);
+  return {
+    id: String(event.id),
+    playerIndex: event.playerIndex,
+    card: {
+      ...cabtCardToView(cardId),
+      serial,
+      playerIndex: event.playerIndex,
+    },
+    serial,
+    startMs: actionAnimationStartMs(animationEvents, event),
+    toHand: areas?.toArea === CabtAreaType.HAND,
+  };
+}
+
+export function revealCardActionForEvent(
+  event: ActionTimelineEvent,
+  animationEvents: readonly ActionTimelineEvent[],
+): LiveRevealCardAction | undefined {
+  const params = event.params as Record<string, unknown> | undefined;
+  const serial = finiteNumber(params?.serial);
+  if (event.playerIndex === undefined || serial === undefined) {
+    return undefined;
+  }
+  return {
+    id: String(event.id),
+    playerIndex: event.playerIndex,
+    serial,
+    startMs: actionAnimationStartMs(animationEvents, event),
+    targetAnchor: params?.targetAnchor as AnimationAnchorRef | undefined,
+    serialTarget: finiteNumber(params?.serialTarget),
+    cardIdTarget: finiteNumber(params?.cardIdTarget),
+  };
 }
 
 export function revealCardAnchorsForStep(step: RevealSessionStep): RevealCardAnchor[] {

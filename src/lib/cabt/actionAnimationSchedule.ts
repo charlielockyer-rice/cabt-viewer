@@ -14,7 +14,7 @@ export function actionAnimationBatchEvents(
   return firstUnseenIndex === -1 ? [] : events.slice(firstUnseenIndex);
 }
 
-export function actionAnimationStartMs(events: ActionTimelineEvent[], targetEvent: ActionTimelineEvent): number {
+export function actionAnimationStartMs(events: readonly ActionTimelineEvent[], targetEvent: ActionTimelineEvent): number {
   let elapsedMs = 0;
   let group: { key: string; durationMs: number; stepMs: number; count: number } | null = null;
   const phaseKeys: string[] = [];

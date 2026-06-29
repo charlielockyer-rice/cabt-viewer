@@ -17,17 +17,24 @@
   import type { ReplayAnimationPhasePlan, RevealSessionAnimationMotion, RevealSessionStep } from '../animations/replayAnimationPlan';
   import {
     cardViewForRevealStep,
+    isDeckRevealEvent,
+    isRevealAttachEventForSerials,
+    isRevealReturnEvent,
+    isRevealTakeEvent,
+    revealCardActionForEvent,
     plannedRevealCards,
     revealCardActionsForSteps,
     revealCountForMotion,
     revealSessionMotions,
     revealSessionPlanKey,
     revealSessionPlanSteps,
+    revealStartActionForEvent,
+    type LiveRevealCardAction,
     revealStartActionsForSteps,
     type RevealCardAction,
     type RevealCardAnchor,
     type RevealStartAction,
-  } from '../animations/revealSessionPlanActions';
+  } from '../animations/revealSessionActions';
   import {
     cardHeightToWidthRatio,
     centerOf,
@@ -38,10 +45,7 @@
     handCardVisualRect,
     handSlotForSerial,
   } from '../animations/viewportCardMotion';
-  import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
-  import { cabtCardToView } from '../cabt/cardView';
-  import { replayEventMoveAreas } from '../cabt/replayEventAreas';
-  import { CabtAreaType } from '../cabt/types';
+  import { actionAnimationBatchEvents, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import type { ActionTimelineEvent, CardView } from '../game/types';
 
   type Props = {
@@ -97,10 +101,6 @@
 
   type RevealExecution = 'live' | 'planned';
 
-  type LiveRevealCardAction = RevealCardAction & {
-    serialTarget?: number;
-    cardIdTarget?: number;
-  };
   type RevealTakeTarget = {
     center: { x: number; y: number };
     width: number;
@@ -150,8 +150,9 @@
     const revealActions = animationEvents
       .filter((event) => isDeckRevealEvent(event) && shouldAnimateEvent(event))
       .flatMap((event) => revealStartActionForEvent(event, animationEvents) ?? []);
+    const currentRevealSerials = revealedSpriteSerials();
     const attachActions = animationEvents
-      .filter((event) => isRevealAttachEvent(event) && shouldAnimateEvent(event))
+      .filter((event) => isRevealAttachEventForSerials(event, currentRevealSerials) && shouldAnimateEvent(event))
       .flatMap((event) => revealCardActionForEvent(event, animationEvents) ?? []);
     const takeActions = animationEvents
       .filter((event) => isRevealTakeEvent(event) && shouldAnimateEvent(event))
@@ -259,91 +260,6 @@
 
   function shouldAnimateEvent(event: ActionTimelineEvent): boolean {
     return !replayPlanRunner.hasSeen(event);
-  }
-
-  function isDeckRevealEvent(event: ActionTimelineEvent): boolean {
-    const params = event.params as Record<string, unknown> | undefined;
-    const areas = replayEventMoveAreas(event);
-    return event.kind === 'MoveCard'
-      && areas?.fromArea === CabtAreaType.DECK
-      && (
-        areas.toArea === CabtAreaType.LOOKING
-        || areas.toArea === CabtAreaType.HAND
-      )
-      && Number.isFinite(Number(params?.cardId));
-  }
-
-  function isRevealAttachEvent(event: ActionTimelineEvent): boolean {
-    const params = event.params as Record<string, unknown> | undefined;
-    const serial = Number(params?.serial);
-    return event.kind === 'Attach'
-      && Number.isFinite(serial)
-      && reveals.some((reveal) => reveal.sprites.some((sprite) => sprite.serial === serial));
-  }
-
-  function isRevealReturnEvent(event: ActionTimelineEvent): boolean {
-    const params = event.params as Record<string, unknown> | undefined;
-    const areas = replayEventMoveAreas(event);
-    return event.kind === 'MoveCard'
-      && areas?.fromArea === CabtAreaType.LOOKING
-      && areas.toArea === CabtAreaType.DECK
-      && Number.isFinite(Number(params?.serial));
-  }
-
-  function isRevealTakeEvent(event: ActionTimelineEvent): boolean {
-    const params = event.params as Record<string, unknown> | undefined;
-    const areas = replayEventMoveAreas(event);
-    return event.kind === 'MoveCard'
-      && areas?.fromArea === CabtAreaType.LOOKING
-      && areas.toArea === CabtAreaType.HAND
-      && Number.isFinite(Number(params?.serial));
-  }
-
-  function revealStartActionForEvent(
-    event: ActionTimelineEvent,
-    animationEvents: ActionTimelineEvent[],
-  ): RevealStartAction | undefined {
-    const params = event.params as Record<string, unknown> | undefined;
-    const cardId = Number(params?.cardId);
-    if (event.playerIndex === undefined || !Number.isFinite(cardId)) {
-      return undefined;
-    }
-    const areas = replayEventMoveAreas(event);
-    const serial = Number(params?.serial);
-    return {
-      id: String(event.id),
-      playerIndex: event.playerIndex,
-      card: {
-        ...cabtCardToView(cardId),
-        serial: Number.isFinite(serial) ? serial : undefined,
-        playerIndex: event.playerIndex,
-      },
-      serial: Number.isFinite(serial) ? serial : undefined,
-      startMs: actionAnimationStartMs(animationEvents, event),
-      toHand: areas?.toArea === CabtAreaType.HAND,
-    };
-  }
-
-  function revealCardActionForEvent(
-    event: ActionTimelineEvent,
-    animationEvents: ActionTimelineEvent[],
-  ): LiveRevealCardAction | undefined {
-    const params = event.params as Record<string, unknown> | undefined;
-    const serial = Number(params?.serial);
-    if (event.playerIndex === undefined || !Number.isFinite(serial)) {
-      return undefined;
-    }
-    const serialTarget = Number(params?.serialTarget);
-    const cardIdTarget = Number(params?.cardIdTarget);
-    return {
-      id: String(event.id),
-      playerIndex: event.playerIndex,
-      serial,
-      startMs: actionAnimationStartMs(animationEvents, event),
-      targetAnchor: params?.targetAnchor as AnimationAnchorRef | undefined,
-      serialTarget: Number.isFinite(serialTarget) ? serialTarget : undefined,
-      cardIdTarget: Number.isFinite(cardIdTarget) ? cardIdTarget : undefined,
-    };
   }
 
   function startLiveReveal(revealActions: RevealStartAction[]) {
@@ -959,6 +875,15 @@
       return undefined;
     }
     return reveals.flatMap((reveal) => reveal.sprites).find((sprite) => sprite.serial === serial);
+  }
+
+  function revealedSpriteSerials(): ReadonlySet<number> {
+    return new Set(
+      reveals
+        .flatMap((reveal) => reveal.sprites)
+        .map((sprite) => sprite.serial)
+        .filter((serial): serial is number => serial !== undefined),
+    );
   }
 
   function revealAnimationForSprite(serial: number): RevealAnimation | undefined {
