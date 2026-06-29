@@ -1,4 +1,4 @@
-import type { ActionTimelineEvent, CardView, GameView } from '../game/types';
+import type { CardView, GameView } from '../game/types';
 import type { AnimationAnchorRef, AnimationIdentity } from './animationAnchors';
 import type { AnimationVisibilityClaim } from './animationVisibility';
 
@@ -96,7 +96,6 @@ export type ReplayAnimationPhasePlan = {
   key: string;
   label?: string;
   view: GameView;
-  actionTimeline: ActionTimelineEvent[];
   durationMs: number;
   motions: AnimationMotion[];
   visibilityClaims: AnimationVisibilityClaim[];
@@ -113,7 +112,6 @@ export function createReplayAnimationPhasePlan(input: {
   key: string;
   label?: string;
   view: GameView;
-  actionTimeline?: ActionTimelineEvent[];
   durationMs: number;
   motions?: AnimationMotion[];
   visibilityClaims?: AnimationVisibilityClaim[];
@@ -136,7 +134,6 @@ export function createReplayAnimationPhasePlan(input: {
     key: input.key,
     label: input.label,
     view: input.view,
-    actionTimeline: input.actionTimeline ?? [],
     durationMs: input.durationMs,
     motions,
     visibilityClaims,

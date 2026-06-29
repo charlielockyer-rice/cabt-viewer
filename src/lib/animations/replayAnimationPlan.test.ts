@@ -6,22 +6,10 @@ import {
   replayAnimationPhasePlanDurationMs,
   type AnimationMotion,
 } from './replayAnimationPlan';
-import type { ActionTimelineEvent, GameView } from '../game/types';
+import type { GameView } from '../game/types';
 
 describe('replay animation phase plans', () => {
-  it('uses explicit motion timing instead of event classification', () => {
-    const actionTimeline: ActionTimelineEvent[] = [
-      {
-        id: 1,
-        kind: 'Play',
-        message: 'Player played a card',
-      },
-      {
-        id: 2,
-        kind: 'CompletelyNewFutureEventKind',
-        message: 'A future event that no component knows how to classify',
-      },
-    ];
+  it('uses explicit motion timing as the animation contract', () => {
     const motions: AnimationMotion[] = [
       cardMoveMotion('play-card', 120, 360),
       cardMoveMotion('resolve-card', 640, 300),
@@ -30,7 +18,6 @@ describe('replay animation phase plans', () => {
     const plan = createReplayAnimationPhasePlan({
       key: 'FutureCardEffect:0',
       view: gameView(),
-      actionTimeline,
       durationMs: 980,
       motions,
     });
