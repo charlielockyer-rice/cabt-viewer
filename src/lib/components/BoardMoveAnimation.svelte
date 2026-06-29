@@ -72,7 +72,7 @@
     key: string;
   };
 
-  type HiddenBoardMoveElement = ElementVisibilityClaim;
+  type LiveHiddenBoardMoveElement = ElementVisibilityClaim;
 
   const boardMoveHandoffPollMs = 16;
   const boardMoveHandoffMaxWaitMs = 300;
@@ -90,7 +90,7 @@
   const handoffFrameIds: number[] = [];
   let sprites = $state<BoardMoveSprite[]>([]);
   let animationGeneration = 0;
-  const hiddenElements = new Map<HTMLElement, HiddenBoardMoveElement[]>();
+  const liveHiddenElements = new Map<HTMLElement, LiveHiddenBoardMoveElement[]>();
   const replayPlanRunner = createReplayPhasePlanRunner({
     selectMotions: boardCardMoveMotions,
     planKey: (_motions, plan) => replayAnimationPhasePlanKey(plan),
@@ -297,7 +297,7 @@
       }
 
       const delayMs = actionAnimationStartMs(animationEvents, instruction.event);
-      startBoardMoveInstruction({
+      startLiveBoardMoveInstruction({
         source: sourceElement,
         target: targetElement,
         cardId: instruction.cardId,
@@ -314,7 +314,7 @@
     }
   }
 
-  function startBoardMoveInstruction(
+  function startLiveBoardMoveInstruction(
     instruction: {
       source: HTMLElement;
       target: HTMLElement;
@@ -382,8 +382,8 @@
       }
 
       const correction = measureSpriteCorrection(sprite, instruction.target);
-      hideBoardMoveElement(instruction.source);
-      hideBoardMoveElement(instruction.target);
+      hideLiveBoardMoveElement(instruction.source);
+      hideLiveBoardMoveElement(instruction.target);
       sprites = sprites.map((item) => item.id === sprite.id
         ? {
             ...item,
@@ -400,7 +400,7 @@
         return;
       }
       const finishTimer = setTimeout(() => {
-        handOffWhenDestinationReady(instruction.source, instruction.target, sprite, Date.now(), generation);
+        handOffLiveBoardMoveWhenDestinationReady(instruction.source, instruction.target, sprite, Date.now(), generation);
       }, resolvedHandoffDelayMs);
       timers.push(finishTimer);
     }, instruction.delayMs);
@@ -659,11 +659,11 @@
       clearTimeout(timer);
     }
     timers.length = 0;
-    const elementsToRestore = hiddenElementSnapshots();
+    const elementsToRestore = liveHiddenElementSnapshots();
     const spriteIdsToClear = new Set(sprites.map((sprite) => sprite.id));
     if (settleHandoff && (elementsToRestore.length || spriteIdsToClear.size)) {
       const timer = setTimeout(() => {
-        restoreBoardMoveElements(elementsToRestore);
+        restoreLiveBoardMoveElements(elementsToRestore);
         removeSpritesAfterPrepaint(spriteIdsToClear, cleanupGeneration);
         const timerIndex = handoffTimers.indexOf(timer);
         if (timerIndex >= 0) {
@@ -674,44 +674,44 @@
       return;
     }
 
-    restoreBoardMoveElements(elementsToRestore);
+    restoreLiveBoardMoveElements(elementsToRestore);
     sprites = [];
   }
 
-  function hiddenElementSnapshots() {
-    return [...hiddenElements.values()].flat();
+  function liveHiddenElementSnapshots() {
+    return [...liveHiddenElements.values()].flat();
   }
 
-  function restoreBoardMoveElements(elements: HiddenBoardMoveElement[]) {
+  function restoreLiveBoardMoveElements(elements: LiveHiddenBoardMoveElement[]) {
     for (const hidden of elements) {
-      releaseBoardMoveElementClaim(hidden);
+      releaseLiveBoardMoveElementClaim(hidden);
     }
   }
 
-  function hideBoardMoveElement(element: HTMLElement) {
+  function hideLiveBoardMoveElement(element: HTMLElement) {
     const hidden = hideElementForAnimation({
       element,
       scopeKey,
       role: 'handoff',
       fallbackAttribute: 'data-board-move-animation-hidden',
     });
-    const existing = hiddenElements.get(element) ?? [];
-    hiddenElements.set(element, [...existing, hidden]);
+    const existing = liveHiddenElements.get(element) ?? [];
+    liveHiddenElements.set(element, [...existing, hidden]);
   }
 
-  function showBoardMoveElement(element: HTMLElement) {
-    const entries = hiddenElements.get(element);
+  function showLiveBoardMoveElement(element: HTMLElement) {
+    const entries = liveHiddenElements.get(element);
     if (!entries?.length) {
       return;
     }
     for (const hidden of entries) {
       releaseElementVisibilityClaim(hidden);
     }
-    hiddenElements.delete(element);
+    liveHiddenElements.delete(element);
   }
 
-  function releaseBoardMoveElementClaim(hidden: HiddenBoardMoveElement) {
-    const entries = hiddenElements.get(hidden.element);
+  function releaseLiveBoardMoveElementClaim(hidden: LiveHiddenBoardMoveElement) {
+    const entries = liveHiddenElements.get(hidden.element);
     if (!entries?.length) {
       return;
     }
@@ -721,10 +721,10 @@
     }
     releaseElementVisibilityClaim(hidden);
     if (entries.length) {
-      hiddenElements.set(hidden.element, entries);
+      liveHiddenElements.set(hidden.element, entries);
       return;
     }
-    hiddenElements.delete(hidden.element);
+    liveHiddenElements.delete(hidden.element);
   }
 
   function removeSpritesAfterPrepaint(spriteIdsToClear: Set<string>, generation: number) {
@@ -804,7 +804,7 @@
     }
   }
 
-  function handOffWhenDestinationReady(
+  function handOffLiveBoardMoveWhenDestinationReady(
     source: HTMLElement,
     target: HTMLElement,
     sprite: BoardMoveSprite,
@@ -815,26 +815,26 @@
       return;
     }
     const destinationReady = sprite.waitForDestinationCard
-      ? destinationContainsCard(target, sprite)
+      ? liveDestinationContainsCard(target, sprite)
       : sprite.toDeck
         ? true
       : !!target.querySelector('.card-tile');
     const timedOut = Date.now() - startTime >= boardMoveHandoffMaxWaitMs;
     const detached = !document.body.contains(source) || !document.body.contains(target);
     if (destinationReady || timedOut || detached) {
-      showBoardMoveElement(source);
-      showBoardMoveElement(target);
+      showLiveBoardMoveElement(source);
+      showLiveBoardMoveElement(target);
       removeSpritesAfterPrepaint(new Set([sprite.id]), generation);
       return;
     }
 
     const retry = setTimeout(() => {
-      handOffWhenDestinationReady(source, target, sprite, startTime, generation);
+      handOffLiveBoardMoveWhenDestinationReady(source, target, sprite, startTime, generation);
     }, boardMoveHandoffPollMs);
     timers.push(retry);
   }
 
-  function destinationContainsCard(target: HTMLElement, sprite: BoardMoveSprite) {
+  function liveDestinationContainsCard(target: HTMLElement, sprite: BoardMoveSprite) {
     const selector = sprite.destinationSerial !== undefined
       ? `.card-tile[data-card-serial="${sprite.destinationSerial}"]`
       : `.card-tile[data-card-id="${sprite.destinationCardId}"]`;
