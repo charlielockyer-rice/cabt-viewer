@@ -56,7 +56,7 @@
     id: string;
     card: CardView;
     serial?: number;
-    targetElement?: HTMLElement;
+    liveTargetElement?: HTMLElement;
     order: number;
     mode: RevealMode;
     delayMs: number;
@@ -79,10 +79,20 @@
     removeMs?: number;
   };
 
-  type RevealAnimation = {
+  type RevealAnimationBase = {
     id: number;
     sprites: RevealSprite[];
   };
+  type PlannedRevealAnimation = RevealAnimationBase & { lifecycle: { kind: 'planned' } };
+  type LiveRevealAnimation = RevealAnimationBase & {
+    lifecycle: {
+      kind: 'live';
+      hiddenTargets: LiveHiddenRevealTarget[];
+      attachElementCounts: Map<HTMLElement, number>;
+      attachClaims: ElementVisibilityClaim[];
+    };
+  };
+  type RevealAnimation = PlannedRevealAnimation | LiveRevealAnimation;
 
   type RevealExecution = 'live' | 'planned';
 
@@ -109,9 +119,6 @@
   const handoffSettleMs = 48;
   let reveals = $state<RevealAnimation[]>([]);
   let nextAnimationId = 1;
-  const liveAttachElementCounts = new Map<HTMLElement, number>();
-  let liveAttachClaims: ElementVisibilityClaim[] = [];
-  let liveHiddenTargets: LiveHiddenRevealTarget[] = [];
   const replayPlanRunner = createReplayPhasePlanRunner({
     selectMotions: revealSessionMotions,
     planKey: revealSessionPlanKey,
@@ -206,6 +213,7 @@
       reveals = [{
         id: nextAnimationId++,
         sprites,
+        lifecycle: { kind: 'planned' },
       }];
     }
   }
@@ -358,12 +366,20 @@
 
     clearReveals();
     const liveTargetElements = sprites
-      .filter((sprite) => sprite.mode === 'searching' && sprite.targetElement)
-      .map((sprite) => sprite.targetElement!);
-    const liveHiddenSearchTargets = execution === 'live' ? hideLiveTargets(liveTargetElements) : [];
+      .filter((sprite) => sprite.mode === 'searching' && sprite.liveTargetElement)
+      .map((sprite) => sprite.liveTargetElement!);
+    const liveHiddenSearchTargets = execution === 'live' ? createLiveHiddenTargets(liveTargetElements) : [];
     const animation: RevealAnimation = {
       id: nextAnimationId++,
       sprites,
+      lifecycle: execution === 'live'
+        ? {
+            kind: 'live',
+            hiddenTargets: liveHiddenSearchTargets,
+            attachElementCounts: new Map(),
+            attachClaims: [],
+          }
+        : { kind: 'planned' },
     };
     reveals = [animation];
 
@@ -372,10 +388,10 @@
         continue;
       }
       const revealMs = motionDurationMs(actionAnimationTiming.deckRevealMs);
-      const target = sprite.targetElement;
+      const target = sprite.liveTargetElement;
       const handoffTimer = setTimeout(() => {
         if (target) {
-          showLiveTargets(liveHiddenSearchTargets.filter((claim) => claim.element === target));
+          showLiveTargets(animation, liveHiddenSearchTargets.filter((claim) => claim.element === target));
         }
         removeSpritesAfterPrepaint((item) => item.id === sprite.id);
       }, sprite.removeMs ?? (sprite.delayMs + revealMs + handoffSettleMs));
@@ -406,8 +422,9 @@
       const sourceCenter = spriteCenter(sprite);
       const targetCenter = centerOf(targetRect);
       const delayMs = action.startMs;
-      if (execution === 'live') {
-        markAttachTarget(target, action.serial, delayMs);
+      const animation = revealAnimationForSprite(action.serial);
+      if (execution === 'live' && animation?.lifecycle.kind === 'live') {
+        markAttachTarget(animation, target, action.serial, delayMs);
       }
       updateSprites((item) => item.serial === action.serial
         ? {
@@ -444,7 +461,10 @@
       const takeSource = normalizedSpriteForTake(sprite);
       const sourceCenter = spriteCenter(takeSource);
       const delayMs = action.startMs;
-      const liveHiddenTakeTargets = execution === 'live' && target.element ? hideLiveTargets([target.element]) : [];
+      const animation = revealAnimationForSprite(action.serial);
+      const liveHiddenTakeTargets = execution === 'live' && target.element && animation
+        ? hideLiveTargets(animation, [target.element])
+        : [];
       updateSprites((item) => item.serial === action.serial
         ? {
             ...normalizedSpriteForTake(item),
@@ -457,7 +477,7 @@
         : item);
       const timer = setTimeout(() => {
         if (target.element) {
-          showLiveTargets(liveHiddenTakeTargets);
+          showLiveTargets(animation, liveHiddenTakeTargets);
         }
         removeSpritesAfterPrepaint((item) => item.serial === action.serial);
       }, action.removeMs ?? (delayMs + actionAnimationTiming.handMoveMs + handoffSettleMs));
@@ -517,39 +537,27 @@
       cancelAnimationFrame(frameId);
     }
     handoffFrameIds.length = 0;
-    clearLiveHiddenTargets();
+    for (const reveal of reveals) {
+      releaseRevealLiveState(reveal);
+    }
     reveals = [];
-    clearAttachTargets();
   }
 
   function settleReveals() {
-    const revealIds = new Set(reveals.map((reveal) => reveal.id));
-    const hiddenToRelease = [...liveHiddenTargets];
-    const attachCountsToRelease = Array.from(liveAttachElementCounts.entries());
-    const attachClaimsToRelease = [...liveAttachClaims];
+    const pendingReveals = [...reveals];
+    const revealIds = new Set(pendingReveals.map((reveal) => reveal.id));
     for (const frameId of handoffFrameIds) {
       cancelAnimationFrame(frameId);
     }
     handoffFrameIds.length = 0;
-    const items = revealIds.size
-      ? reveals.map((reveal) => ({ id: reveal.id }))
-      : hiddenToRelease.length || attachCountsToRelease.length || attachClaimsToRelease.length
-        ? [{ id: -1 }]
-        : [];
     scheduleReplayAnimationScopeClear({
-      items,
+      items: pendingReveals.map((reveal) => ({ id: reveal.id })),
       timers,
       delayMs: replayAnimationScopeExitSettleMs,
       removeIds() {
         reveals = reveals.filter((reveal) => !revealIds.has(reveal.id));
-        showLiveTargets(hiddenToRelease);
-        for (const [element, count] of attachCountsToRelease) {
-          for (let index = 0; index < count; index += 1) {
-            deactivateAttachElement(element);
-          }
-        }
-        for (const claim of attachClaimsToRelease) {
-          releaseAttachClaim(claim);
+        for (const reveal of pendingReveals) {
+          releaseRevealLiveState(reveal);
         }
       },
     });
@@ -675,6 +683,7 @@
   }
 
   function markAttachTarget(
+    animation: LiveRevealAnimation,
     target: HTMLElement,
     serial: number,
     delayMs: number,
@@ -689,56 +698,56 @@
         })
       : undefined;
     if (immediateClaim) {
-      liveAttachClaims = [...liveAttachClaims, immediateClaim];
+      animation.lifecycle.attachClaims = [...animation.lifecycle.attachClaims, immediateClaim];
     }
     const startTimer = setTimeout(() => {
       const attachedElement = attachedCardElement(target, serial);
       if (attachedElement) {
-        activateAttachElement(attachedElement);
+        activateAttachElement(animation, attachedElement);
       }
       if (immediateClaim) {
-        releaseAttachClaim(immediateClaim);
+        releaseAttachClaim(animation, immediateClaim);
       }
     }, delayMs);
     const endTimer = setTimeout(() => {
       const attachedElement = attachedCardElement(target, serial);
       if (attachedElement) {
-        deactivateAttachElement(attachedElement);
+        deactivateAttachElement(animation, attachedElement);
       }
     }, delayMs + actionAnimationTiming.handMoveMs + 120);
     timers.push(startTimer, endTimer);
   }
 
-  function clearAttachTargets() {
-    for (const element of liveAttachElementCounts.keys()) {
+  function clearAttachTargets(animation: LiveRevealAnimation) {
+    for (const element of animation.lifecycle.attachElementCounts.keys()) {
       element.classList.remove('reveal-attach-handoff-energy');
     }
-    liveAttachElementCounts.clear();
-    for (const claim of liveAttachClaims) {
+    animation.lifecycle.attachElementCounts.clear();
+    for (const claim of animation.lifecycle.attachClaims) {
       releaseElementVisibilityClaim(claim);
     }
-    liveAttachClaims = [];
+    animation.lifecycle.attachClaims = [];
   }
 
-  function activateAttachElement(element: HTMLElement) {
-    const count = liveAttachElementCounts.get(element) ?? 0;
-    liveAttachElementCounts.set(element, count + 1);
+  function activateAttachElement(animation: LiveRevealAnimation, element: HTMLElement) {
+    const count = animation.lifecycle.attachElementCounts.get(element) ?? 0;
+    animation.lifecycle.attachElementCounts.set(element, count + 1);
     element.classList.add('reveal-attach-handoff-energy');
   }
 
-  function deactivateAttachElement(element: HTMLElement) {
-    const count = (liveAttachElementCounts.get(element) ?? 1) - 1;
+  function deactivateAttachElement(animation: LiveRevealAnimation, element: HTMLElement) {
+    const count = (animation.lifecycle.attachElementCounts.get(element) ?? 1) - 1;
     if (count > 0) {
-      liveAttachElementCounts.set(element, count);
+      animation.lifecycle.attachElementCounts.set(element, count);
       return;
     }
-    liveAttachElementCounts.delete(element);
+    animation.lifecycle.attachElementCounts.delete(element);
     element.classList.remove('reveal-attach-handoff-energy');
   }
 
-  function releaseAttachClaim(claim: ElementVisibilityClaim) {
+  function releaseAttachClaim(animation: LiveRevealAnimation, claim: ElementVisibilityClaim) {
     releaseElementVisibilityClaim(claim);
-    liveAttachClaims = liveAttachClaims.filter((item) => item !== claim);
+    animation.lifecycle.attachClaims = animation.lifecycle.attachClaims.filter((item) => item !== claim);
   }
 
   function attachedCardElement(target: HTMLElement, serial: number): HTMLElement | null {
@@ -789,7 +798,7 @@
         id: `${action.id}-${action.serial ?? index}`,
         card: action.card,
         serial: action.serial,
-        targetElement: takeTarget?.element,
+        liveTargetElement: execution === 'live' ? takeTarget?.element : undefined,
         order: index + 1,
         mode,
         delayMs: action.startMs,
@@ -871,12 +880,16 @@
   }
 
   function removeSprites(predicate: (sprite: RevealSprite) => boolean) {
-    reveals = reveals
-      .map((reveal) => ({
-        ...reveal,
-        sprites: reveal.sprites.filter((sprite) => !predicate(sprite)),
-      }))
-      .filter((reveal) => reveal.sprites.length > 0);
+    const nextReveals: RevealAnimation[] = [];
+    for (const reveal of reveals) {
+      const sprites = reveal.sprites.filter((sprite) => !predicate(sprite));
+      if (sprites.length) {
+        nextReveals.push({ ...reveal, sprites });
+      } else {
+        releaseRevealLiveState(reveal);
+      }
+    }
+    reveals = nextReveals;
   }
 
   function removeSpritesAfterPrepaint(predicate: (sprite: RevealSprite) => boolean) {
@@ -890,6 +903,13 @@
       return undefined;
     }
     return reveals.flatMap((reveal) => reveal.sprites).find((sprite) => sprite.serial === serial);
+  }
+
+  function revealAnimationForSprite(serial: number): RevealAnimation | undefined {
+    if (!Number.isFinite(serial)) {
+      return undefined;
+    }
+    return reveals.find((reveal) => reveal.sprites.some((sprite) => sprite.serial === serial));
   }
 
   function handTargetForPlayer(
@@ -917,7 +937,7 @@
     };
   }
 
-  function hideLiveTargets(targets: HTMLElement[]) {
+  function createLiveHiddenTargets(targets: HTMLElement[]) {
     const liveHiddenClaims: LiveHiddenRevealTarget[] = [];
     for (const target of targets) {
       liveHiddenClaims.push(hideElementForAnimation({
@@ -927,21 +947,37 @@
         fallbackAttribute: 'data-reveal-animation-hidden',
       }));
     }
-    liveHiddenTargets = [...liveHiddenTargets, ...liveHiddenClaims];
     return liveHiddenClaims;
   }
 
-  function showLiveTargets(targets: LiveHiddenRevealTarget[]) {
-    const nextHiddenTargets = new Set(liveHiddenTargets);
+  function hideLiveTargets(animation: RevealAnimation, targets: HTMLElement[]) {
+    if (animation.lifecycle.kind !== 'live') {
+      return [];
+    }
+    const liveHiddenClaims = createLiveHiddenTargets(targets);
+    animation.lifecycle.hiddenTargets = [...animation.lifecycle.hiddenTargets, ...liveHiddenClaims];
+    return liveHiddenClaims;
+  }
+
+  function showLiveTargets(animation: RevealAnimation | undefined, targets: LiveHiddenRevealTarget[]) {
+    const nextHiddenTargets = new Set(
+      animation?.lifecycle.kind === 'live' ? animation.lifecycle.hiddenTargets : [],
+    );
     for (const target of targets) {
       releaseElementVisibilityClaim(target);
       nextHiddenTargets.delete(target);
     }
-    liveHiddenTargets = [...nextHiddenTargets];
+    if (animation?.lifecycle.kind === 'live') {
+      animation.lifecycle.hiddenTargets = [...nextHiddenTargets];
+    }
   }
 
-  function clearLiveHiddenTargets() {
-    showLiveTargets([...liveHiddenTargets]);
+  function releaseRevealLiveState(animation: RevealAnimation) {
+    if (animation.lifecycle.kind !== 'live') {
+      return;
+    }
+    showLiveTargets(animation, [...animation.lifecycle.hiddenTargets]);
+    clearAttachTargets(animation);
   }
 
   function motionDurationMs(durationMs: number): number {
