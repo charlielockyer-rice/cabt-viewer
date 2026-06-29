@@ -4,8 +4,12 @@ import {
   handDestinationAnchorForEvent,
   revealAttachTargetAnchorForEvent,
 } from './replayAnimationAnchors';
-import { isMoveCardKind } from './replayActionGroups';
 import { cardViewFromEvent } from './replayCardIdentity';
+import {
+  isReplayMoveBetween,
+  isReplayMoveFromToAny,
+  replayEventSerial,
+} from './replayEventAreas';
 import { finiteNumber, stringValue } from './replayEventParams';
 import type { AnimationEventPhase } from './replayAnimationPhases';
 import { CabtAreaType } from './types';
@@ -78,13 +82,13 @@ function revealSessionStepsForPhase(
     const returningSerials = new Set(
       phase.events
         .filter((event) => isRevealReturnEvent(event, playerIndex))
-        .map((event) => finiteNumber((event.params as Record<string, unknown> | undefined)?.serial))
+        .map(replayEventSerial)
         .filter((serial): serial is number => serial !== undefined),
     );
     const selectSteps = stepEvents
       .filter((event) => isRevealTakeEvent(event, playerIndex))
       .filter((event) => {
-        const serial = finiteNumber((event.params as Record<string, unknown> | undefined)?.serial);
+        const serial = replayEventSerial(event);
         return serial !== undefined && !returningSerials.has(serial);
       })
       .map((event) => revealSessionStep(event, phase, 'select', {
@@ -138,7 +142,7 @@ function revealSessionStep(
   },
 ): RevealSessionStep {
   const params = event.params as Record<string, unknown> | undefined;
-  const serial = finiteNumber(params?.serial);
+  const serial = replayEventSerial(event);
   const cardId = finiteNumber(params?.cardId);
   const resolvesToVisibleDestination = kind === 'take' || kind === 'attach';
   const handoffPolicy = revealSessionStepHandoffPolicy(kind, options.sourceAnchor, resolvesToVisibleDestination);
@@ -189,7 +193,7 @@ function revealSessionStepHandoffPolicy(
 function revealIndexBySerial(revealEvents: ActionTimelineEvent[]): Map<number, number> {
   const indexes = new Map<number, number>();
   for (const [index, event] of revealEvents.entries()) {
-    const serial = finiteNumber((event.params as Record<string, unknown> | undefined)?.serial);
+    const serial = replayEventSerial(event);
     if (serial !== undefined) {
       indexes.set(serial, index);
     }
@@ -202,7 +206,7 @@ function revealCardAnchor(
   event: ActionTimelineEvent,
   revealIndexes: ReadonlyMap<number, number>,
 ): AnimationAnchorRef | undefined {
-  const serial = finiteNumber((event.params as Record<string, unknown> | undefined)?.serial);
+  const serial = replayEventSerial(event);
   if (serial === undefined) {
     return undefined;
   }
@@ -213,38 +217,23 @@ function revealCardAnchor(
 }
 
 function isRevealSourceEvent(event: ActionTimelineEvent, playerIndex: number): boolean {
-  const params = event.params as Record<string, unknown> | undefined;
   return event.playerIndex === playerIndex
-    && isMoveCardKind(event.kind)
-    && Number(params?.fromArea) === CabtAreaType.DECK
-    && (
-      Number(params?.toArea) === CabtAreaType.LOOKING
-      || Number(params?.toArea) === CabtAreaType.HAND
-    );
+    && isReplayMoveFromToAny(event, CabtAreaType.DECK, [CabtAreaType.LOOKING, CabtAreaType.HAND]);
 }
 
 function isDeckToHandSearchEvent(event: ActionTimelineEvent, playerIndex: number): boolean {
-  const params = event.params as Record<string, unknown> | undefined;
   return event.playerIndex === playerIndex
-    && isMoveCardKind(event.kind)
-    && Number(params?.fromArea) === CabtAreaType.DECK
-    && Number(params?.toArea) === CabtAreaType.HAND;
+    && isReplayMoveBetween(event, CabtAreaType.DECK, CabtAreaType.HAND);
 }
 
 function isRevealReturnEvent(event: ActionTimelineEvent, playerIndex: number): boolean {
-  const params = event.params as Record<string, unknown> | undefined;
   return event.playerIndex === playerIndex
-    && isMoveCardKind(event.kind)
-    && Number(params?.fromArea) === CabtAreaType.LOOKING
-    && Number(params?.toArea) === CabtAreaType.DECK;
+    && isReplayMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.DECK);
 }
 
 function isRevealTakeEvent(event: ActionTimelineEvent, playerIndex: number): boolean {
-  const params = event.params as Record<string, unknown> | undefined;
   return event.playerIndex === playerIndex
-    && isMoveCardKind(event.kind)
-    && Number(params?.fromArea) === CabtAreaType.LOOKING
-    && Number(params?.toArea) === CabtAreaType.HAND;
+    && isReplayMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.HAND);
 }
 
 function isRevealAttachEvent(
@@ -252,7 +241,7 @@ function isRevealAttachEvent(
   playerIndex: number,
   revealIndexes: ReadonlyMap<number, number>,
 ): boolean {
-  const serial = finiteNumber((event.params as Record<string, unknown> | undefined)?.serial);
+  const serial = replayEventSerial(event);
   return event.playerIndex === playerIndex
     && event.kind === 'Attach'
     && serial !== undefined
