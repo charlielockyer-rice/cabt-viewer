@@ -122,6 +122,7 @@ export function createReplayAnimationPhasePlan(input: {
   for (const motion of motions) {
     validateMotionTiming(motion);
   }
+  validateVisibilityClaims(input.key, motions, visibilityClaims);
 
   const motionSpanMs = replayAnimationMotionSpanMs(motions);
   if (input.durationMs < motionSpanMs) {
@@ -168,6 +169,35 @@ function validateMotionTiming(motion: AnimationMotion): void {
     for (const step of motion.steps) {
       assertFiniteNonNegative(step.startMs, `${motion.id}.${step.id}.startMs`);
       assertFiniteNonNegative(step.durationMs, `${motion.id}.${step.id}.durationMs`);
+    }
+  }
+}
+
+function validateVisibilityClaims(
+  phaseKey: string,
+  motions: readonly AnimationMotion[],
+  claims: readonly AnimationVisibilityClaim[],
+): void {
+  const motionsById = new Map(motions.map((motion) => [motion.id, motion]));
+  for (const claim of claims) {
+    if (!claim.motionId) {
+      throw new Error(`Replay animation phase "${phaseKey}" visibility claim for ${claim.role} is missing a motion id.`);
+    }
+    const motion = motionsById.get(claim.motionId);
+    if (!motion) {
+      throw new Error(`Replay animation phase "${phaseKey}" visibility claim references unknown motion "${claim.motionId}".`);
+    }
+    if (motion.kind !== 'reveal-session') {
+      if (claim.stepId) {
+        throw new Error(`Replay animation phase "${phaseKey}" visibility claim for motion "${claim.motionId}" must not include a step id.`);
+      }
+      continue;
+    }
+    if (!claim.stepId) {
+      throw new Error(`Replay animation phase "${phaseKey}" visibility claim for reveal session "${claim.motionId}" is missing a step id.`);
+    }
+    if (!motion.steps.some((step) => step.id === claim.stepId)) {
+      throw new Error(`Replay animation phase "${phaseKey}" visibility claim references unknown step "${claim.stepId}".`);
     }
   }
 }

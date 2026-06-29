@@ -2599,16 +2599,46 @@ function animationMotionVisibilityClaims(
   const claims: AnimationVisibilityClaim[] = [];
   for (const motion of motions) {
     if (motion.kind === 'card-move') {
-      appendMotionClaim(claims, scopeKey, motion.sourceAnchor, motion.identity, 'source', motion.handoffPolicy.hideSourceUntil);
-      appendMotionClaim(claims, scopeKey, motion.targetAnchor, motion.identity, 'destination', motion.handoffPolicy.hideDestinationUntil);
+      appendMotionClaim(claims, {
+        scopeKey,
+        motionId: motion.id,
+        anchor: motion.sourceAnchor,
+        identity: motion.identity,
+        role: 'source',
+        policy: motion.handoffPolicy.hideSourceUntil,
+      });
+      appendMotionClaim(claims, {
+        scopeKey,
+        motionId: motion.id,
+        anchor: motion.targetAnchor,
+        identity: motion.identity,
+        role: 'destination',
+        policy: motion.handoffPolicy.hideDestinationUntil,
+      });
       continue;
     }
     if (motion.kind !== 'reveal-session') {
       continue;
     }
     for (const step of motion.steps) {
-      appendMotionClaim(claims, scopeKey, step.sourceAnchor, step.identity, 'source', step.handoffPolicy?.hideSourceUntil);
-      appendMotionClaim(claims, scopeKey, step.targetAnchor, step.identity, 'destination', step.handoffPolicy?.hideDestinationUntil);
+      appendMotionClaim(claims, {
+        scopeKey,
+        motionId: motion.id,
+        stepId: step.id,
+        anchor: step.sourceAnchor,
+        identity: step.identity,
+        role: 'source',
+        policy: step.handoffPolicy?.hideSourceUntil,
+      });
+      appendMotionClaim(claims, {
+        scopeKey,
+        motionId: motion.id,
+        stepId: step.id,
+        anchor: step.targetAnchor,
+        identity: step.identity,
+        role: 'destination',
+        policy: step.handoffPolicy?.hideDestinationUntil,
+      });
     }
   }
   return claims;
@@ -2616,12 +2646,17 @@ function animationMotionVisibilityClaims(
 
 function appendMotionClaim(
   claims: AnimationVisibilityClaim[],
-  scopeKey: string,
-  anchor: AnimationAnchorRef | undefined,
-  identity: AnimationIdentity | undefined,
-  role: AnimationVisibilityClaim['role'],
-  policy: 'none' | 'snapshot' | 'phase-end' | 'scope-exit' | 'arrival' | 'prepaint' | undefined,
+  input: {
+    scopeKey: string;
+    motionId: string;
+    stepId?: string;
+    anchor: AnimationAnchorRef | undefined;
+    identity: AnimationIdentity | undefined;
+    role: AnimationVisibilityClaim['role'];
+    policy: 'none' | 'snapshot' | 'phase-end' | 'scope-exit' | 'arrival' | 'prepaint' | undefined;
+  },
 ) {
+  const { scopeKey, motionId, stepId, anchor, identity, role, policy } = input;
   if (!anchor || !policy || policy === 'none') {
     return;
   }
@@ -2630,6 +2665,8 @@ function appendMotionClaim(
   }
   claims.push({
     scopeKey,
+    motionId,
+    ...(stepId ? { stepId } : {}),
     anchor,
     identity,
     role,

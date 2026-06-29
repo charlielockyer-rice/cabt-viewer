@@ -9,6 +9,8 @@ export type AnimationVisibilityRole = 'source' | 'destination' | 'handoff';
 
 export type AnimationVisibilityClaim = {
   scopeKey: string;
+  motionId?: string;
+  stepId?: string;
   anchor: AnimationAnchorRef;
   identity?: AnimationIdentity;
   role: AnimationVisibilityRole;

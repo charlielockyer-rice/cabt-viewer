@@ -184,59 +184,41 @@
   }
 
   function matchingMotionForClaim(plan: ReplayAnimationPhasePlan, claim: AnimationVisibilityClaim): TargetMotionTiming | undefined {
-    const claimAnchorKey = serializeAnimationAnchor(claim.anchor);
-    for (const motion of plan.motions) {
-      if (
-        claim.role === 'source'
-        && 'sourceAnchor' in motion
-        && serializeAnimationAnchor(motion.sourceAnchor) === claimAnchorKey
-        && motionIdentityMatchesClaim(motion.identity, claim)
-      ) {
-        return motion;
+    if (!claim.motionId) {
+      return undefined;
+    }
+    const motion = plan.motions.find((candidate) => candidate.id === claim.motionId);
+    if (!motion) {
+      return undefined;
+    }
+    if (motion.kind === 'card-move') {
+      const motionAnchor = claim.role === 'source' ? motion.sourceAnchor : motion.targetAnchor;
+      if (!anchorMatchesClaim(motionAnchor, claim) || !motionIdentityMatchesClaim(motion.identity, claim)) {
+        return undefined;
       }
-      if (
-        claim.role !== 'source'
-        && 'targetAnchor' in motion
-        && serializeAnimationAnchor(motion.targetAnchor) === claimAnchorKey
-        && motionIdentityMatchesClaim(motion.identity, claim)
-      ) {
-        return motion;
+      return motion;
+    }
+    if (motion.kind === 'reveal-session') {
+      const step = claim.stepId ? motion.steps.find((candidate) => candidate.id === claim.stepId) : undefined;
+      if (!step?.handoffPolicy) {
+        return undefined;
       }
-      if (motion.kind !== 'reveal-session') {
-        continue;
+      const stepAnchor = claim.role === 'source' ? step.sourceAnchor : step.targetAnchor;
+      if (!stepAnchor || !anchorMatchesClaim(stepAnchor, claim) || !motionIdentityMatchesClaim(step.identity, claim)) {
+        return undefined;
       }
-      for (const step of motion.steps) {
-        if (
-          claim.role === 'source'
-          && step.sourceAnchor
-          && step.handoffPolicy
-          && serializeAnimationAnchor(step.sourceAnchor) === claimAnchorKey
-          && motionIdentityMatchesClaim(step.identity, claim)
-        ) {
-          return {
-            identity: step.identity,
-            startMs: motion.startMs + step.startMs,
-            durationMs: step.durationMs,
-            handoffPolicy: step.handoffPolicy,
-          };
-        }
-        if (
-          claim.role !== 'source'
-          && step.targetAnchor
-          && step.handoffPolicy
-          && serializeAnimationAnchor(step.targetAnchor) === claimAnchorKey
-          && motionIdentityMatchesClaim(step.identity, claim)
-        ) {
-          return {
-            identity: step.identity,
-            startMs: motion.startMs + step.startMs,
-            durationMs: step.durationMs,
-            handoffPolicy: step.handoffPolicy,
-          };
-        }
-      }
+      return {
+        identity: step.identity,
+        startMs: motion.startMs + step.startMs,
+        durationMs: step.durationMs,
+        handoffPolicy: step.handoffPolicy,
+      };
     }
     return undefined;
+  }
+
+  function anchorMatchesClaim(anchor: AnimationVisibilityClaim['anchor'], claim: AnimationVisibilityClaim): boolean {
+    return serializeAnimationAnchor(anchor) === serializeAnimationAnchor(claim.anchor);
   }
 
   function motionIdentityMatchesClaim(

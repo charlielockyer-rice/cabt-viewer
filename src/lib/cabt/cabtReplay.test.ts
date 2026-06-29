@@ -845,8 +845,9 @@ describe('cabtReplayToSnapshot', () => {
     expect(snapshot.steps[2].displayView?.players[0].prizesLeft).toBe(6);
     expect(snapshot.steps[2].displayView?.players[0].deckCount).toBe(47);
     expect(snapshot.steps[2].animationPhases?.map((phase) => phase.key)).toEqual(['DeckPrizePlace:0']);
-    expect(snapshot.steps[2].animationPhases?.[0].animationPlan?.motions).toHaveLength(6);
-    expect(snapshot.steps[2].animationPhases?.[0].animationPlan?.motions[0]).toMatchObject({
+    const setupPrizePlan = snapshot.steps[2].animationPhases?.[0].animationPlan;
+    expect(setupPrizePlan?.motions).toHaveLength(6);
+    expect(setupPrizePlan?.motions[0]).toMatchObject({
       kind: 'card-move',
       coordinateSpace: 'board',
       sourceAnchor: { kind: 'deck-top', playerIndex: 0 },
@@ -858,15 +859,16 @@ describe('cabtReplayToSnapshot', () => {
         removeSprite: 'prepaint',
       },
     });
-    expect(snapshot.steps[2].animationPhases?.[0].animationPlan?.motions[5]).toMatchObject({
+    expect(setupPrizePlan?.motions[5]).toMatchObject({
       kind: 'card-move',
       sourceAnchor: { kind: 'deck-top', playerIndex: 0 },
       targetAnchor: { kind: 'prize-card', playerIndex: 0, prizeIndex: 5 },
       startMs: 300,
     });
-    expect(snapshot.steps[2].animationPhases?.[0].animationPlan?.visibilityClaims).toEqual(
+    expect(setupPrizePlan?.visibilityClaims).toEqual(
       Array.from({ length: 6 }, (_item, index) => ({
         scopeKey: 'DeckPrizePlace:0',
+        motionId: setupPrizePlan?.motions[index]?.id,
         anchor: { kind: 'prize-card', playerIndex: 0, prizeIndex: index },
         identity: { kind: 'card', serial: undefined, cardId: undefined, name: undefined },
         role: 'destination',
