@@ -17,13 +17,20 @@
   import { replayAnimationScopeExitSettleMs, replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
   import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import {
+    liveBoardMoveSpriteForInput,
+    plannedBoardMoveSpriteForMotion,
+    type BoardMoveSprite,
+    type LiveBoardMoveHandoff,
+    type LiveBoardMoveSpriteInput,
+    type LiveBoardMoveSprite,
+  } from '../animations/boardMoveSprites';
+  import {
     isResolvingCleanupCardMoveMotion,
     replayAnimationPhasePlanKey,
     replayAnimationPlanOwnsMotion,
     type CardMoveAnimationMotion,
     type ReplayAnimationPhasePlan,
   } from '../animations/replayAnimationPlan';
-  import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
   import { elementRectInPlane } from '../dom/planeGeometry';
   import { cardBackCssVar } from '../game/cardAssets';
@@ -34,39 +41,6 @@
     scopeKey?: string | number;
     replayMode?: boolean;
     animationPlan?: ReplayAnimationPhasePlan;
-  };
-
-  type BoardMoveSpriteBase = {
-    id: string;
-    html?: string;
-    fallbackName: string;
-    left: number;
-    top: number;
-    width: number;
-    height: number;
-    startX: number;
-    startY: number;
-    startScale: number;
-    correctionX: number;
-    correctionY: number;
-    toDeck: boolean;
-    fromDeck: boolean;
-    opponentSide: boolean;
-    delayMs: number;
-    durationMs: number;
-    measuring: boolean;
-    card?: Pick<CardView, 'id' | 'serial' | 'name' | 'fullName' | 'cardImage' | 'imageUrl'>;
-    faceDown?: boolean;
-  };
-
-  type PlannedBoardMoveSprite = BoardMoveSpriteBase & { lifecycle: { kind: 'planned' } };
-  type LiveBoardMoveSprite = BoardMoveSpriteBase & { lifecycle: { kind: 'live'; handoff: LiveBoardMoveHandoff } };
-  type BoardMoveSprite = PlannedBoardMoveSprite | LiveBoardMoveSprite;
-
-  type LiveBoardMoveHandoff = {
-    destinationCardId: number;
-    destinationSerial?: number;
-    waitForDestinationCard: boolean;
   };
 
   type BoardMoveInstruction = {
@@ -179,7 +153,18 @@
       if (!sourceElement || !targetElement) {
         continue;
       }
-      const sprite = plannedBoardMoveSpriteForMotion(motion, sourceElement, targetElement, generation);
+      const sourceRect = elementRectInPlane(sourceElement, boardPlane);
+      const targetRect = elementRectInPlane(targetElement, boardPlane);
+      if (!sourceRect || !targetRect) {
+        continue;
+      }
+      const sprite = plannedBoardMoveSpriteForMotion({
+        motion,
+        sourceRect,
+        targetRect,
+        generation,
+        opponentSide: isOpponentAnchor(motion.sourceAnchor) || isOpponentAnchor(motion.targetAnchor),
+      });
       if (!sprite) {
         continue;
       }
@@ -192,51 +177,6 @@
         holdUntilScopeChange: motion.handoffPolicy.removeSprite === 'scope-exit',
       });
     }
-  }
-
-  function plannedBoardMoveSpriteForMotion(
-    motion: CardMoveAnimationMotion,
-    sourceElement: HTMLElement,
-    targetElement: HTMLElement,
-    generation: number,
-  ): PlannedBoardMoveSprite | undefined {
-    const boardPlane = motionLayer?.parentElement;
-    if (!boardPlane || motion.spriteVisual.kind !== 'card') {
-      return undefined;
-    }
-    const card = motion.spriteVisual.card;
-    const faceDown = motion.spriteVisual.faceDown;
-    if (!card && !faceDown) {
-      return undefined;
-    }
-    const sourceRect = elementRectInPlane(sourceElement, boardPlane);
-    const targetRect = elementRectInPlane(targetElement, boardPlane);
-    if (!sourceRect || !targetRect || sourceRect.width <= 0 || targetRect.width <= 0) {
-      return undefined;
-    }
-    const cardId = motion.identity?.cardId ?? card?.id;
-    return {
-      id: `${generation}:${motion.id}`,
-      fallbackName: motion.identity?.name ?? card?.name ?? (cardId !== undefined ? cabtCardToView(cardId).name : 'Card'),
-      left: targetRect.left,
-      top: targetRect.top,
-      width: targetRect.width,
-      height: targetRect.height,
-      startX: sourceRect.left + sourceRect.width / 2 - (targetRect.left + targetRect.width / 2),
-      startY: sourceRect.top + sourceRect.height / 2 - (targetRect.top + targetRect.height / 2),
-      startScale: sourceRect.width / targetRect.width,
-      correctionX: 0,
-      correctionY: 0,
-      toDeck: motion.targetAnchor.kind === 'deck-top',
-      fromDeck: motion.sourceAnchor.kind === 'deck-top',
-      opponentSide: isOpponentAnchor(motion.sourceAnchor) || isOpponentAnchor(motion.targetAnchor),
-      delayMs: motion.startMs,
-      durationMs: motion.durationMs,
-      measuring: true,
-      card,
-      faceDown,
-      lifecycle: { kind: 'planned' },
-    };
   }
 
   function startPlannedBoardMoveSprite(input: {
@@ -300,7 +240,7 @@
       const targetElement = instruction.target;
       const sourceRect = elementRectInPlane(sourceElement, boardPlane);
       const targetRect = elementRectInPlane(targetElement, boardPlane);
-      if (!sourceRect || !targetRect || sourceRect.width <= 0 || targetRect.width <= 0) {
+      if (!sourceRect || !targetRect) {
         continue;
       }
 
@@ -308,6 +248,8 @@
       startLiveBoardMoveInstruction({
         source: sourceElement,
         target: targetElement,
+        sourceRect,
+        targetRect,
         cardId: instruction.cardId,
         serial: instruction.serial,
         waitForDestinationCard: instruction.waitForDestinationCard,
@@ -323,62 +265,17 @@
   }
 
   function startLiveBoardMoveInstruction(
-    instruction: {
-      source: HTMLElement;
-      target: HTMLElement;
-      cardId?: number;
-      serial?: number;
-      fallbackName?: string;
-      waitForDestinationCard: boolean;
-      holdUntilScopeChange: boolean;
-      toDeck: boolean;
-      fromDeck: boolean;
-      opponentSide: boolean;
-      delayMs: number;
-      durationMs: number;
-      key: string;
-    },
+    instruction: Omit<LiveBoardMoveSpriteInput, 'generation'> & { holdUntilScopeChange: boolean },
     generation: number,
     handoffDelayMs?: number,
   ) {
-    const boardPlane = motionLayer?.parentElement;
-    if (!boardPlane) {
+    const sprite = liveBoardMoveSpriteForInput({
+      ...instruction,
+      generation,
+    });
+    if (!sprite) {
       return;
     }
-    const sourceRect = elementRectInPlane(instruction.source, boardPlane);
-    const targetRect = elementRectInPlane(instruction.target, boardPlane);
-    if (!sourceRect || !targetRect || sourceRect.width <= 0 || targetRect.width <= 0) {
-      return;
-    }
-
-    const sprite: LiveBoardMoveSprite = {
-      id: `${generation}:${instruction.key}`,
-      html: spriteHtml(instruction.source, instruction.target, instruction.fromDeck),
-      fallbackName: instruction.fallbackName ?? (instruction.cardId !== undefined ? cabtCardToView(instruction.cardId).name : 'Card'),
-      left: targetRect.left,
-      top: targetRect.top,
-      width: targetRect.width,
-      height: targetRect.height,
-      startX: sourceRect.left + sourceRect.width / 2 - (targetRect.left + targetRect.width / 2),
-      startY: sourceRect.top + sourceRect.height / 2 - (targetRect.top + targetRect.height / 2),
-      startScale: sourceRect.width / targetRect.width,
-      correctionX: 0,
-      correctionY: 0,
-      toDeck: instruction.toDeck,
-      fromDeck: instruction.fromDeck,
-      opponentSide: instruction.opponentSide,
-      delayMs: instruction.delayMs,
-      durationMs: instruction.durationMs,
-      measuring: true,
-      lifecycle: {
-        kind: 'live',
-        handoff: {
-          destinationCardId: instruction.cardId ?? 0,
-          destinationSerial: instruction.serial,
-          waitForDestinationCard: instruction.waitForDestinationCard,
-        },
-      },
-    };
 
     const startTimer = setTimeout(async () => {
       if (generation !== animationGeneration) {
@@ -743,57 +640,6 @@
       x: projectedScaleX > 0 ? (targetRect.left - spriteRect.left) / projectedScaleX : 0,
       y: projectedScaleY > 0 ? (targetRect.top - spriteRect.top) / projectedScaleY : 0,
     };
-  }
-
-  function spriteHtml(source: HTMLElement, target: HTMLElement, fromDeck = false) {
-    const cloneSource = fromDeck ? target : source;
-    const clone = cloneSource.cloneNode(true);
-    if (!(clone instanceof HTMLElement)) {
-      return cloneSource.outerHTML;
-    }
-
-    if (cloneSource.classList.contains('stadium-card')) {
-      const cardTile = cloneSource.querySelector('.card-tile');
-      return cardTile instanceof HTMLElement ? cardTile.outerHTML : cloneSource.outerHTML;
-    }
-
-    clone.className = target.classList.contains('board-slot') ? target.className : source.className;
-    clone.classList.remove('empty');
-    clone.classList.add('board-slot');
-    clone.removeAttribute('id');
-    clone.removeAttribute('data-testid');
-    clone.removeAttribute('data-card-anchor');
-    clone.removeAttribute('data-owner-index');
-    clone.removeAttribute('data-slot-kind');
-    clone.removeAttribute('data-slot-index');
-    clone.removeAttribute('data-pokemon-card-id');
-    clone.removeAttribute('data-pokemon-serial');
-    clone.removeAttribute('title');
-    clone.removeAttribute('data-board-move-animation-hidden');
-    clone.removeAttribute('data-reveal-animation-hidden');
-    stripAnimationAttributes(clone);
-    prepareCloneImages(clone);
-    return clone.outerHTML;
-  }
-
-  function stripAnimationAttributes(clone: HTMLElement) {
-    for (const element of [clone, ...clone.querySelectorAll('*')]) {
-      if (!(element instanceof HTMLElement)) {
-        continue;
-      }
-      for (const attribute of Array.from(element.attributes)) {
-        if (attribute.name.startsWith('data-animation-')) {
-          element.removeAttribute(attribute.name);
-        }
-      }
-    }
-  }
-
-  function prepareCloneImages(clone: HTMLElement) {
-    for (const image of clone.querySelectorAll('img')) {
-      image.loading = 'eager';
-      image.decoding = 'sync';
-    }
   }
 
   function handOffLiveBoardMoveWhenDestinationReady(
