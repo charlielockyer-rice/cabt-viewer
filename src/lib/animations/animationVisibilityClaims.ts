@@ -172,30 +172,6 @@ export function refreshAnimationVisibilityClaims(): void {
   replayAnimationVisibility.refresh();
 }
 
-export function centralVisibilityClaimOwnsElement(input: {
-  element: HTMLElement;
-  role: AnimationVisibilityRole;
-  claims?: readonly AnimationVisibilityClaim[];
-  plannedAnchor?: AnimationAnchorRef;
-}): boolean {
-  const anchoredElement = animationAnchorForElement(input.element);
-  const anchorKeys = new Set<string>();
-  if (input.plannedAnchor && !anchoredElement) {
-    anchorKeys.add(serializeAnimationAnchor(input.plannedAnchor));
-  }
-  if (anchoredElement) {
-    anchorKeys.add(serializeAnimationAnchor(anchoredElement.anchor));
-  }
-  if (!anchorKeys.size) {
-    return false;
-  }
-  return !!input.claims?.some((claim) =>
-    claim.role === input.role
-    && anchorKeys.has(serializeAnimationAnchor(claim.anchor))
-    && animationIdentityMatchesClaim(anchoredElement?.identity, claim.identity),
-  );
-}
-
 function resolveAnchorInput(input: AnchorVisibilityClaimInput): AnimationAnchorRef {
   if (input.anchor) {
     return input.anchor;
