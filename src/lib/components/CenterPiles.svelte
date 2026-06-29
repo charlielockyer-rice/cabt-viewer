@@ -134,6 +134,7 @@
             events={animationEvents}
             playerIndex={topPlayer.index}
             scopeKey={animationScopeKey}
+            {animationPlan}
             {replayMode}
             opponent
           />
@@ -271,6 +272,7 @@
             events={animationEvents}
             playerIndex={bottomPlayer.index}
             scopeKey={animationScopeKey}
+            {animationPlan}
             {replayMode}
           />
           <span class="pile-count">{bottomPlayer.deckCount}</span>

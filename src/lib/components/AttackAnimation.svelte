@@ -6,11 +6,12 @@
     releaseElementVisibilityClaim,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
+  import { resolveAnimationAnchorElements } from '../animations/animationAnchors';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
   import { replayAnimationPhaseGapMs } from '../game/replay';
-  import type { ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
+  import type { PulseAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import type { ActionTimelineEvent, CardView } from '../game/types';
 
   type Props = {
@@ -56,6 +57,7 @@
   let seenEventIds = new Set<number>();
   let initialized = false;
   let lastScopeKey: string | number = '';
+  let lastPlanKey = '';
   let reduceMotion = $state(false);
   let damageSprites = $state<DamageSprite[]>([]);
   let knockOutSprites = $state<KnockOutSprite[]>([]);
@@ -86,39 +88,150 @@
   $effect(() => {
     const currentEvents = events;
     const currentScopeKey = scopeKey;
+    const plannedPulses = attackPulseMotions(animationPlan);
+    const planKey = attackPulsePlanKey(plannedPulses);
     const scopeChanged = initialized && currentScopeKey !== lastScopeKey;
+    const planChanged = planKey !== lastPlanKey;
+    if (scopeChanged || planChanged) {
+      clearAttackAnimations();
+    }
     lastScopeKey = currentScopeKey;
+    lastPlanKey = planKey;
+
+    if (plannedPulses.length) {
+      initialized = true;
+      if (!reduceMotion && (scopeChanged || planChanged)) {
+        startPlannedPulses(plannedPulses);
+      }
+      markEventsSeen(currentEvents);
+      return;
+    }
 
     if (!initialized) {
-      for (const event of currentEvents) {
-        seenEventIds.add(event.id);
-      }
+      markEventsSeen(currentEvents);
       initialized = true;
       return;
     }
 
-    if (scopeChanged) {
-      clearAttackAnimations();
+    if (replayMode) {
+      markEventsSeen(currentEvents);
+      return;
     }
 
-    const animationEvents = actionAnimationBatchEvents(currentEvents, seenEventIds, replayMode, scopeChanged);
-    for (const event of currentEvents) {
-      seenEventIds.add(event.id);
-    }
+    const animationEvents = actionAnimationBatchEvents(currentEvents, seenEventIds, false, scopeChanged);
+    markEventsSeen(currentEvents);
     if (!animationEvents.length || reduceMotion) {
       return;
     }
 
     startAttackAnnouncements(animationEvents);
     startDamageAnimations(animationEvents);
-    if (!replayMode && !plannedKnockOutMotionActive(animationPlan)) {
-      startKnockOutAnimations(animationEvents);
-    }
+    startKnockOutAnimations(animationEvents);
   });
 
-  function plannedKnockOutMotionActive(plan: ReplayAnimationPhasePlan | undefined): boolean {
-    return !!plan?.key.startsWith('KnockOut:')
-      && plan.motions.some((motion) => motion.kind === 'card-move');
+  function markEventsSeen(currentEvents: ActionTimelineEvent[]) {
+    for (const event of currentEvents) {
+      seenEventIds.add(event.id);
+    }
+  }
+
+  function attackPulseMotions(plan: ReplayAnimationPhasePlan | undefined): PulseAnimationMotion[] {
+    return (plan?.motions ?? []).filter((motion): motion is PulseAnimationMotion =>
+      motion.kind === 'pulse'
+      && motion.anchor.kind === 'board-slot'
+      && motion.spriteVisual.kind === 'pulse'
+      && (motion.spriteVisual.tone === 'attack' || motion.spriteVisual.tone === 'damage')
+      && (
+        plan?.key.startsWith(`Attack:${motion.anchor.playerIndex}`)
+        || plan?.key.startsWith(`Damage:${motion.anchor.playerIndex}`)
+      ),
+    );
+  }
+
+  function attackPulsePlanKey(motions: PulseAnimationMotion[]): string {
+    return motions.map((motion) => `${motion.id}:${motion.startMs}:${motion.durationMs}:${motion.spriteVisual.kind === 'pulse' ? motion.spriteVisual.tone : ''}`).join('|');
+  }
+
+  function startPlannedPulses(motions: PulseAnimationMotion[]) {
+    for (const motion of motions) {
+      if (motion.spriteVisual.kind !== 'pulse') {
+        continue;
+      }
+      if (motion.spriteVisual.tone === 'attack') {
+        startPlannedAttackAnnouncement(motion);
+      }
+      if (motion.spriteVisual.tone === 'damage') {
+        startPlannedDamageAnimation(motion);
+      }
+    }
+  }
+
+  function startPlannedAttackAnnouncement(motion: PulseAnimationMotion) {
+    const generation = animationGeneration;
+    const event = eventForMotion(motion, 'attack');
+    const timer = setTimeout(() => {
+      if (generation !== animationGeneration) {
+        return;
+      }
+      const attacker = slotElementForMotion(motion);
+      if (!attacker) {
+        return;
+      }
+      activeAttackAnnouncements.add(attacker);
+      attacker.dataset.attackAnnounceActive = 'true';
+      attacker.style.setProperty('--attack-name', JSON.stringify(event ? attackNameForEvent(event) : 'Attack'));
+      const cleanup = setTimeout(() => {
+        if (generation !== animationGeneration) {
+          return;
+        }
+        clearAttackAnnouncement(attacker);
+      }, motion.durationMs);
+      timers.push(cleanup);
+    }, motion.startMs);
+    timers.push(timer);
+  }
+
+  function startPlannedDamageAnimation(motion: PulseAnimationMotion) {
+    const generation = animationGeneration;
+    const event = eventForMotion(motion, 'damage');
+    if (!event) {
+      return;
+    }
+    const attackEvent = stepEvents.find((candidate) => candidate.kind === 'Attack');
+    const timer = setTimeout(() => {
+      if (generation !== animationGeneration) {
+        return;
+      }
+      const target = slotElementForMotion(motion);
+      if (!target) {
+        return;
+      }
+      const attacker = attackEvent ? slotElementForEvent(attackEvent) : null;
+      const targetRect = target.getBoundingClientRect();
+      if (attacker) {
+        startAttackLunge(attacker, targetRect, motion.durationMs);
+      }
+      const value = damageValue(event);
+      if (value <= 0) {
+        return;
+      }
+      const sprite: DamageSprite = {
+        id: motion.id,
+        value,
+        left: targetRect.left + targetRect.width / 2,
+        top: targetRect.top + targetRect.height * 0.42,
+        delayMs: 0,
+      };
+      damageSprites = [...damageSprites, sprite];
+      const cleanup = setTimeout(() => {
+        if (generation !== animationGeneration) {
+          return;
+        }
+        damageSprites = damageSprites.filter((item) => item.id !== sprite.id);
+      }, motion.durationMs);
+      timers.push(cleanup);
+    }, motion.startMs);
+    timers.push(timer);
   }
 
   function startAttackAnnouncements(animationEvents: ActionTimelineEvent[]) {
@@ -154,21 +267,9 @@
       const value = damageValue(event);
 
       if (attacker) {
-        const sourceRect = attacker.getBoundingClientRect();
-        const dx = targetRect.left + targetRect.width / 2 - (sourceRect.left + sourceRect.width / 2);
-        const dy = targetRect.top + targetRect.height / 2 - (sourceRect.top + sourceRect.height / 2);
-        const distance = Math.max(1, Math.hypot(dx, dy));
-        attacker.style.setProperty('--attack-lunge-x', `${(dx / distance * 22).toFixed(1)}px`);
-        attacker.style.setProperty('--attack-lunge-y', `${(dy / distance * 22).toFixed(1)}px`);
         const lungeTimer = setTimeout(() => {
-          activeAttackLunges.add(attacker);
-          attacker.dataset.attackLungeActive = 'true';
-          const cleanup = setTimeout(() => {
-            clearAttackLunge(attacker);
-          }, actionAnimationTiming.damageVisualMs);
-          timers.push(cleanup);
+          startAttackLunge(attacker, targetRect, actionAnimationTiming.damageVisualMs);
         }, delayMs);
-        attacker.style.setProperty('--damage-visual-ms', `${actionAnimationTiming.damageVisualMs}ms`);
         timers.push(lungeTimer);
       }
 
@@ -187,6 +288,22 @@
         timers.push(cleanup);
       }
     }
+  }
+
+  function startAttackLunge(attacker: HTMLElement, targetRect: DOMRect, durationMs: number) {
+    const sourceRect = attacker.getBoundingClientRect();
+    const dx = targetRect.left + targetRect.width / 2 - (sourceRect.left + sourceRect.width / 2);
+    const dy = targetRect.top + targetRect.height / 2 - (sourceRect.top + sourceRect.height / 2);
+    const distance = Math.max(1, Math.hypot(dx, dy));
+    attacker.style.setProperty('--attack-lunge-x', `${(dx / distance * 22).toFixed(1)}px`);
+    attacker.style.setProperty('--attack-lunge-y', `${(dy / distance * 22).toFixed(1)}px`);
+    activeAttackLunges.add(attacker);
+    attacker.dataset.attackLungeActive = 'true';
+    attacker.style.setProperty('--damage-visual-ms', `${durationMs}ms`);
+    const cleanup = setTimeout(() => {
+      clearAttackLunge(attacker);
+    }, durationMs);
+    timers.push(cleanup);
   }
 
   function startKnockOutAnimations(animationEvents: ActionTimelineEvent[]) {
@@ -330,6 +447,16 @@
     return null;
   }
 
+  function slotElementForMotion(motion: PulseAnimationMotion): HTMLElement | null {
+    const element = resolveAnimationAnchorElements(motion.anchor, { identity: motion.identity }).at(0)
+      ?? resolveAnimationAnchorElements(motion.anchor).at(0);
+    return element instanceof HTMLElement ? element : null;
+  }
+
+  function eventForMotion(motion: PulseAnimationMotion, suffix: 'attack' | 'damage'): ActionTimelineEvent | undefined {
+    return animationPlan?.actionTimeline.find((event) => `${animationPlan?.key}:${event.id}:${suffix}` === motion.id);
+  }
+
   function discardElementForPlayer(playerIndex: number | undefined): HTMLElement | null {
     if (playerIndex === undefined) {
       return null;
@@ -407,8 +534,6 @@
 </span>
 
 <style>
-  /* KO card movement is owned by replay board-move plans when available.
-     The local fixed-layer KO sprite remains as the non-planned fallback. */
   .attack-animation-layer {
     position: fixed;
     inset: 0;

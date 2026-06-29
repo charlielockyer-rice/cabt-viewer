@@ -1,24 +1,29 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
+  import { resolveAnimationAnchorElements } from '../animations/animationAnchors';
+  import type { PulseAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import type { ActionTimelineEvent } from '../game/types';
 
   type Props = {
     events?: ActionTimelineEvent[];
     scopeKey?: string | number;
     replayMode?: boolean;
+    animationPlan?: ReplayAnimationPhasePlan;
   };
 
   let {
     events = [],
     scopeKey = '',
     replayMode = false,
+    animationPlan,
   }: Props = $props();
 
   const timers: ReturnType<typeof setTimeout>[] = [];
   let seenEventIds = new Set<number>();
   let initialized = false;
   let lastScopeKey: string | number = '';
+  let lastPlanKey = '';
   let reduceMotion = $state(false);
   let animationGeneration = 0;
   const activeAbilityElements = new Set<HTMLElement>();
@@ -43,30 +48,90 @@
   $effect(() => {
     const currentEvents = events;
     const currentScopeKey = scopeKey;
+    const currentPlan = animationPlan;
+    const plannedPulses = abilityPulseMotions(currentPlan);
+    const planKey = abilityPulsePlanKey(plannedPulses);
     const scopeChanged = initialized && currentScopeKey !== lastScopeKey;
-    if (scopeChanged) {
+    const planChanged = planKey !== lastPlanKey;
+    if (scopeChanged || planChanged) {
       clearAbilityAnimations();
     }
     lastScopeKey = currentScopeKey;
+    lastPlanKey = planKey;
+
+    if (plannedPulses.length) {
+      initialized = true;
+      if (!reduceMotion && (scopeChanged || planChanged)) {
+        startPlannedAbilityAnnouncements(plannedPulses);
+      }
+      markEventsSeen(currentEvents);
+      return;
+    }
 
     if (!initialized) {
-      for (const event of currentEvents) {
-        seenEventIds.add(event.id);
-      }
+      markEventsSeen(currentEvents);
       initialized = true;
       return;
     }
 
-    const animationEvents = actionAnimationBatchEvents(currentEvents, seenEventIds, replayMode, scopeChanged);
-    for (const event of currentEvents) {
-      seenEventIds.add(event.id);
+    if (replayMode) {
+      markEventsSeen(currentEvents);
+      return;
     }
+
+    const animationEvents = actionAnimationBatchEvents(currentEvents, seenEventIds, false, scopeChanged);
+    markEventsSeen(currentEvents);
     if (!animationEvents.length || reduceMotion) {
       return;
     }
 
     startAbilityAnnouncements(animationEvents);
   });
+
+  function markEventsSeen(currentEvents: ActionTimelineEvent[]) {
+    for (const event of currentEvents) {
+      seenEventIds.add(event.id);
+    }
+  }
+
+  function abilityPulseMotions(plan: ReplayAnimationPhasePlan | undefined): PulseAnimationMotion[] {
+    return (plan?.motions ?? []).filter((motion): motion is PulseAnimationMotion =>
+      motion.kind === 'pulse'
+      && motion.anchor.kind === 'board-slot'
+      && motion.spriteVisual.kind === 'pulse'
+      && motion.spriteVisual.tone === 'ability'
+      && plan?.key.startsWith(`Ability:${motion.anchor.playerIndex}`),
+    );
+  }
+
+  function abilityPulsePlanKey(motions: PulseAnimationMotion[]): string {
+    return motions.map((motion) => `${motion.id}:${motion.startMs}:${motion.durationMs}`).join('|');
+  }
+
+  function startPlannedAbilityAnnouncements(motions: PulseAnimationMotion[]) {
+    const generation = animationGeneration;
+    for (const motion of motions) {
+      const event = eventForMotion(motion);
+      const timer = setTimeout(() => {
+        if (generation !== animationGeneration) {
+          return;
+        }
+        const source = slotElementForMotion(motion);
+        if (!source) {
+          return;
+        }
+        activateAbilityElement(source, event ? abilityNameForEvent(event) : 'Ability');
+        const cleanup = setTimeout(() => {
+          if (generation !== animationGeneration) {
+            return;
+          }
+          clearAbilityElement(source);
+        }, motion.durationMs);
+        timers.push(cleanup);
+      }, motion.startMs);
+      timers.push(timer);
+    }
+  }
 
   function startAbilityAnnouncements(animationEvents: ActionTimelineEvent[]) {
     const generation = animationGeneration;
@@ -91,6 +156,16 @@
       }, delayMs);
       timers.push(timer);
     }
+  }
+
+  function slotElementForMotion(motion: PulseAnimationMotion): HTMLElement | null {
+    const element = resolveAnimationAnchorElements(motion.anchor, { identity: motion.identity }).at(0)
+      ?? resolveAnimationAnchorElements(motion.anchor).at(0);
+    return element instanceof HTMLElement ? element : null;
+  }
+
+  function eventForMotion(motion: PulseAnimationMotion): ActionTimelineEvent | undefined {
+    return animationPlan?.actionTimeline.find((event) => `${animationPlan?.key}:${event.id}:ability` === motion.id);
   }
 
   function clearAbilityAnimations() {

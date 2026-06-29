@@ -60,7 +60,7 @@ describe('actionAnimationStartMs', () => {
       actionAnimationTiming.attackAnnounceMs
         + actionAnimationTiming.deckDiscardMs
         + actionAnimationTiming.deckDiscardStepMs
-        + actionAnimationTiming.damageMs,
+        + actionAnimationTiming.damageVisualMs,
     );
   });
 

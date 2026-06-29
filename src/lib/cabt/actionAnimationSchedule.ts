@@ -120,8 +120,8 @@ function animationPhaseForEvent(event: ActionTimelineEvent): AnimationPhase | nu
   if (event.kind === 'HpChange' || event.kind === 'HPChange') {
     return {
       key: `Damage:${playerKey}`,
-      durationMs: actionAnimationTiming.damageMs,
-      stepMs: actionAnimationTiming.damageMs,
+      durationMs: actionAnimationTiming.damageVisualMs,
+      stepMs: actionAnimationTiming.damageVisualMs,
     };
   }
 

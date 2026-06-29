@@ -1459,6 +1459,18 @@ function animationPhaseMotions(
   if (phase.key.startsWith('Draw:')) {
     return drawCardMoveMotions(phase, view);
   }
+  if (phase.key.startsWith('Ability:')) {
+    return abilityPulseMotions(phase, view);
+  }
+  if (phase.key.startsWith('Attack:')) {
+    return attackPulseMotions(phase, view);
+  }
+  if (phase.key.startsWith('Damage:')) {
+    return damagePulseMotions(phase, view);
+  }
+  if (phase.key.startsWith('Shuffle:')) {
+    return shuffleMotions(phase);
+  }
   if (phase.key.startsWith('PrizeTake:')) {
     return prizeTakeCardMoveMotions(phase, view);
   }
@@ -1483,6 +1495,127 @@ function animationPhaseMotions(
     return revealSessionMotions(phase, view, stepEvents);
   }
   return [];
+}
+
+function abilityPulseMotions(phase: AnimationEventPhase, view: GameView): AnimationMotion[] {
+  const motions = phase.events.map((event) => {
+    if (event.kind !== 'Ability') {
+      return [];
+    }
+    const anchor = abilityAnchorForEvent(view, event);
+    if (!anchor) {
+      return null;
+    }
+    return [{
+      kind: 'pulse',
+      id: `${phase.key}:${event.id}:ability`,
+      anchor,
+      coordinateSpace: 'board',
+      spriteVisual: { kind: 'pulse', tone: 'ability' },
+      startMs: actionAnimationStartMs(phase.events, event),
+      durationMs: actionAnimationTiming.abilityAnnounceMs,
+    } satisfies AnimationMotion];
+  });
+  return motions.some((motion) => motion === null) ? [] : motions.flatMap((motion) => motion ?? []);
+}
+
+function abilityAnchorForEvent(view: GameView, event: ActionTimelineEvent): AnimationAnchorRef | undefined {
+  if (event.playerIndex === undefined) {
+    return undefined;
+  }
+  const player = view.players[event.playerIndex];
+  if (!player) {
+    return undefined;
+  }
+  const params = event.params as Record<string, unknown> | undefined;
+  const area = finiteNumber(params?.area);
+  const index = finiteNumber(params?.index);
+  if (area === CabtAreaType.ACTIVE) {
+    return {
+      kind: 'board-slot',
+      playerIndex: event.playerIndex,
+      slot: 'active',
+      slotIndex: player.active.index,
+    };
+  }
+  if (area === CabtAreaType.BENCH && index !== undefined) {
+    const benchSlot = player.bench.find((slot) => slot.index === index);
+    if (benchSlot) {
+      return {
+        kind: 'board-slot',
+        playerIndex: event.playerIndex,
+        slot: 'bench',
+        slotIndex: benchSlot.index,
+      };
+    }
+  }
+  return boardSlotAnchorForEvent(player, event);
+}
+
+function attackPulseMotions(phase: AnimationEventPhase, view: GameView): AnimationMotion[] {
+  const motions = phase.events.map((event) => {
+    if (event.kind !== 'Attack') {
+      return [];
+    }
+    const anchor = event.playerIndex === undefined
+      ? undefined
+      : boardSlotAnchorForEvent(view.players[event.playerIndex], event);
+    if (!anchor) {
+      return null;
+    }
+    return [{
+      kind: 'pulse',
+      id: `${phase.key}:${event.id}:attack`,
+      identity: animationIdentityForEvent(event, 'pokemon'),
+      anchor,
+      coordinateSpace: 'board',
+      spriteVisual: { kind: 'pulse', tone: 'attack' },
+      startMs: actionAnimationStartMs(phase.events, event),
+      durationMs: actionAnimationTiming.attackAnnounceMs,
+    } satisfies AnimationMotion];
+  });
+  return motions.some((motion) => motion === null) ? [] : motions.flatMap((motion) => motion ?? []);
+}
+
+function damagePulseMotions(phase: AnimationEventPhase, view: GameView): AnimationMotion[] {
+  const motions = phase.events.map((event) => {
+    if (event.kind !== 'HpChange' && event.kind !== 'HPChange') {
+      return [];
+    }
+    const anchor = event.playerIndex === undefined
+      ? undefined
+      : boardSlotAnchorForEvent(view.players[event.playerIndex], event);
+    if (!anchor) {
+      return null;
+    }
+    return [{
+      kind: 'pulse',
+      id: `${phase.key}:${event.id}:damage`,
+      identity: animationIdentityForEvent(event, 'pokemon'),
+      anchor,
+      coordinateSpace: 'board',
+      spriteVisual: { kind: 'pulse', tone: 'damage' },
+      startMs: actionAnimationStartMs(phase.events, event),
+      durationMs: actionAnimationTiming.damageVisualMs,
+    } satisfies AnimationMotion];
+  });
+  return motions.some((motion) => motion === null) ? [] : motions.flatMap((motion) => motion ?? []);
+}
+
+function shuffleMotions(phase: AnimationEventPhase): AnimationMotion[] {
+  return phase.events.flatMap((event) => {
+    if (event.kind !== 'Shuffle' || event.playerIndex === undefined) {
+      return [];
+    }
+    return [{
+      kind: 'shuffle',
+      id: `${phase.key}:${event.id}:shuffle`,
+      anchor: { kind: 'deck-top', playerIndex: event.playerIndex },
+      coordinateSpace: 'board',
+      startMs: actionAnimationStartMs(phase.events, event),
+      durationMs: actionAnimationTiming.deckShuffleMs,
+    }];
+  });
 }
 
 function drawCardMoveMotions(phase: AnimationEventPhase, view: GameView): AnimationMotion[] {
@@ -2405,6 +2538,16 @@ function finiteNumber(value: unknown): number | undefined {
   return Number.isFinite(number) ? number : undefined;
 }
 
+function animationIdentityForEvent(event: ActionTimelineEvent, kind: AnimationIdentity['kind']): AnimationIdentity {
+  const params = event.params as Record<string, unknown> | undefined;
+  return {
+    kind,
+    serial: finiteNumber(params?.serial),
+    cardId: finiteNumber(params?.cardId),
+    name: stringValue(params?.cardName),
+  };
+}
+
 function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
@@ -2959,7 +3102,11 @@ function animationPhaseMayHavePlan(phase: AnimationEventPhase): boolean {
     || phase.key.startsWith('HandMove:')
     || phase.key.startsWith('Attach:')
     || phase.key.startsWith('Evolve:')
+    || phase.key.startsWith('Ability:')
+    || phase.key.startsWith('Attack:')
+    || phase.key.startsWith('Damage:')
     || phase.key.startsWith('Draw:')
+    || phase.key.startsWith('Shuffle:')
     || phase.key.startsWith('DeckDiscard:')
     || phase.key.startsWith('DeckBoardPlace:')
     || phase.key.startsWith('DeckReveal:')
@@ -3192,7 +3339,7 @@ function animationPhaseCardDurationMs(key: string): number {
     return actionAnimationTiming.abilityAnnounceMs;
   }
   if (key.startsWith('Damage:')) {
-    return actionAnimationTiming.damageMs;
+    return actionAnimationTiming.damageVisualMs;
   }
   if (key.startsWith('KnockOut:')) {
     return actionAnimationTiming.knockOutMs;
@@ -3247,7 +3394,7 @@ function animationPhaseStepMs(key: string): number {
     return actionAnimationTiming.abilityAnnounceMs;
   }
   if (key.startsWith('Damage:')) {
-    return actionAnimationTiming.damageMs;
+    return actionAnimationTiming.damageVisualMs;
   }
   if (key.startsWith('KnockOut:')) {
     return actionAnimationTiming.knockOutMs;

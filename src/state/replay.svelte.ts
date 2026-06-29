@@ -340,7 +340,7 @@ function replayPhaseDurationMs(phase: ReplayAnimationPhase): number {
     return actionAnimationTiming.abilityAnnounceMs;
   }
   if (key.startsWith('Damage:')) {
-    return actionAnimationTiming.damageMs;
+    return actionAnimationTiming.damageVisualMs;
   }
   if (key.startsWith('KnockOut:')) {
     return actionAnimationTiming.knockOutMs;

@@ -231,6 +231,15 @@ describe('cabtReplayToSnapshot', () => {
     });
     expect(step.animationPhases?.map((phase) => phase.key)).toEqual(['Ability:0', 'Draw:0', 'BoardToDeck:0', 'Shuffle:0']);
     expect(step.animationPhases?.[0].view.players[0].active.pokemon?.serial).toBe(14);
+    expect(step.animationPhases?.[0].animationPlan?.motions).toMatchObject([
+      {
+        kind: 'pulse',
+        coordinateSpace: 'board',
+        anchor: { kind: 'board-slot', playerIndex: 0, slot: 'active', slotIndex: 0 },
+        spriteVisual: { kind: 'pulse', tone: 'ability' },
+        durationMs: 560,
+      },
+    ]);
     expect(step.animationPhases?.[1].animationPlan?.motions).toMatchObject([
       {
         kind: 'card-move',
@@ -267,8 +276,95 @@ describe('cabtReplayToSnapshot', () => {
     ]);
     expect(step.animationPhases?.[2].view.players[0].active.pokemon?.serial).toBe(14);
     expect(step.animationPhases?.[2].view.players[0].deckCount).toBe(38);
+    expect(step.animationPhases?.[3].animationPlan?.motions).toMatchObject([
+      {
+        kind: 'shuffle',
+        coordinateSpace: 'board',
+        anchor: { kind: 'deck-top', playerIndex: 0 },
+        durationMs: 980,
+      },
+    ]);
     expect(snapshot.views[step.stateIndex].players[0].active.empty).toBe(true);
     expect(snapshot.views[step.stateIndex].players[0].deckCount).toBe(39);
+  });
+
+  it('uses explicit ability area and index when duplicate Pokemon share a card id', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        select: {
+          type: 'Main',
+          option: [
+            { type: 'Ability', area: CabtAreaType.BENCH, index: 1 },
+            { type: 'End' },
+          ],
+        },
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [
+              { id: 66, serial: 14, hp: 140, maxHp: 140 },
+              { id: 66, serial: 15, hp: 140, maxHp: 140 },
+            ],
+            benchMax: 5,
+            hand: [],
+            deckCount: 40,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 60,
+            prize: [],
+          }],
+        },
+      }, {
+        action: [[0], []],
+        logs: [
+          { type: 'Draw', playerIndex: 0, cardId: 3, serial: 101 },
+        ],
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [
+              { id: 66, serial: 14, hp: 140, maxHp: 140 },
+              { id: 66, serial: 15, hp: 140, maxHp: 140 },
+            ],
+            benchMax: 5,
+            hand: [
+              { id: 3, serial: 101 },
+            ],
+            deckCount: 39,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 60,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    const abilityPhase = snapshot.steps[1].animationPhases?.find((phase) => phase.key === 'Ability:0');
+    expect(abilityPhase?.animationPlan?.motions).toMatchObject([
+      {
+        kind: 'pulse',
+        coordinateSpace: 'board',
+        anchor: { kind: 'board-slot', playerIndex: 0, slot: 'bench', slotIndex: 1 },
+        spriteVisual: { kind: 'pulse', tone: 'ability' },
+      },
+    ]);
   });
 
   it('keeps played Stadium cards in the stadium zone instead of the resolving discard path', () => {
@@ -1440,6 +1536,14 @@ describe('cabtReplayToSnapshot', () => {
     expect(step.animationPhases?.map((phase) => phase.key)).toEqual(['Play:0', 'Evolve:0', 'Ability:0', 'Draw:0']);
     expect(step.animationPhases?.[2].view.players[0].active.pokemon?.serial).toBe(28);
     expect(step.animationPhases?.[2].view.players[0].hand).toHaveLength(0);
+    expect(step.animationPhases?.[2].animationPlan?.motions).toMatchObject([
+      {
+        kind: 'pulse',
+        coordinateSpace: 'board',
+        anchor: { kind: 'board-slot', playerIndex: 0, slot: 'active', slotIndex: 0 },
+        spriteVisual: { kind: 'pulse', tone: 'ability' },
+      },
+    ]);
     expect(step.displayView?.players[0].hand.map((card) => card.serial)).toEqual([12, 27, 54]);
   });
 
@@ -2380,6 +2484,14 @@ describe('cabtReplayToSnapshot', () => {
     ]);
     expect(step.animationPhases?.[0].view.players[0].hand.map((card) => card.serial)).toEqual([120, 83, 101, 81, 109, 100]);
     expect(step.animationPhases?.[1].view.players[0].hand.map((card) => card.serial)).toEqual([120, 101, 81, 109, 100]);
+    expect(step.animationPhases?.[2].animationPlan?.motions).toMatchObject([
+      {
+        kind: 'shuffle',
+        coordinateSpace: 'board',
+        anchor: { kind: 'deck-top', playerIndex: 0 },
+        durationMs: 980,
+      },
+    ]);
     expect(step.animationPhases?.[1].animationPlan?.motions).toMatchObject([
       {
         kind: 'card-move',
@@ -3660,6 +3772,26 @@ describe('cabtReplayToSnapshot', () => {
     expect(step.animationPhases?.[3].view.players[1].active.damage).toBe(400);
     expect(step.animationPhases?.[3].view.players[1].bench[0].pokemon?.serial).toBe(99);
     expect(step.animationPhases?.[3].view.players[1].bench[0].damage).toBe(0);
+    expect(step.animationPhases?.[0].animationPlan?.motions).toMatchObject([
+      {
+        kind: 'pulse',
+        coordinateSpace: 'board',
+        anchor: { kind: 'board-slot', playerIndex: 0, slot: 'active', slotIndex: 0 },
+        identity: { kind: 'pokemon', serial: 13, cardId: 723 },
+        spriteVisual: { kind: 'pulse', tone: 'attack' },
+        durationMs: 520,
+      },
+    ]);
+    expect(step.animationPhases?.[2].animationPlan?.motions).toMatchObject([
+      {
+        kind: 'pulse',
+        coordinateSpace: 'board',
+        anchor: { kind: 'board-slot', playerIndex: 1, slot: 'active', slotIndex: 0 },
+        identity: { kind: 'pokemon', serial: 64, cardId: 721 },
+        spriteVisual: { kind: 'pulse', tone: 'damage' },
+        durationMs: 560,
+      },
+    ]);
     expect(step.animationPhases?.[1].animationPlan?.motions).toMatchObject([
       {
         kind: 'card-move',

@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { actionAnimationBatchEvents, actionAnimationStartMs } from '../cabt/actionAnimationSchedule';
   import { cardBackCssVar } from '../game/cardAssets';
+  import type { ReplayAnimationPhasePlan, ShuffleAnimationMotion } from '../animations/replayAnimationPlan';
   import type { ActionTimelineEvent } from '../game/types';
 
   type Props = {
@@ -10,6 +11,7 @@
     scopeKey?: string | number;
     replayMode?: boolean;
     opponent?: boolean;
+    animationPlan?: ReplayAnimationPhasePlan;
   };
 
   type ShuffleSprite = {
@@ -27,7 +29,7 @@
   };
 
   type ShuffleAnimation = {
-    id: number;
+    id: string;
     sprites: ShuffleSprite[];
   };
 
@@ -37,6 +39,7 @@
     scopeKey = '',
     replayMode = false,
     opponent = false,
+    animationPlan,
   }: Props = $props();
 
   let shuffles = $state<ShuffleAnimation[]>([]);
@@ -45,6 +48,7 @@
   let nextAnimationId = 1;
   let reduceMotion = $state(false);
   let lastScopeKey: string | number = '';
+  let lastPlanKey = '';
   const timers: ReturnType<typeof setTimeout>[] = [];
 
   onMount(() => {
@@ -61,39 +65,54 @@
   });
 
   onDestroy(() => {
-    for (const timer of timers) {
-      clearTimeout(timer);
-    }
+    clearShuffles();
   });
 
   $effect(() => {
     const currentEvents = events;
     const currentScopeKey = scopeKey;
+    const plannedMotions = shufflePlanMotions(animationPlan);
+    const planKey = shufflePlanKey(plannedMotions);
     const scopeChanged = initialized && currentScopeKey !== lastScopeKey;
+    const planChanged = planKey !== lastPlanKey;
+    if (scopeChanged || planChanged) {
+      clearShuffles();
+    }
     lastScopeKey = currentScopeKey;
+    lastPlanKey = planKey;
+
+    if (plannedMotions.length) {
+      initialized = true;
+      if (!reduceMotion && (scopeChanged || planChanged)) {
+        startPlannedShuffles(plannedMotions);
+      }
+      markEventsSeen(currentEvents);
+      return;
+    }
 
     if (!initialized) {
-      for (const event of currentEvents) {
-        seenEventIds.add(event.id);
-      }
+      markEventsSeen(currentEvents);
       initialized = true;
       return;
     }
 
-    const animationEvents = actionAnimationBatchEvents(currentEvents, seenEventIds, replayMode, scopeChanged);
+    if (replayMode) {
+      markEventsSeen(currentEvents);
+      return;
+    }
+
+    const animationEvents = actionAnimationBatchEvents(currentEvents, seenEventIds, false, scopeChanged);
     const shuffleEvents = animationEvents.filter((event) => {
       if (event.kind !== 'Shuffle' || event.playerIndex !== playerIndex) {
         return false;
       }
-      if ((!replayMode || !scopeChanged) && seenEventIds.has(event.id)) {
+      if (seenEventIds.has(event.id)) {
         return false;
       }
       return true;
     });
 
-    for (const event of currentEvents) {
-      seenEventIds.add(event.id);
-    }
+    markEventsSeen(currentEvents);
 
     shuffleEvents.forEach((event) => {
       const timer = setTimeout(() => {
@@ -103,21 +122,57 @@
     });
   });
 
-  function startShuffle() {
+  function markEventsSeen(currentEvents: ActionTimelineEvent[]) {
+    for (const event of currentEvents) {
+      seenEventIds.add(event.id);
+    }
+  }
+
+  function shufflePlanMotions(plan: ReplayAnimationPhasePlan | undefined): ShuffleAnimationMotion[] {
+    return (plan?.motions ?? []).filter((motion): motion is ShuffleAnimationMotion =>
+      motion.kind === 'shuffle'
+      && motion.anchor.kind === 'deck-top'
+      && motion.anchor.playerIndex === playerIndex
+      && plan?.key.startsWith(`Shuffle:${playerIndex}`),
+    );
+  }
+
+  function shufflePlanKey(motions: ShuffleAnimationMotion[]): string {
+    return motions.map((motion) => `${motion.id}:${motion.startMs}:${motion.durationMs}`).join('|');
+  }
+
+  function startPlannedShuffles(motions: ShuffleAnimationMotion[]) {
+    for (const motion of motions) {
+      const timer = setTimeout(() => {
+        startShuffle(motion.id, motion.durationMs);
+      }, motion.startMs);
+      timers.push(timer);
+    }
+  }
+
+  function startShuffle(id = `${nextAnimationId++}`, durationMs = 980) {
     if (reduceMotion) {
       return;
     }
 
     const animation: ShuffleAnimation = {
-      id: nextAnimationId++,
+      id,
       sprites: shuffleSprites(),
     };
 
     shuffles = [...shuffles, animation];
     const timer = setTimeout(() => {
       shuffles = shuffles.filter((item) => item.id !== animation.id);
-    }, 980);
+    }, durationMs);
     timers.push(timer);
+  }
+
+  function clearShuffles() {
+    for (const timer of timers) {
+      clearTimeout(timer);
+    }
+    timers.length = 0;
+    shuffles = [];
   }
 
   function shuffleSprites(): ShuffleSprite[] {
