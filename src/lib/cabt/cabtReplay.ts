@@ -710,7 +710,7 @@ function startGroupHasTerminalResolvingEffect(group: ReplayActionGroup): boolean
 }
 
 function isResolvingTrainerTerminalGroup(group: ReplayActionGroup, continuationEvents: ActionTimelineEvent[]): boolean {
-  if (group.events.some((event) => ['Draw', 'DrawReverse', 'Switch', 'Evolve', 'Devolve', 'Attach'].includes(event.kind ?? ''))) {
+  if (group.events.some((event) => ['Draw', 'DrawReverse', 'Switch', 'Evolve', 'Devolve', 'MoveAttached', 'Attach'].includes(event.kind ?? ''))) {
     return true;
   }
   if (group.events.some((event) => ['HpChange', 'HPChange', 'Poisoned', 'Burned', 'Asleep', 'Paralyzed', 'Confused', 'Coin'].includes(event.kind ?? ''))) {
@@ -750,6 +750,7 @@ function isResolvingTrainerContinuationEvent(event: ActionTimelineEvent): boolea
     'Attach',
     'Evolve',
     'Devolve',
+    'MoveAttached',
     'Switch',
     'Draw',
     'DrawReverse',
@@ -1093,6 +1094,7 @@ function isChoiceOrPhaseKind(kind: string): boolean {
     'Attach',
     'Evolve',
     'Devolve',
+    'MoveAttached',
     'Ability',
     'Attack',
     'TurnEnd',
@@ -1102,7 +1104,7 @@ function isChoiceOrPhaseKind(kind: string): boolean {
 }
 
 function isChoiceConsequenceGroup(type: string): boolean {
-  return ['Play', 'Attach', 'Evolve', 'Devolve', 'Ability', 'Attack'].includes(type);
+  return ['Play', 'Attach', 'Evolve', 'Devolve', 'MoveAttached', 'Ability', 'Attack'].includes(type);
 }
 
 function isCheckupKind(kind: string | undefined): boolean {
@@ -1558,6 +1560,9 @@ function animationPhaseMotions(
   if (phase.key.startsWith('Change:')) {
     return changePulseMotions(phase, view);
   }
+  if (phase.key.startsWith('Devolve:') || phase.key.startsWith('MoveAttached:')) {
+    return boardMutationPulseMotions(phase, view);
+  }
   if (phase.key.startsWith('Condition:')) {
     return conditionPulseMotions(phase, view);
   }
@@ -1779,6 +1784,75 @@ function changePulseLabel(event: ActionTimelineEvent): string {
     return `Changed to ${cardName(cardIdAfter)}`;
   }
   return 'Changed';
+}
+
+function boardMutationPulseMotions(phase: AnimationEventPhase, view: GameView): AnimationMotion[] {
+  const motions = phase.events.map((event) => {
+    if ((event.kind !== 'Devolve' && event.kind !== 'MoveAttached') || event.playerIndex === undefined) {
+      return [];
+    }
+    const anchor = boardMutationAnchorForEvent(view, event);
+    if (!anchor) {
+      return null;
+    }
+    return [{
+      kind: 'pulse',
+      id: `${phase.key}:${event.id}:${event.kind}`,
+      identity: boardMutationAnimationIdentityForEvent(event),
+      anchor,
+      coordinateSpace: 'board',
+      spriteVisual: { kind: 'pulse', tone: 'neutral' },
+      label: boardMutationPulseLabel(event),
+      startMs: actionAnimationStartMs(phase.events, event),
+      durationMs: actionAnimationTiming.conditionAnnounceMs,
+    } satisfies AnimationMotion];
+  });
+  return compactAnimationMotions(motions);
+}
+
+function boardMutationAnchorForEvent(view: GameView, event: ActionTimelineEvent): AnimationAnchorRef | undefined {
+  if (event.playerIndex === undefined) {
+    return undefined;
+  }
+  const params = event.params as Record<string, unknown> | undefined;
+  return boardSlotAnchorForPokemon(
+    view.players[event.playerIndex],
+    finiteNumber(params?.serialTarget)
+      ?? finiteNumber(params?.serialSource)
+      ?? finiteNumber(params?.serialFrom)
+      ?? finiteNumber(params?.serialTo)
+      ?? finiteNumber(params?.serial),
+    finiteNumber(params?.cardIdTarget)
+      ?? finiteNumber(params?.cardIdSource)
+      ?? finiteNumber(params?.cardIdFrom)
+      ?? finiteNumber(params?.cardIdTo)
+      ?? finiteNumber(params?.cardId),
+  );
+}
+
+function boardMutationAnimationIdentityForEvent(event: ActionTimelineEvent): AnimationIdentity {
+  const params = event.params as Record<string, unknown> | undefined;
+  return {
+    kind: 'pokemon',
+    serial: finiteNumber(params?.serialTarget)
+      ?? finiteNumber(params?.serialSource)
+      ?? finiteNumber(params?.serialFrom)
+      ?? finiteNumber(params?.serialTo)
+      ?? finiteNumber(params?.serial),
+    cardId: finiteNumber(params?.cardIdTarget)
+      ?? finiteNumber(params?.cardIdSource)
+      ?? finiteNumber(params?.cardIdFrom)
+      ?? finiteNumber(params?.cardIdTo)
+      ?? finiteNumber(params?.cardId),
+    name: stringValue(params?.cardName) ?? stringValue(params?.cardNameTarget) ?? stringValue(params?.cardNameSource),
+  };
+}
+
+function boardMutationPulseLabel(event: ActionTimelineEvent): string {
+  if (event.kind === 'Devolve') {
+    return 'Devolved';
+  }
+  return 'Moved attached card';
 }
 
 function conditionPulseMotions(phase: AnimationEventPhase, view: GameView): AnimationMotion[] {
@@ -2999,6 +3073,8 @@ function animationSourceViewForPhase(
     phase.key.startsWith('Ability:')
     || phase.key.startsWith('Attack:')
     || phase.key.startsWith('Change:')
+    || phase.key.startsWith('Devolve:')
+    || phase.key.startsWith('MoveAttached:')
     || phase.key.startsWith('Condition:')
     || phase.key.startsWith('Damage:')
   ) {
@@ -3834,6 +3910,7 @@ function isBoardStateEvent(kind: string | undefined): boolean {
     'Change',
     'Evolve',
     'Devolve',
+    'MoveAttached',
     'Switch',
     'HpChange',
     'HPChange',

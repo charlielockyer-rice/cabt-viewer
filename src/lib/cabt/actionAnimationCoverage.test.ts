@@ -63,15 +63,30 @@ describe('classifyAnimationCoverage', () => {
     expect(classifyAnimationCoverage(knockout, [knockout]).level).toBe('conditional');
   });
 
-  it('flags complex board mutations without dedicated animation', () => {
+  it('recognizes complex board mutations as polished announcements when identity is present', () => {
     expect(classifyAnimationCoverage(event('MoveAttached', {
-      cardId: 3,
-      serial: 10,
-    })).level).toBe('unsupported');
+      cardIdTarget: 721,
+      serialTarget: 10,
+    })).label).toBe('Attached-card move announcement');
+    expect(classifyAnimationCoverage(event('MoveAttached', {
+      cardIdTarget: 721,
+      serialTarget: 10,
+    })).level).toBe('polished');
     expect(classifyAnimationCoverage(event('Devolve', {
       cardId: 723,
       serial: 10,
-    })).level).toBe('unsupported');
+    })).level).toBe('polished');
+  });
+
+  it('marks complex board mutations conditional without an anchorable source identity', () => {
+    expect(classifyAnimationCoverage(event('MoveAttached', {
+      cardIdAttached: 3,
+    })).level).toBe('conditional');
+    expect(classifyAnimationCoverage(event('MoveAttached', {
+      cardId: 88,
+      serial: 50,
+    })).level).toBe('conditional');
+    expect(classifyAnimationCoverage(event('Devolve', {})).level).toBe('conditional');
   });
 
   it('recognizes board Pokemon changes as polished announcements when identity is present', () => {

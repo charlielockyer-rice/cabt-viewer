@@ -106,7 +106,7 @@ export function actionAnimationPhaseKey(event: ActionTimelineEvent): string | nu
   const toArea = Number(params?.toArea);
   const playerKey = event.playerIndex ?? 'unknown';
 
-  if (event.kind === 'Play' || event.kind === 'Attach' || event.kind === 'Evolve') {
+  if (event.kind === 'Play' || event.kind === 'Attach' || event.kind === 'Evolve' || event.kind === 'Devolve') {
     return `${event.kind}:${playerKey}`;
   }
   if (event.kind === 'Attack') {
@@ -120,6 +120,9 @@ export function actionAnimationPhaseKey(event: ActionTimelineEvent): string | nu
   }
   if (event.kind === 'Change') {
     return `Change:${playerKey}`;
+  }
+  if (event.kind === 'MoveAttached') {
+    return `MoveAttached:${playerKey}`;
   }
   if (isSpecialConditionEvent(event.kind)) {
     return `Condition:${playerKey}`;
@@ -253,6 +256,9 @@ export function actionAnimationPhaseCardDurationMs(key: string): number {
   if (key.startsWith('Change:')) {
     return actionAnimationTiming.conditionAnnounceMs;
   }
+  if (key.startsWith('Devolve:') || key.startsWith('MoveAttached:')) {
+    return actionAnimationTiming.conditionAnnounceMs;
+  }
   if (key.startsWith('Damage:')) {
     return actionAnimationTiming.damageVisualMs;
   }
@@ -323,6 +329,9 @@ export function actionAnimationPhaseStepMs(key: string): number {
   if (key.startsWith('Change:')) {
     return actionAnimationTiming.conditionAnnounceMs;
   }
+  if (key.startsWith('Devolve:') || key.startsWith('MoveAttached:')) {
+    return actionAnimationTiming.conditionAnnounceMs;
+  }
   if (key.startsWith('Damage:')) {
     return actionAnimationTiming.damageVisualMs;
   }
@@ -344,9 +353,11 @@ export function actionAnimationPhaseUsesSourceView(key: string): boolean {
     || key.startsWith('HandMove:')
     || key.startsWith('Attach:')
     || key.startsWith('Evolve:')
+    || key.startsWith('Devolve:')
     || key.startsWith('Ability:')
     || key.startsWith('Attack:')
     || key.startsWith('Change:')
+    || key.startsWith('MoveAttached:')
     || key.startsWith('Condition:')
     || key.startsWith('Damage:')
     || key.startsWith('KnockOut:')
@@ -364,6 +375,8 @@ export function actionAnimationPhaseNeedsDedicatedView(key: string): boolean {
     || key.startsWith('Attack:')
     || key.startsWith('Coin:')
     || key.startsWith('Change:')
+    || key.startsWith('Devolve:')
+    || key.startsWith('MoveAttached:')
     || key.startsWith('Condition:')
     || key.startsWith('Damage:')
     || key.startsWith('KnockOut:')
@@ -381,10 +394,12 @@ export function actionAnimationPhaseMayHavePlan(key: string): boolean {
     || key.startsWith('HandMove:')
     || key.startsWith('Attach:')
     || key.startsWith('Evolve:')
+    || key.startsWith('Devolve:')
     || key.startsWith('Ability:')
     || key.startsWith('Attack:')
     || key.startsWith('Coin:')
     || key.startsWith('Change:')
+    || key.startsWith('MoveAttached:')
     || key.startsWith('Condition:')
     || key.startsWith('Damage:')
     || key.startsWith('KnockOut:')

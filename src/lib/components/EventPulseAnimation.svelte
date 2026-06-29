@@ -53,6 +53,8 @@
         replayAnimationPlanHasPhase(plan, 'Coin', motion.anchor.playerIndex)
         || replayAnimationPlanHasPhase(plan, 'Change', motion.anchor.playerIndex)
         || replayAnimationPlanHasPhase(plan, 'Condition', motion.anchor.playerIndex)
+        || replayAnimationPlanHasPhase(plan, 'Devolve', motion.anchor.playerIndex)
+        || replayAnimationPlanHasPhase(plan, 'MoveAttached', motion.anchor.playerIndex)
       ),
     );
   }

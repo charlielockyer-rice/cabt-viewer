@@ -214,6 +214,23 @@ export function classifyAnimationCoverage(
     return { key: kind, level: 'polished', label: 'Board Pokemon change announcement', notes };
   }
 
+  if (kind === 'Devolve' || kind === 'MoveAttached') {
+    const label = kind === 'Devolve' ? 'Devolution announcement' : 'Attached-card move announcement';
+    if (event.playerIndex === undefined) {
+      notes.push(`${kind} animation needs a player index so it can anchor to that player’s board.`);
+      return { key: kind, level: 'conditional', label, notes };
+    }
+    const hasAnchorableIdentity = kind === 'MoveAttached'
+      ? hasBoardPokemonTargetIdentity(params)
+      : hasBoardMutationIdentity(params);
+    if (!hasAnchorableIdentity) {
+      notes.push(`${kind} animation needs a source-matchable board Pokemon identity to find the affected slot.`);
+      return { key: kind, level: 'conditional', label, notes };
+    }
+    notes.push('Announces the board mutation; card-by-card motion depends on richer source/destination payloads.');
+    return { key: kind, level: 'polished', label, notes };
+  }
+
   if (['Poisoned', 'Burned', 'Asleep', 'Paralyzed', 'Confused'].includes(kind)) {
     return {
       key: kind,
@@ -254,15 +271,6 @@ export function classifyAnimationCoverage(
 
   if (['TurnStart', 'TurnEnd', 'HasBasicPokemon', 'Result'].includes(kind)) {
     return { key: kind, level: 'static', label: 'Timeline/state-only phase marker', notes };
-  }
-
-  if (['Devolve', 'MoveAttached'].includes(kind)) {
-    return {
-      key: kind,
-      level: 'unsupported',
-      label: 'Complex board mutation without dedicated animation',
-      notes: ['This is likely to look like a sudden state change unless it happens inside another animated group.'],
-    };
   }
 
   return {
@@ -328,4 +336,28 @@ function moveKey(fromArea: number, toArea: number): string {
 
 function hasFiniteNumber(value: unknown): boolean {
   return Number.isFinite(Number(value));
+}
+
+function hasBoardMutationIdentity(params: Record<string, unknown> | undefined): boolean {
+  return hasFiniteNumber(params?.serial)
+    || hasFiniteNumber(params?.serialTarget)
+    || hasFiniteNumber(params?.serialSource)
+    || hasFiniteNumber(params?.serialFrom)
+    || hasFiniteNumber(params?.serialTo)
+    || hasFiniteNumber(params?.cardId)
+    || hasFiniteNumber(params?.cardIdTarget)
+    || hasFiniteNumber(params?.cardIdSource)
+    || hasFiniteNumber(params?.cardIdFrom)
+    || hasFiniteNumber(params?.cardIdTo);
+}
+
+function hasBoardPokemonTargetIdentity(params: Record<string, unknown> | undefined): boolean {
+  return hasFiniteNumber(params?.serialTarget)
+    || hasFiniteNumber(params?.serialSource)
+    || hasFiniteNumber(params?.serialFrom)
+    || hasFiniteNumber(params?.serialTo)
+    || hasFiniteNumber(params?.cardIdTarget)
+    || hasFiniteNumber(params?.cardIdSource)
+    || hasFiniteNumber(params?.cardIdFrom)
+    || hasFiniteNumber(params?.cardIdTo);
 }

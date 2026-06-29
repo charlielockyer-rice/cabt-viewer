@@ -8,6 +8,7 @@
 ## Replay Animation Invariants
 
 - Fully migrate replay animations to phase plans. Once a replay animation is plan-owned, remove the old replay event branch instead of keeping a parallel fallback; live/non-replay event animation can remain as a separate path when the interactive viewer still needs it.
+- Do not preserve compatibility scaffolding for newly written replay animation code. This animation system is young enough that a clean replacement is better than a stack of legacy branches, retry paths, or one-off fallback selectors.
 - Planned replay motions must resolve exact semantic anchors. If a motion supplies a serial/card/name identity, do not retry against the broad anchor without that identity; broad retries can grab the wrong DOM element and cause alternating flicker.
 - Visibility and handoff should be owned by the phase plan. If a planned motion cannot find its source or destination, fix the plan's anchor/phase view instead of adding a component-local fallback selector.
 - Replay visibility claims are derived from motion `handoffPolicy`; do not add caller-supplied claim lists or component-local hidden attributes for planned replay paths. Local fallback attributes are only acceptable for live/non-replay animation paths that do not yet have a phase plan.

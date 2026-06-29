@@ -109,8 +109,10 @@ export type ReplayAnimationPhaseKind =
   | 'Condition'
   | 'Damage'
   | 'DeckDiscard'
+  | 'Devolve'
   | 'Draw'
   | 'HandToDeck'
+  | 'MoveAttached'
   | 'PrizeTake'
   | 'Shuffle';
 

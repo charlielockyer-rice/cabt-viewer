@@ -312,6 +312,8 @@ describe('actionAnimationPhaseKey', () => {
     }))).toBe('HandToDeck:1');
     expect(actionAnimationPhaseKey(event(4, 'Poisoned', {}))).toBe('Condition:1');
     expect(actionAnimationPhaseKey(event(5, 'Change', {}))).toBe('Change:1');
+    expect(actionAnimationPhaseKey(event(6, 'Devolve', {}))).toBe('Devolve:1');
+    expect(actionAnimationPhaseKey(event(7, 'MoveAttached', {}))).toBe('MoveAttached:1');
   });
 
   it('keeps board and attached motions on source-owned phase views with animation plans', () => {

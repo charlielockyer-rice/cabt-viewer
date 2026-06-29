@@ -502,6 +502,138 @@ describe('cabtReplayToSnapshot', () => {
     ]);
   });
 
+  it('plans devolutions as neutral source-slot pulses', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 723, serial: 14, hp: 130, maxHp: 130 }],
+            bench: [],
+            benchMax: 5,
+            hand: [],
+            deckCount: 40,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 60,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'Devolve', playerIndex: 0, cardId: 723, serial: 14 },
+        ],
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 722, serial: 14, hp: 120, maxHp: 120 }],
+            bench: [],
+            benchMax: 5,
+            hand: [],
+            deckCount: 40,
+            discard: [{ id: 723, serial: 44 }],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 60,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    const step = snapshot.steps[1];
+    expect(step.animationPhases?.map((phase) => phase.key)).toEqual(['Devolve:0']);
+    expect(step.animationPhases?.[0].view.players[0].active.pokemon?.id).toBe(723);
+    expect(snapshot.views[step.stateIndex].players[0].active.pokemon?.id).toBe(722);
+    expect(step.animationPhases?.[0].animationPlan?.motions).toMatchObject([
+      {
+        kind: 'pulse',
+        coordinateSpace: 'board',
+        anchor: { kind: 'board-slot', playerIndex: 0, slot: 'active', slotIndex: 0 },
+        spriteVisual: { kind: 'pulse', tone: 'neutral' },
+        label: 'Devolved',
+      },
+    ]);
+  });
+
+  it('plans attached-card board mutations as neutral pulses on the affected Pokemon', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 721, serial: 14, hp: 140, maxHp: 140 }],
+            bench: [],
+            benchMax: 5,
+            hand: [],
+            deckCount: 40,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 60,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'MoveAttached', playerIndex: 0, cardIdTarget: 721, serialTarget: 14, cardId: 88, serial: 50 },
+        ],
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 721, serial: 14, hp: 140, maxHp: 140, energy: [{ id: 88, serial: 50 }] }],
+            bench: [],
+            benchMax: 5,
+            hand: [],
+            deckCount: 40,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 60,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    const step = snapshot.steps[1];
+    expect(step.animationPhases?.map((phase) => phase.key)).toEqual(['MoveAttached:0']);
+    expect(step.animationPhases?.[0].animationPlan?.motions).toMatchObject([
+      {
+        kind: 'pulse',
+        coordinateSpace: 'board',
+        anchor: { kind: 'board-slot', playerIndex: 0, slot: 'active', slotIndex: 0 },
+        spriteVisual: { kind: 'pulse', tone: 'neutral' },
+        label: 'Moved attached card',
+      },
+    ]);
+  });
+
   it('plans special-condition changes as neutral active-slot pulses using the source board state', () => {
     const snapshot = cabtReplayToSnapshot({
       visualize: [{
@@ -1731,6 +1863,124 @@ describe('cabtReplayToSnapshot', () => {
     expect(step.displayView?.players[0].active.pokemon?.serial).toBe(81);
     expect(snapshot.views[step.stateIndex].players[0].discard.map((card) => card.serial)).toEqual([14]);
     expect(snapshot.views[step.stateIndex].players[0].active.pokemon?.serial).toBe(81);
+  });
+
+  it('keeps a played trainer in the resolving zone during a follow-up attached-card move', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 721, serial: 20, hp: 140, maxHp: 140, energy: [{ id: 88, serial: 50 }] }],
+            bench: [{ id: 722, serial: 21, hp: 70, maxHp: 70 }],
+            benchMax: 5,
+            hand: [
+              { id: 1182, serial: 14 },
+            ],
+            deckCount: 46,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 53,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'Play', playerIndex: 0, cardId: 1182, serial: 14 },
+        ],
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 721, serial: 20, hp: 140, maxHp: 140, energy: [{ id: 88, serial: 50 }] }],
+            bench: [{ id: 722, serial: 21, hp: 70, maxHp: 70 }],
+            benchMax: 5,
+            hand: [],
+            deckCount: 46,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 53,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          {
+            type: 'MoveAttached',
+            playerIndex: 0,
+            cardIdSource: 721,
+            serialSource: 20,
+            cardIdTarget: 722,
+            serialTarget: 21,
+            cardId: 88,
+            serial: 50,
+          },
+        ],
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 721, serial: 20, hp: 140, maxHp: 140 }],
+            bench: [{ id: 722, serial: 21, hp: 70, maxHp: 70, energy: [{ id: 88, serial: 50 }] }],
+            benchMax: 5,
+            hand: [],
+            deckCount: 46,
+            discard: [{ id: 1182, serial: 14 }],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 53,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    const step = snapshot.steps[1];
+    expect(step.actionTimeline?.map((event) => event.kind)).toEqual(['Play', 'MoveAttached']);
+    expect(step.animationPhases?.map((phase) => phase.key)).toEqual(['Play:0', 'MoveAttached:0']);
+    expect(step.animationPhases?.[0].view.players[0].playZone.map((card) => card.serial)).toEqual([14]);
+    expect(step.animationPhases?.[1].view.players[0].playZone.map((card) => card.serial)).toEqual([14]);
+    expect(step.animationPhases?.[1].view.players[0].discard.map((card) => card.serial)).toEqual([14]);
+    expect(step.animationPhases?.[1].animationPlan?.motions).toMatchObject([
+      {
+        kind: 'pulse',
+        coordinateSpace: 'board',
+        anchor: { kind: 'board-slot', playerIndex: 0, slot: 'bench', slotIndex: 0 },
+        label: 'Moved attached card',
+      },
+      {
+        kind: 'card-move',
+        coordinateSpace: 'board',
+        sourceAnchor: { kind: 'play-zone-card', playerIndex: 0, serial: 14 },
+        targetAnchor: { kind: 'discard-card', playerIndex: 0, serial: 14 },
+        identity: { kind: 'card', serial: 14, cardId: 1182 },
+        handoffPolicy: {
+          hideSourceUntil: 'scope-exit',
+          hideDestinationUntil: 'prepaint',
+          removeSprite: 'prepaint',
+        },
+      },
+    ]);
+    expect(step.displayView?.players[0].playZone).toHaveLength(0);
+    expect(step.displayView?.players[0].discard.map((card) => card.serial)).toEqual([14]);
   });
 
   it('coalesces a played evolution helper with its evolution animation', () => {
