@@ -9,7 +9,17 @@
   import {
     type AnimationAnchorRef,
   } from '../animations/animationAnchors';
+  import { afterTwoAnimationFrames } from '../animations/animationFrames';
   import type { ReplayAnimationPhasePlan, RevealSessionAnimationMotion, RevealSessionStep } from '../animations/replayAnimationPlan';
+  import {
+    cardHeightToWidthRatio,
+    centerOf,
+    fallbackHandTarget,
+    handAnchor,
+    handCardSlots,
+    handCardVisualRect,
+    handSlotForSerial,
+  } from '../animations/viewportCardMotion';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -72,7 +82,6 @@
 
   const timers: ReturnType<typeof setTimeout>[] = [];
   const handoffFrameIds: number[] = [];
-  const cardHeightToWidthRatio = 88 / 63;
   const handoffSettleMs = 48;
   let reveals = $state<RevealAnimation[]>([]);
   let seenEventIds = new Set<number>();
@@ -884,22 +893,9 @@
   }
 
   function removeSpritesAfterPrepaint(predicate: (sprite: RevealSprite) => boolean) {
-    const firstFrameId = requestAnimationFrame(() => {
-      removeHandoffFrame(firstFrameId);
-      const secondFrameId = requestAnimationFrame(() => {
-        removeHandoffFrame(secondFrameId);
-        removeSprites(predicate);
-      });
-      handoffFrameIds.push(secondFrameId);
-    });
-    handoffFrameIds.push(firstFrameId);
-  }
-
-  function removeHandoffFrame(frameId: number) {
-    const index = handoffFrameIds.indexOf(frameId);
-    if (index >= 0) {
-      handoffFrameIds.splice(index, 1);
-    }
+    afterTwoAnimationFrames(() => {
+      removeSprites(predicate);
+    }, handoffFrameIds);
   }
 
   function revealSprite(serial: number): RevealSprite | undefined {
@@ -944,56 +940,6 @@
       concealed: handElement.classList.contains('concealed'),
       element: targetElement,
     };
-  }
-
-  function handAnchor(playerIndex: number): HTMLElement | null {
-    return document.querySelector(`[data-card-anchor="player:${playerIndex}:hand"]`);
-  }
-
-  function handCardSlots(handElement: HTMLElement, playerIndex: number): HTMLElement[] {
-    return Array.from(handElement.querySelectorAll(`[data-hand-card-slot^="player:${playerIndex}:hand:"]`))
-      .filter((element): element is HTMLElement => element instanceof HTMLElement);
-  }
-
-  function handSlotForSerial(handSlots: HTMLElement[], serial: number): HTMLElement | undefined {
-    if (!Number.isFinite(serial)) {
-      return undefined;
-    }
-    return handSlots.find((element) => Number(element.dataset.cardSerial) === serial);
-  }
-
-  function handCardVisualRect(targetElement: HTMLElement | undefined): DOMRect | undefined {
-    if (!targetElement) {
-      return undefined;
-    }
-    const visual = targetElement.querySelector('.card-tile');
-    if (visual instanceof HTMLElement) {
-      const rect = visual.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) {
-        return rect;
-      }
-    }
-    const rect = targetElement.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0 ? rect : undefined;
-  }
-
-  function fallbackHandTarget(handRect: DOMRect, index: number, count: number): DOMRect {
-    const width = Math.min(handRect.height / cardHeightToWidthRatio, handRect.width / Math.max(1, count));
-    const height = width * cardHeightToWidthRatio;
-    const step = Math.min(width * 0.82, handRect.width / Math.max(1, count));
-    const centerX = handRect.left + handRect.width / 2 + (index - (count - 1) / 2) * step;
-    const centerY = handRect.top + handRect.height / 2;
-    return {
-      left: centerX - width / 2,
-      top: centerY - height / 2,
-      right: centerX + width / 2,
-      bottom: centerY + height / 2,
-      x: centerX - width / 2,
-      y: centerY - height / 2,
-      width,
-      height,
-      toJSON: () => ({}),
-    } as DOMRect;
   }
 
   function hideTargets(targets: HTMLElement[], options: DestinationHideOptions = {}) {
@@ -1072,13 +1018,6 @@
       exitY: 0,
       exitScale: 1,
       rotation: 0,
-    };
-  }
-
-  function centerOf(rect: DOMRect): { x: number; y: number } {
-    return {
-      x: rect.left + rect.width / 2,
-      y: rect.top + rect.height / 2,
     };
   }
 

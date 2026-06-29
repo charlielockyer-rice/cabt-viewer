@@ -6,10 +6,14 @@
     releaseElementVisibilityClaim,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
-  import {
-    resolveAnimationAnchorElements,
-  } from '../animations/animationAnchors';
   import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
+  import {
+    animationElementForMotionAnchor,
+    centerOf,
+    deckTopElement,
+    plannedMotionCard,
+    plannedMotionFaceDown,
+  } from '../animations/viewportCardMotion';
   import { actionAnimationBatchEvents, actionAnimationStartMs } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -344,44 +348,6 @@
     };
   }
 
-  function animationElementForMotionAnchor(
-    anchor: CardMoveAnimationMotion['sourceAnchor'],
-    identity: CardMoveAnimationMotion['identity'],
-  ): HTMLElement | undefined {
-    const element = resolveAnimationAnchorElements(anchor, { identity }).at(0)
-      ?? resolveAnimationAnchorElements(anchor).at(0);
-    if (!element) {
-      return undefined;
-    }
-    if (anchor.kind === 'deck-top') {
-      const pile = element.closest('.deck-pile');
-      if (pile instanceof HTMLElement) {
-        const face = pile.querySelector('.deck-card-face');
-        return face instanceof HTMLElement ? face : pile;
-      }
-    }
-    return element;
-  }
-
-  function plannedMotionCard(motion: CardMoveAnimationMotion): CardView | undefined {
-    if (motion.spriteVisual.kind !== 'card') {
-      return undefined;
-    }
-    const cardId = motion.identity?.cardId ?? motion.spriteVisual.card?.id;
-    if (!Number.isFinite(Number(cardId))) {
-      return undefined;
-    }
-    return {
-      ...cabtCardToView(Number(cardId)),
-      ...(motion.spriteVisual.card ?? {}),
-      serial: motion.identity?.serial ?? motion.spriteVisual.card?.serial,
-    };
-  }
-
-  function plannedMotionFaceDown(motion: CardMoveAnimationMotion): boolean {
-    return motion.spriteVisual.kind === 'card' && motion.spriteVisual.faceDown === true;
-  }
-
   function isHandToDeckMove(event: ActionTimelineEvent): boolean {
     const params = event.params as Record<string, unknown> | undefined;
     return event.kind === 'MoveCard'
@@ -442,19 +408,6 @@
       });
     }
     return hands;
-  }
-
-  function deckTopElement(playerIndex: number): HTMLElement | null {
-    const anchor = document.querySelector(`[data-card-anchor="player:${playerIndex}:deck"]`);
-    const pile = anchor?.closest('.deck-pile') as HTMLElement | null;
-    return pile?.querySelector('.deck-card-face') ?? pile;
-  }
-
-  function centerOf(rect: RectSnapshot | DOMRect): { x: number; y: number } {
-    return {
-      x: rect.left + rect.width / 2,
-      y: rect.top + rect.height / 2,
-    };
   }
 
   function hideSources(sources: HTMLElement[]) {

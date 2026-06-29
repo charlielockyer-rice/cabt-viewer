@@ -3,6 +3,7 @@
   import CardTile from './CardTile.svelte';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { resolveAnimationAnchorElements, type AnimationAnchorRef } from '../animations/animationAnchors';
+  import { afterTwoAnimationFrames } from '../animations/animationFrames';
   import {
     hideElementForAnimation,
     releaseElementVisibilityClaim,
@@ -704,24 +705,11 @@
     if (!spriteIdsToClear.size) {
       return;
     }
-    const firstFrameId = requestAnimationFrame(() => {
-      removeHandoffFrame(firstFrameId);
-      const secondFrameId = requestAnimationFrame(() => {
-        removeHandoffFrame(secondFrameId);
-        if (generation === animationGeneration) {
-          sprites = sprites.filter((sprite) => !spriteIdsToClear.has(sprite.id));
-        }
-      });
-      handoffFrameIds.push(secondFrameId);
-    });
-    handoffFrameIds.push(firstFrameId);
-  }
-
-  function removeHandoffFrame(frameId: number) {
-    const frameIndex = handoffFrameIds.indexOf(frameId);
-    if (frameIndex >= 0) {
-      handoffFrameIds.splice(frameIndex, 1);
-    }
+    afterTwoAnimationFrames(() => {
+      if (generation === animationGeneration) {
+        sprites = sprites.filter((sprite) => !spriteIdsToClear.has(sprite.id));
+      }
+    }, handoffFrameIds);
   }
 
   function measureSpriteCorrection(sprite: BoardMoveSprite, target: HTMLElement) {

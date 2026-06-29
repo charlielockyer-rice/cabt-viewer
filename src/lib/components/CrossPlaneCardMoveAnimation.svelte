@@ -1,8 +1,11 @@
 <script lang="ts">
   import { onDestroy, tick } from 'svelte';
+  import { afterTwoAnimationFrames } from '../animations/animationFrames';
   import {
-    resolveAnimationAnchorElements,
-  } from '../animations/animationAnchors';
+    animationElementForMotionAnchor,
+    centerOf,
+    isConcealedHandTarget,
+  } from '../animations/viewportCardMotion';
   import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { replayAnimationPhaseGapMs } from '../game/replay';
   import type { CardView } from '../game/types';
@@ -144,28 +147,15 @@
   }
 
   function sourceElementForMotion(motion: CardMoveAnimationMotion): HTMLElement | undefined {
-    return resolveAnimationAnchorElements(motion.sourceAnchor, { identity: motion.identity }).at(0)
-      ?? resolveAnimationAnchorElements(motion.sourceAnchor).at(0);
+    return animationElementForMotionAnchor(motion.sourceAnchor, motion.identity);
   }
 
   function targetElementForMotion(motion: CardMoveAnimationMotion): HTMLElement | undefined {
-    return resolveAnimationAnchorElements(motion.targetAnchor, { identity: motion.identity }).at(0)
-      ?? resolveAnimationAnchorElements(motion.targetAnchor).at(0);
-  }
-
-  function isConcealedHandTarget(element: HTMLElement): boolean {
-    return !!element.closest('.hand.concealed');
+    return animationElementForMotionAnchor(motion.targetAnchor, motion.identity);
   }
 
   function isOpponentSide(element: HTMLElement): boolean {
     return !!element.closest('.player-panel.top, .top-active-slot, .bench-row.opponent');
-  }
-
-  function centerOf(rect: DOMRect): { x: number; y: number } {
-    return {
-      x: rect.left + rect.width / 2,
-      y: rect.top + rect.height / 2,
-    };
   }
 
   function handoffSettleMs(motion: CardMoveAnimationMotion): number {
@@ -176,24 +166,11 @@
   }
 
   function removeSpriteAfterPrepaint(spriteIdToRemove: string, currentGeneration: number) {
-    const firstFrame = requestAnimationFrame(() => {
-      removeFrame(firstFrame);
-      const secondFrame = requestAnimationFrame(() => {
-        removeFrame(secondFrame);
-        if (generation === currentGeneration) {
-          activeSprites = activeSprites.filter((sprite) => sprite.id !== spriteIdToRemove);
-        }
-      });
-      frameIds.push(secondFrame);
-    });
-    frameIds.push(firstFrame);
-  }
-
-  function removeFrame(frameId: number) {
-    const index = frameIds.indexOf(frameId);
-    if (index >= 0) {
-      frameIds.splice(index, 1);
-    }
+    afterTwoAnimationFrames(() => {
+      if (generation === currentGeneration) {
+        activeSprites = activeSprites.filter((sprite) => sprite.id !== spriteIdToRemove);
+      }
+    }, frameIds);
   }
 
   function clearSprites() {
