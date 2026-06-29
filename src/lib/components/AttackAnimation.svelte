@@ -1,6 +1,12 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { resolveExactAnimationAnchorElement } from '../animations/animationAnchors';
+  import {
+    claimAnimationElementEffect,
+    releaseAnimationElementEffectClaim,
+    releaseAnimationElementEffectClaims,
+    type AnimationElementEffectClaim,
+  } from '../animations/animationElementEffects';
   import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { replayAnimationPlanHasPhase, type PulseAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
@@ -35,8 +41,8 @@
   let reduceMotion = $state(false);
   let damageSprites = $state<DamageSprite[]>([]);
   let animationGeneration = 0;
-  const activeAttackAnnouncements = new Set<HTMLElement>();
-  const activeAttackLunges = new Set<HTMLElement>();
+  const activeAttackAnnouncements = new Set<AnimationElementEffectClaim>();
+  const activeAttackLunges = new Set<AnimationElementEffectClaim>();
 
   onMount(() => {
     if (typeof window.matchMedia !== 'function') {
@@ -134,14 +140,12 @@
       if (!attacker) {
         return;
       }
-      activeAttackAnnouncements.add(attacker);
-      attacker.dataset.attackAnnounceActive = 'true';
-      attacker.style.setProperty('--attack-name', JSON.stringify(motion.label ?? 'Attack'));
+      const claim = activateAttackAnnouncement(attacker, motion.label ?? 'Attack');
       const cleanup = setTimeout(() => {
         if (generation !== animationGeneration) {
           return;
         }
-        clearAttackAnnouncement(attacker);
+        clearAttackAnnouncement(claim);
       }, motion.durationMs);
       timers.push(cleanup);
     }, motion.startMs);
@@ -194,11 +198,9 @@
       }
       const delayMs = actionAnimationStartMs(animationEvents, event);
       const timer = setTimeout(() => {
-        activeAttackAnnouncements.add(attacker);
-        attacker.dataset.attackAnnounceActive = 'true';
-        attacker.style.setProperty('--attack-name', JSON.stringify(attackNameForEvent(event)));
+        const claim = activateAttackAnnouncement(attacker, attackNameForEvent(event));
         const cleanup = setTimeout(() => {
-          clearAttackAnnouncement(attacker);
+          clearAttackAnnouncement(claim);
         }, actionAnimationTiming.attackAnnounceMs);
         timers.push(cleanup);
       }, delayMs);
@@ -247,13 +249,18 @@
     const dx = targetRect.left + targetRect.width / 2 - (sourceRect.left + sourceRect.width / 2);
     const dy = targetRect.top + targetRect.height / 2 - (sourceRect.top + sourceRect.height / 2);
     const distance = Math.max(1, Math.hypot(dx, dy));
-    attacker.style.setProperty('--attack-lunge-x', `${(dx / distance * 22).toFixed(1)}px`);
-    attacker.style.setProperty('--attack-lunge-y', `${(dy / distance * 22).toFixed(1)}px`);
-    activeAttackLunges.add(attacker);
-    attacker.dataset.attackLungeActive = 'true';
-    attacker.style.setProperty('--damage-visual-ms', `${durationMs}ms`);
+    const claim = claimAnimationElementEffect({
+      element: attacker,
+      attributes: { 'data-attack-lunge-active': 'true' },
+      styles: {
+        '--attack-lunge-x': `${(dx / distance * 22).toFixed(1)}px`,
+        '--attack-lunge-y': `${(dy / distance * 22).toFixed(1)}px`,
+        '--damage-visual-ms': `${durationMs}ms`,
+      },
+    });
+    activeAttackLunges.add(claim);
     const cleanup = setTimeout(() => {
-      clearAttackLunge(attacker);
+      clearAttackLunge(claim);
     }, durationMs);
     timers.push(cleanup);
   }
@@ -264,27 +271,31 @@
       clearTimeout(timer);
     }
     timers.length = 0;
-    for (const element of activeAttackAnnouncements) {
-      clearAttackAnnouncement(element);
-    }
-    for (const element of activeAttackLunges) {
-      clearAttackLunge(element);
-    }
+    releaseAnimationElementEffectClaims(activeAttackAnnouncements);
+    releaseAnimationElementEffectClaims(activeAttackLunges);
+    activeAttackAnnouncements.clear();
+    activeAttackLunges.clear();
     damageSprites = [];
   }
 
-  function clearAttackAnnouncement(element: HTMLElement) {
-    delete element.dataset.attackAnnounceActive;
-    element.style.removeProperty('--attack-name');
-    activeAttackAnnouncements.delete(element);
+  function activateAttackAnnouncement(element: HTMLElement, attackName: string) {
+    const claim = claimAnimationElementEffect({
+      element,
+      attributes: { 'data-attack-announce-active': 'true' },
+      styles: { '--attack-name': JSON.stringify(attackName) },
+    });
+    activeAttackAnnouncements.add(claim);
+    return claim;
   }
 
-  function clearAttackLunge(element: HTMLElement) {
-    delete element.dataset.attackLungeActive;
-    element.style.removeProperty('--attack-lunge-x');
-    element.style.removeProperty('--attack-lunge-y');
-    element.style.removeProperty('--damage-visual-ms');
-    activeAttackLunges.delete(element);
+  function clearAttackAnnouncement(claim: AnimationElementEffectClaim) {
+    releaseAnimationElementEffectClaim(claim);
+    activeAttackAnnouncements.delete(claim);
+  }
+
+  function clearAttackLunge(claim: AnimationElementEffectClaim) {
+    releaseAnimationElementEffectClaim(claim);
+    activeAttackLunges.delete(claim);
   }
 
   function isDamageEvent(event: ActionTimelineEvent) {

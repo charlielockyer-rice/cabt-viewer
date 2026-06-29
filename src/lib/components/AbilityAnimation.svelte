@@ -1,6 +1,12 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
+  import {
+    claimAnimationElementEffect,
+    releaseAnimationElementEffectClaim,
+    releaseAnimationElementEffectClaims,
+    type AnimationElementEffectClaim,
+  } from '../animations/animationElementEffects';
   import { resolveExactAnimationAnchorElement } from '../animations/animationAnchors';
   import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
   import { replayAnimationPlanHasPhase, type PulseAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
@@ -24,7 +30,7 @@
   const runState = new ReplayAnimationRunState();
   let reduceMotion = $state(false);
   let animationGeneration = 0;
-  const activeAbilityElements = new Set<HTMLElement>();
+  const activeAbilityClaims = new Set<AnimationElementEffectClaim>();
 
   onMount(() => {
     if (typeof window.matchMedia !== 'function') {
@@ -106,12 +112,12 @@
         if (!source) {
           return;
         }
-        activateAbilityElement(source, motion.label ?? 'Ability');
+        const claim = activateAbilityElement(source, motion.label ?? 'Ability');
         const cleanup = setTimeout(() => {
           if (generation !== animationGeneration) {
             return;
           }
-          clearAbilityElement(source);
+          clearAbilityElement(claim);
         }, motion.durationMs);
         timers.push(cleanup);
       }, motion.startMs);
@@ -131,12 +137,12 @@
         if (generation !== animationGeneration) {
           return;
         }
-        activateAbilityElement(source, abilityNameForEvent(event));
+        const claim = activateAbilityElement(source, abilityNameForEvent(event));
         const cleanup = setTimeout(() => {
           if (generation !== animationGeneration) {
             return;
           }
-          clearAbilityElement(source);
+          clearAbilityElement(claim);
         }, actionAnimationTiming.abilityAnnounceMs);
         timers.push(cleanup);
       }, delayMs);
@@ -155,22 +161,23 @@
       clearTimeout(timer);
     }
     timers.length = 0;
-    for (const element of activeAbilityElements) {
-      clearAbilityElement(element);
-    }
-    activeAbilityElements.clear();
+    releaseAnimationElementEffectClaims(activeAbilityClaims);
+    activeAbilityClaims.clear();
   }
 
   function activateAbilityElement(element: HTMLElement, abilityName: string) {
-    activeAbilityElements.add(element);
-    element.dataset.abilityAnnounceActive = 'true';
-    element.style.setProperty('--ability-name', JSON.stringify(abilityName));
+    const claim = claimAnimationElementEffect({
+      element,
+      attributes: { 'data-ability-announce-active': 'true' },
+      styles: { '--ability-name': JSON.stringify(abilityName) },
+    });
+    activeAbilityClaims.add(claim);
+    return claim;
   }
 
-  function clearAbilityElement(element: HTMLElement) {
-    delete element.dataset.abilityAnnounceActive;
-    element.style.removeProperty('--ability-name');
-    activeAbilityElements.delete(element);
+  function clearAbilityElement(claim: AnimationElementEffectClaim) {
+    releaseAnimationElementEffectClaim(claim);
+    activeAbilityClaims.delete(claim);
   }
 
   function slotElementForEvent(event: ActionTimelineEvent): HTMLElement | null {
