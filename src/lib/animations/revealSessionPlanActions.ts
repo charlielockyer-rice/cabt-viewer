@@ -22,6 +22,7 @@ export type RevealStartAction = {
   card: CardView;
   serial?: number;
   identity?: AnimationIdentity;
+  sourceAnchor?: RevealSessionStep['sourceAnchor'];
   targetAnchor?: RevealSessionStep['targetAnchor'];
   startMs: number;
   toHand: boolean;
@@ -34,6 +35,7 @@ export type RevealCardAction = {
   serial: number;
   identity?: AnimationIdentity;
   startMs: number;
+  sourceAnchor?: RevealSessionStep['sourceAnchor'];
   targetAnchor?: RevealSessionStep['targetAnchor'];
   removeMs?: number;
 };
@@ -89,6 +91,7 @@ export function revealStartActionsForSteps(
       card,
       serial: step.identity?.serial ?? card.serial,
       identity: step.identity,
+      sourceAnchor: step.sourceAnchor,
       targetAnchor: step.targetAnchor,
       startMs: motion.startMs + step.startMs,
       toHand: step.kind === 'take',
@@ -117,6 +120,7 @@ export function revealCardActionsForSteps(
       serial,
       identity: step.identity,
       startMs: motion.startMs + step.startMs,
+      sourceAnchor: step.sourceAnchor,
       targetAnchor: step.targetAnchor,
       removeMs: removalMsForStep(motion, step, planDurationMs),
     }];

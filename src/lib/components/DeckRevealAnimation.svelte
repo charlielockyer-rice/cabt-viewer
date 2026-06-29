@@ -171,7 +171,7 @@
       takeRevealedCards(takeActions);
     }
     if (returnActions.length) {
-      returnRevealedCards(returnActions);
+      returnRevealedCards(returnActions, 'planned');
     }
   });
 
@@ -223,7 +223,8 @@
     step: RevealSessionStep,
     anchor: RevealCardAnchor,
   ): RevealSprite | undefined {
-    const deckRect = deckTopElement(motion.playerIndex)?.getBoundingClientRect();
+    const deckElement = plannedDeckElementForRevealMotion(motion, step.sourceAnchor);
+    const deckRect = deckElement?.getBoundingClientRect();
     if (!deckRect || deckRect.width <= 0 || deckRect.height <= 0) {
       return undefined;
     }
@@ -485,7 +486,10 @@
     }
   }
 
-  function returnRevealedCards(returnActions: RevealCardAction[]) {
+  function returnRevealedCards(
+    returnActions: RevealCardAction[],
+    execution: RevealExecution = 'live',
+  ) {
     const actionsByPlayer = new Map<number, RevealCardAction[]>();
     for (const action of returnActions) {
       const playerActions = actionsByPlayer.get(action.playerIndex) ?? [];
@@ -494,7 +498,10 @@
     }
 
     for (const [playerIndex, playerActions] of actionsByPlayer.entries()) {
-      const deckRect = deckTopElement(playerIndex)?.getBoundingClientRect();
+      const deckElement = execution === 'planned'
+        ? plannedDeckElementForRevealActions(playerActions)
+        : deckTopElement(playerIndex);
+      const deckRect = deckElement?.getBoundingClientRect();
       if (!deckRect || deckRect.width <= 0 || deckRect.height <= 0) {
         continue;
       }
@@ -674,6 +681,54 @@
     };
   }
 
+  function plannedDeckElementForRevealStartActions(actions: RevealStartAction[]): HTMLElement | null {
+    for (const action of actions) {
+      const element = plannedDeckElementForAnchor(action.sourceAnchor);
+      if (element) {
+        return element;
+      }
+    }
+    return null;
+  }
+
+  function plannedDeckElementForRevealActions(actions: RevealCardAction[]): HTMLElement | null {
+    for (const action of actions) {
+      const element = plannedDeckElementForAnchor(action.targetAnchor)
+        ?? plannedDeckElementForAnchor(action.sourceAnchor);
+      if (element) {
+        return element;
+      }
+    }
+    return null;
+  }
+
+  function plannedDeckElementForRevealMotion(
+    motion: RevealSessionAnimationMotion,
+    preferredAnchor: RevealSessionStep['sourceAnchor'] | RevealSessionStep['targetAnchor'],
+  ): HTMLElement | null {
+    const preferred = plannedDeckElementForAnchor(preferredAnchor);
+    if (preferred) {
+      return preferred;
+    }
+    for (const step of motion.steps) {
+      const element = plannedDeckElementForAnchor(step.sourceAnchor)
+        ?? plannedDeckElementForAnchor(step.targetAnchor);
+      if (element) {
+        return element;
+      }
+    }
+    return null;
+  }
+
+  function plannedDeckElementForAnchor(
+    anchor: RevealSessionStep['sourceAnchor'] | RevealSessionStep['targetAnchor'],
+  ): HTMLElement | null {
+    if (anchor?.kind !== 'deck-top') {
+      return null;
+    }
+    return resolveStrictAnimationAnchorElement(anchor);
+  }
+
   function visualTargetForAnimation(target: HTMLElement | null): HTMLElement | null {
     if (!target) {
       return null;
@@ -775,7 +830,10 @@
     playerActions: RevealStartAction[],
     execution: RevealExecution,
   ): RevealSprite[] {
-    const deckRect = deckTopElement(playerIndex)?.getBoundingClientRect();
+    const deckElement = execution === 'planned'
+      ? plannedDeckElementForRevealStartActions(playerActions)
+      : deckTopElement(playerIndex);
+    const deckRect = deckElement?.getBoundingClientRect();
     if (!deckRect || deckRect.width <= 0 || deckRect.height <= 0) {
       return [];
     }
