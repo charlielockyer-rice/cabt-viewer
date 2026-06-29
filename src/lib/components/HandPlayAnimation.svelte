@@ -10,7 +10,7 @@
     releaseAnimationElementEffectClaim,
     type AnimationElementEffectClaim,
   } from '../animations/animationElementEffects';
-  import { resolveExactAnimationAnchorElement } from '../animations/animationAnchors';
+  import { resolveStrictAnimationAnchorElement } from '../animations/animationAnchors';
   import { replayAnimationScopeExitSettleMs, replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
   import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
@@ -321,7 +321,7 @@
   }
 
   function targetElementForMotion(motion: CardMoveAnimationMotion): HTMLElement | null {
-    const exact = resolveExactAnimationAnchorElement(motion.targetAnchor, { identity: motion.identity });
+    const exact = resolveStrictAnimationAnchorElement(motion.targetAnchor, { identity: motion.identity });
     if (exact) {
       return targetVisualElementForAnchor(exact, motion.targetAnchor.kind);
     }

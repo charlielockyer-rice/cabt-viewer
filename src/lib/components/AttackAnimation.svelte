@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { resolveExactAnimationAnchorElement } from '../animations/animationAnchors';
+  import { resolveStrictAnimationAnchorElement } from '../animations/animationAnchors';
   import {
     claimAnimationElementEffect,
     releaseAnimationElementEffectClaim,
@@ -284,7 +284,7 @@
   }
 
   function slotElementForAnchor(anchor: PulseAnimationMotion['anchor'], identity?: PulseAnimationMotion['identity']): HTMLElement | null {
-    const element = resolveExactAnimationAnchorElement(anchor, { identity });
+    const element = resolveStrictAnimationAnchorElement(anchor, { identity });
     return element instanceof HTMLElement ? element : null;
   }
 

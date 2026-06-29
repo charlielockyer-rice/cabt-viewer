@@ -3,7 +3,7 @@
   import CardTile from './CardTile.svelte';
   import { actionAnimationTimelinePhaseKeyForEvent } from '../cabt/actionAnimationPhases';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
-  import { resolveExactAnimationAnchorElement, type AnimationAnchorRef } from '../animations/animationAnchors';
+  import { resolveStrictAnimationAnchorElement, type AnimationAnchorRef, type AnimationIdentity } from '../animations/animationAnchors';
   import { afterTwoAnimationFrames } from '../animations/animationFrames';
   import {
     hideElementForAnimation,
@@ -165,8 +165,8 @@
     }
     const generation = animationGeneration;
     for (const motion of motions) {
-      const sourceElement = elementForAnchor(motion.sourceAnchor);
-      const targetElement = elementForAnchor(motion.targetAnchor);
+      const sourceElement = elementForAnchor(motion.sourceAnchor, motion.identity);
+      const targetElement = elementForAnchor(motion.targetAnchor, motion.identity);
       if (!sourceElement || !targetElement) {
         continue;
       }
@@ -339,8 +339,8 @@
     timers.push(startTimer);
   }
 
-  function elementForAnchor(anchor: AnimationAnchorRef): HTMLElement | null {
-    const exact = resolveExactAnimationAnchorElement(anchor);
+  function elementForAnchor(anchor: AnimationAnchorRef, identity?: AnimationIdentity): HTMLElement | null {
+    const exact = resolveStrictAnimationAnchorElement(anchor, { identity });
     if (exact) {
       return visualElementForAnchor(exact, anchor);
     }

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  type AnimationIdentity,
   type AnimationAnchorRef,
   serializeAnimationAnchor,
   serializeAnimationIdentity,
@@ -117,7 +118,7 @@ describe('semantic animation visibility claims', () => {
   });
 
   it('keeps multiple claims on the same anchor hidden until all claims release', () => {
-    const element = new FakeHTMLElement();
+    const element = semanticElement(anchor, identity);
     installAnchorDocument(() => [element]);
 
     const first = claimAnimationAnchorVisibility({
@@ -150,8 +151,8 @@ describe('semantic animation visibility claims', () => {
   });
 
   it('re-applies an active semantic claim when the DOM node is replaced', () => {
-    const oldElement = new FakeHTMLElement();
-    const newElement = new FakeHTMLElement();
+    const oldElement = semanticElement(anchor, identity);
+    const newElement = semanticElement(anchor, identity);
     let elements = [oldElement];
     installAnchorDocument(() => elements);
 
@@ -174,7 +175,7 @@ describe('semantic animation visibility claims', () => {
   });
 
   it('releases semantic claims by scope while preserving active claims from other scopes', () => {
-    const element = new FakeHTMLElement();
+    const element = semanticElement(anchor, identity);
     installAnchorDocument(() => [element]);
 
     claimAnimationAnchorVisibility({
@@ -198,7 +199,7 @@ describe('semantic animation visibility claims', () => {
   });
 
   it('does not let a stale release reveal an element still claimed by another scope', () => {
-    const element = new FakeHTMLElement();
+    const element = semanticElement(anchor, identity);
     installAnchorDocument(() => [element]);
 
     const staleClaim = claimAnimationAnchorVisibility({
@@ -222,6 +223,17 @@ describe('semantic animation visibility claims', () => {
     expect(element.getAttribute(replayAnimationVisibility.hiddenAttribute)).toBeUndefined();
   });
 });
+
+function semanticElement(anchor: AnimationAnchorRef, identity: AnimationIdentity): FakeHTMLElement {
+  const element = new FakeHTMLElement();
+  element.dataset.animationAnchor = anchor.kind;
+  element.dataset.animationAnchorKey = serializeAnimationAnchor(anchor);
+  element.dataset.animationIdentity = serializeAnimationIdentity(identity);
+  element.dataset.animationCardSerial = identity.serial === undefined ? undefined : String(identity.serial);
+  element.dataset.animationCardId = identity.cardId === undefined ? undefined : String(identity.cardId);
+  element.dataset.animationCardName = identity.name;
+  return element;
+}
 
 function installAnchorDocument(elements: () => FakeHTMLElement[]): void {
   vi.stubGlobal('HTMLElement', FakeHTMLElement);

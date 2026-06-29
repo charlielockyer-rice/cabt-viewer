@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { resolveExactAnimationAnchorElement } from '../animations/animationAnchors';
+  import { resolveStrictAnimationAnchorElement } from '../animations/animationAnchors';
   import { claimAnimationElementEffect } from '../animations/animationElementEffects';
   import { pulseMotionPlanKey, ScheduledAnimationEffectRunner } from '../animations/plannedPulseEffects';
   import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
@@ -67,7 +67,7 @@
   }
 
   function pulseElementForMotion(motion: PulseAnimationMotion): HTMLElement | null {
-    const anchor = resolveExactAnimationAnchorElement(motion.anchor, { identity: motion.identity });
+    const anchor = resolveStrictAnimationAnchorElement(motion.anchor, { identity: motion.identity });
     if (!(anchor instanceof HTMLElement)) {
       return null;
     }

@@ -2,7 +2,7 @@ import {
   animationClaimKey,
   type AnimationAnchorRef,
   type AnimationIdentity,
-  resolveAnimationAnchorElements,
+  resolveStrictAnimationAnchorElements,
 } from './animationAnchors';
 
 export type AnimationVisibilityRole = 'source' | 'destination' | 'handoff';
@@ -54,7 +54,7 @@ export class AnimationVisibilityManager {
 
   constructor(options: AnimationVisibilityManagerOptions = {}) {
     this.hiddenAttribute = options.hiddenAttribute ?? defaultHiddenAttribute;
-    this.#resolver = options.resolver ?? ((anchor, identity) => resolveAnimationAnchorElements(anchor, { identity }));
+    this.#resolver = options.resolver ?? ((anchor, identity) => resolveStrictAnimationAnchorElements(anchor, { identity }));
   }
 
   hide(claim: AnimationVisibilityClaim): AnimationVisibilityToken {

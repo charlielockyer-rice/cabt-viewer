@@ -9,6 +9,8 @@ import {
   parseAnimationIdentity,
   resolveAnimationAnchorElements,
   resolveExactAnimationAnchorElement,
+  resolveStrictAnimationAnchorElements,
+  resolveStrictAnimationAnchorElement,
   serializeAnimationAnchor,
   serializeAnimationIdentity,
   type AnimationAnchorRef,
@@ -135,6 +137,45 @@ describe('animation anchors', () => {
       root,
       identity: { kind: 'card', serial: 10 },
     })).toEqual([matching]);
+  });
+
+  it('strict resolution requires every supplied card identity field to match', () => {
+    const anchor = { kind: 'hand-card' as const, playerIndex: 0, handIndex: 1 };
+    const matching = new TestElement({
+      animationAnchor: 'hand-card',
+      animationAnchorKey: 'player:0:hand-card:index:1',
+      animationCardSerial: '10',
+      animationCardId: '44',
+    });
+    const cardOnly = new TestElement({
+      animationAnchor: 'hand-card',
+      animationAnchorKey: 'player:0:hand-card:index:1',
+      animationCardId: '44',
+    });
+    const root = queryRoot([cardOnly, matching]);
+
+    expect(resolveAnimationAnchorElements(anchor, {
+      root,
+      identity: { kind: 'card', serial: 10, cardId: 44 },
+    })).toEqual([matching, cardOnly]);
+    expect(resolveStrictAnimationAnchorElements(anchor, {
+      root,
+      identity: { kind: 'card', serial: 10, cardId: 44 },
+    })).toEqual([matching]);
+  });
+
+  it('strict resolution ignores identity for surface anchors that do not carry card identity', () => {
+    const anchor = { kind: 'deck-top' as const, playerIndex: 0 };
+    const deck = new TestElement({
+      animationAnchor: 'deck-top',
+      animationAnchorKey: 'player:0:deck-top',
+    });
+    const root = queryRoot([deck]);
+
+    expect(resolveStrictAnimationAnchorElement(anchor, {
+      root,
+      identity: { kind: 'card', serial: 10, cardId: 44 },
+    })).toBe(deck);
   });
 
   it('resolves one exact serial-sensitive anchor element', () => {

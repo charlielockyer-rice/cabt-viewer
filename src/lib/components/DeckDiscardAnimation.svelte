@@ -6,7 +6,7 @@
     releaseElementVisibilityClaims,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
-  import { resolveExactAnimationAnchorElement } from '../animations/animationAnchors';
+  import { resolveStrictAnimationAnchorElement } from '../animations/animationAnchors';
   import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import { scheduleReplayAnimationGroupRemoval, scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
   import { replayAnimationScopeExitSettleMs } from '../animations/replayAnimationHandoff';
@@ -213,8 +213,8 @@
     index: number,
     motionPlane: HTMLElement,
   ): DiscardSprite | undefined {
-    const sourceElement = plannedVisualElementForAnchor(motion.sourceAnchor);
-    const targetElement = plannedVisualElementForAnchor(motion.targetAnchor);
+    const sourceElement = plannedVisualElementForAnchor(motion.sourceAnchor, motion.identity);
+    const targetElement = plannedVisualElementForAnchor(motion.targetAnchor, motion.identity);
     if (!sourceElement || !targetElement) {
       return undefined;
     }
@@ -245,8 +245,11 @@
     };
   }
 
-  function plannedVisualElementForAnchor(anchor: CardMoveAnimationMotion['sourceAnchor']): HTMLElement | null {
-    const element = resolveExactAnimationAnchorElement(anchor);
+  function plannedVisualElementForAnchor(
+    anchor: CardMoveAnimationMotion['sourceAnchor'],
+    identity: CardMoveAnimationMotion['identity'],
+  ): HTMLElement | null {
+    const element = resolveStrictAnimationAnchorElement(anchor, { identity });
     if (!element) {
       return null;
     }

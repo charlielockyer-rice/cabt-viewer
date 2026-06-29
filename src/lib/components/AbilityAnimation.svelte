@@ -2,7 +2,7 @@
   import { onDestroy } from 'svelte';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { claimAnimationElementEffect } from '../animations/animationElementEffects';
-  import { resolveExactAnimationAnchorElement } from '../animations/animationAnchors';
+  import { resolveStrictAnimationAnchorElement } from '../animations/animationAnchors';
   import { pulseMotionPlanKey, ScheduledAnimationEffectRunner } from '../animations/plannedPulseEffects';
   import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import { replayAnimationPlanHasPhase, type PulseAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
@@ -97,7 +97,7 @@
   }
 
   function slotElementForMotion(motion: PulseAnimationMotion): HTMLElement | null {
-    const element = resolveExactAnimationAnchorElement(motion.anchor, { identity: motion.identity });
+    const element = resolveStrictAnimationAnchorElement(motion.anchor, { identity: motion.identity });
     return element instanceof HTMLElement ? element : null;
   }
 

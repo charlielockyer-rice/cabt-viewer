@@ -329,11 +329,32 @@ export function resolveAnimationAnchorElements(
   return Array.from(elements);
 }
 
+export function resolveStrictAnimationAnchorElements(
+  anchor: AnimationAnchorRef,
+  { root, identity }: AnimationAnchorResolveOptions = {},
+): HTMLElement[] {
+  const resolvedRoot = root ?? globalThis.document;
+  if (!resolvedRoot) {
+    return [];
+  }
+  const strictIdentity = anchorCarriesCardIdentity(anchor) ? identity : undefined;
+  const selector = animationAnchorSelector(anchor, strictIdentity);
+  return Array.from(resolvedRoot.querySelectorAll(selector)).filter((element): element is HTMLElement =>
+    element instanceof HTMLElement && strictAnimationIdentityMatchesElement(element, strictIdentity));
+}
+
 export function resolveExactAnimationAnchorElement(
   anchor: AnimationAnchorRef,
   options: AnimationAnchorResolveOptions = {},
 ): HTMLElement | null {
   return resolveAnimationAnchorElements(anchor, options).at(0) ?? null;
+}
+
+export function resolveStrictAnimationAnchorElement(
+  anchor: AnimationAnchorRef,
+  options: AnimationAnchorResolveOptions = {},
+): HTMLElement | null {
+  return resolveStrictAnimationAnchorElements(anchor, options).at(0) ?? null;
 }
 
 export function animationAnchorForElement(element: Element): ResolvedAnimationAnchor | null {
@@ -434,6 +455,41 @@ function animationIdentityMatchesElement(element: HTMLElement, identity: Animati
     return identity.name === elementIdentity.name;
   }
   return true;
+}
+
+function strictAnimationIdentityMatchesElement(element: HTMLElement, identity: AnimationIdentity | undefined): boolean {
+  if (!identity) {
+    return true;
+  }
+  const elementIdentity = animationIdentityForElement(element);
+  if (!elementIdentity) {
+    return false;
+  }
+  if (identity.kind !== 'unknown' && elementIdentity.kind !== identity.kind) {
+    return false;
+  }
+  if (identity.serial !== undefined && elementIdentity.serial !== identity.serial) {
+    return false;
+  }
+  if (identity.cardId !== undefined && elementIdentity.cardId !== identity.cardId) {
+    return false;
+  }
+  if (identity.name !== undefined && elementIdentity.name !== identity.name) {
+    return false;
+  }
+  return true;
+}
+
+function anchorCarriesCardIdentity(anchor: AnimationAnchorRef): boolean {
+  return anchor.kind === 'hand-card'
+    || anchor.kind === 'discard-card'
+    || anchor.kind === 'play-zone-card'
+    || anchor.kind === 'stadium-card'
+    || anchor.kind === 'pokemon-card'
+    || anchor.kind === 'attached-energy'
+    || anchor.kind === 'attached-tool'
+    || anchor.kind === 'prize-card'
+    || anchor.kind === 'reveal-card';
 }
 
 function serializeParts(...parts: Array<string | number | string[] | undefined>): string {

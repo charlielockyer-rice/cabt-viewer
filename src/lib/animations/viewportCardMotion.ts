@@ -1,5 +1,5 @@
 import {
-  resolveExactAnimationAnchorElement,
+  resolveStrictAnimationAnchorElement,
 } from './animationAnchors';
 import type { CardMoveAnimationMotion } from './replayAnimationPlan';
 import { cabtCardToView } from '../cabt/cardView';
@@ -13,7 +13,7 @@ export function animationElementForMotionAnchor(
   anchor: CardMoveAnimationMotion['sourceAnchor'],
   identity: CardMoveAnimationMotion['identity'],
 ): HTMLElement | undefined {
-  const element = resolveExactAnimationAnchorElement(anchor, { identity });
+  const element = resolveStrictAnimationAnchorElement(anchor, { identity });
   if (!element) {
     return undefined;
   }
