@@ -2,11 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { animationElementForMotionAnchor } from './viewportCardMotion';
 
 class FakeHTMLElement {
-  dataset: Record<string, string>;
-
-  constructor(dataset: Record<string, string>) {
-    this.dataset = dataset;
-  }
+  dataset: Record<string, string> = {};
 
   closest(): FakeHTMLElement | null {
     return null;
@@ -15,6 +11,16 @@ class FakeHTMLElement {
   querySelector(): FakeHTMLElement | null {
     return null;
   }
+
+  getAttributeNames(): string[] {
+    return [
+      'data-animation-anchor',
+      'data-animation-anchor-key',
+      'data-animation-card-serial',
+      'data-animation-card-id',
+      'data-animation-card-name',
+    ];
+  }
 }
 
 describe('animationElementForMotionAnchor', () => {
@@ -22,23 +28,15 @@ describe('animationElementForMotionAnchor', () => {
     vi.unstubAllGlobals();
   });
 
-  it('falls back from an unresolved discard card to the discard pile surface', () => {
+  it('does not broaden an unresolved discard card to the discard pile surface', () => {
     vi.stubGlobal('HTMLElement', FakeHTMLElement);
-    const discardPile = new FakeHTMLElement({
-      animationAnchor: 'discard-pile',
-      animationAnchorKey: 'player:0:discard-pile',
-    });
     vi.stubGlobal('document', {
       querySelectorAll: () => [],
-      querySelector: (selector: string) =>
-        selector === '[data-animation-anchor-key="player:0:discard-pile"]'
-          ? discardPile
-          : null,
     });
 
     expect(animationElementForMotionAnchor(
       { kind: 'discard-card', playerIndex: 0, serial: 99 },
       { kind: 'card', serial: 99 },
-    )).toBe(discardPile);
+    )).toBeUndefined();
   });
 });

@@ -346,9 +346,6 @@
     if (exact) {
       return visualElementForAnchor(exact, anchor);
     }
-    if (anchor.kind === 'discard-card') {
-      return discardPileElement(anchor.playerIndex);
-    }
     return null;
   }
 

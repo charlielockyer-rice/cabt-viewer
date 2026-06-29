@@ -15,9 +15,6 @@ export function animationElementForMotionAnchor(
 ): HTMLElement | undefined {
   const element = resolveExactAnimationAnchorElement(anchor, { identity });
   if (!element) {
-    if (anchor.kind === 'discard-card') {
-      return discardPileElement(anchor.playerIndex);
-    }
     return undefined;
   }
   if (anchor.kind === 'deck-top') {
@@ -32,11 +29,6 @@ export function animationElementForMotionAnchor(
     return visual instanceof HTMLElement ? visual : element;
   }
   return element;
-}
-
-function discardPileElement(playerIndex: number): HTMLElement | undefined {
-  const element = document.querySelector(`[data-animation-anchor-key="player:${playerIndex}:discard-pile"]`);
-  return element instanceof HTMLElement ? element : undefined;
 }
 
 export function plannedMotionCard(motion: CardMoveAnimationMotion): CardView | undefined {

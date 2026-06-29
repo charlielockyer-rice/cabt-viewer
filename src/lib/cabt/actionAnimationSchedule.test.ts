@@ -202,6 +202,20 @@ describe('actionAnimationStartMs', () => {
     expect(actionAnimationStartMs(events, events[0])).toBe(0);
     expect(actionAnimationStartMs(events, events[1])).toBe(actionAnimationTiming.handMoveMs);
   });
+
+  it('sequences discard recovery moves before follow-up effects', () => {
+    const events: ActionTimelineEvent[] = [
+      event(1, 'MoveCard', { cardId: 66, serial: 12, fromArea: CabtAreaType.DISCARD, toArea: CabtAreaType.HAND }),
+      event(2, 'MoveCard', { cardId: 305, serial: 13, fromArea: CabtAreaType.DISCARD, toArea: CabtAreaType.DECK }),
+      event(3, 'Shuffle', {}),
+    ];
+
+    expect(actionAnimationStartMs(events, events[0])).toBe(0);
+    expect(actionAnimationStartMs(events, events[1])).toBe(actionAnimationTiming.handMoveMs);
+    expect(actionAnimationStartMs(events, events[2])).toBe(
+      actionAnimationTiming.handMoveMs + actionAnimationTiming.handMoveMs,
+    );
+  });
 });
 
 describe('actionAnimationBatchEvents', () => {

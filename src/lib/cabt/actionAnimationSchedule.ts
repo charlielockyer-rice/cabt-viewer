@@ -149,6 +149,13 @@ function animationPhaseForEvent(event: ActionTimelineEvent): AnimationPhase | nu
         stepMs: actionAnimationTiming.handMoveStepMs,
       };
     }
+    if (fromArea === CabtAreaType.DISCARD && (toArea === CabtAreaType.HAND || toArea === CabtAreaType.DECK)) {
+      return {
+        key: `DiscardRecover:${playerKey}:${toArea}`,
+        durationMs: actionAnimationTiming.handMoveMs,
+        stepMs: actionAnimationTiming.handMoveStepMs,
+      };
+    }
     if (fromArea === CabtAreaType.DECK && toArea === CabtAreaType.DISCARD) {
       return {
         key: `DeckDiscard:${playerKey}`,

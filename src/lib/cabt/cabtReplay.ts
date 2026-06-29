@@ -3181,6 +3181,9 @@ function animationPhaseCardDurationMs(key: string): number {
   if (key.startsWith('AttachedMove:')) {
     return actionAnimationTiming.handMoveMs;
   }
+  if (key.startsWith('DiscardRecover:')) {
+    return actionAnimationTiming.handMoveMs;
+  }
   if (key.startsWith('PrizeTake:')) {
     return actionAnimationTiming.prizeTakeMs;
   }
@@ -3237,6 +3240,9 @@ function animationPhaseStepMs(key: string): number {
     return actionAnimationTiming.handMoveStepMs;
   }
   if (key.startsWith('AttachedMove:')) {
+    return actionAnimationTiming.handMoveStepMs;
+  }
+  if (key.startsWith('DiscardRecover:')) {
     return actionAnimationTiming.handMoveStepMs;
   }
   if (key.startsWith('PrizeTake:')) {
