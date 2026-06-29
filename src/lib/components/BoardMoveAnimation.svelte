@@ -10,6 +10,7 @@
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
   import { replayAnimationScopeExitSettleMs, replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
+  import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
   import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -81,10 +82,7 @@
   const timers: ReturnType<typeof setTimeout>[] = [];
   const handoffTimers: ReturnType<typeof setTimeout>[] = [];
   const handoffFrameIds: number[] = [];
-  let seenEventIds = new Set<number>();
-  let initialized = false;
-  let lastScopeKey: string | number = '';
-  let lastPlanKey = '';
+  const runState = new ReplayAnimationRunState();
   let reduceMotion = $state(false);
   let sprites = $state<BoardMoveSprite[]>([]);
   let animationGeneration = 0;
@@ -121,49 +119,37 @@
     const currentPlan = animationPlan;
     const planKey = currentPlanKey(currentPlan);
     const plannedMotions = boardCardMoveMotions(currentPlan);
-    const scopeChanged = initialized && currentScopeKey !== lastScopeKey;
-    const planChanged = planKey !== lastPlanKey;
-    if (scopeChanged || (plannedMotions.length && planChanged)) {
+    const run = runState.update(currentScopeKey, planKey);
+    if (run.scopeChanged || (plannedMotions.length && run.planChanged)) {
       clearBoardMoves({ settleHandoff: replayMode });
     }
-    lastScopeKey = currentScopeKey;
-    lastPlanKey = planKey;
 
     if (plannedMotions.length) {
-      const shouldStartPlan = !initialized || planChanged || scopeChanged;
-      initialized = true;
-      if (!reduceMotion && shouldStartPlan) {
+      if (!reduceMotion && run.shouldStartPlan) {
         startPlannedBoardMoves(plannedMotions);
       }
-      markEventsSeen(currentEvents);
+      runState.markEventsSeen(currentEvents);
       return;
     }
 
-    if (!initialized) {
-      markEventsSeen(currentEvents);
-      initialized = true;
+    if (run.firstRun) {
+      runState.markEventsSeen(currentEvents);
       return;
     }
 
     if (replayMode) {
-      markEventsSeen(currentEvents);
+      runState.markEventsSeen(currentEvents);
       return;
     }
 
-    const animationEvents = actionAnimationBatchEvents(currentEvents, seenEventIds);
-    markEventsSeen(currentEvents);
+    const animationEvents = actionAnimationBatchEvents(currentEvents, runState.seenEventIds);
+    runState.markEventsSeen(currentEvents);
     if (!animationEvents.length || reduceMotion) {
       return;
     }
 
     startBoardMoves(animationEvents);
   });
-
-  function markEventsSeen(currentEvents: ActionTimelineEvent[]) {
-    for (const event of currentEvents) {
-      seenEventIds.add(event.id);
-    }
-  }
 
   function currentPlanKey(plan: ReplayAnimationPhasePlan | undefined) {
     return plan ? `${plan.key}:${plan.motions.map((motion) => motion.id).join(',')}` : '';

@@ -7,6 +7,7 @@
     isConcealedHandTarget,
   } from '../animations/viewportCardMotion';
   import { replayAnimationScopeExitSettleMs, replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
+  import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
   import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
   import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import type { CardView } from '../game/types';
@@ -43,9 +44,7 @@
   const timers: ReturnType<typeof setTimeout>[] = [];
   const frameIds: number[] = [];
   let activeSprites = $state<CrossPlaneSprite[]>([]);
-  let lastPlanKey = '';
-  let lastScopeKey: string | number = '';
-  let initialized = false;
+  const runState = new ReplayAnimationRunState();
   let generation = 0;
 
   onDestroy(() => {
@@ -57,18 +56,14 @@
     const currentPlan = animationPlan;
     const motions = crossPlaneMotions(currentPlan);
     const planKey = currentPlanKey(currentPlan);
-    const scopeChanged = initialized && currentScopeKey !== lastScopeKey;
-    const planChanged = planKey !== lastPlanKey;
-    lastScopeKey = currentScopeKey;
-    lastPlanKey = planKey;
-    initialized = true;
+    const run = runState.update(currentScopeKey, planKey);
 
-    if (scopeChanged) {
+    if (run.scopeChanged) {
       settleSprites();
-    } else if (planChanged) {
+    } else if (run.planChanged) {
       clearSprites();
     }
-    if (!motions.length || (!planChanged && !scopeChanged)) {
+    if (!motions.length || !run.shouldStartPlan) {
       return;
     }
     startMotions(motions);
