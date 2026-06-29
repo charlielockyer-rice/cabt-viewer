@@ -9,7 +9,7 @@
   import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import { scheduleReplayAnimationGroupRemoval, scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
   import { replayAnimationScopeExitSettleMs } from '../animations/replayAnimationHandoff';
-  import { replayAnimationMotionsKey, replayAnimationPlanHasPhase, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
+  import { replayAnimationPlanHasPhase, replayAnimationSelectedMotionsPlanKey, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import {
     animationElementForMotionAnchor,
     cardHeightToWidthRatio,
@@ -81,7 +81,7 @@
   let nextAnimationId = 1;
   const replayPlanRunner = createReplayPhasePlanRunner({
     selectMotions: drawPlanMotions,
-    planKey: replayAnimationMotionsKey,
+    planKey: replayAnimationSelectedMotionsPlanKey,
     lifecycle: 'replay',
     onScopeChange: settleDraws,
     onPlanChange: clearDraws,

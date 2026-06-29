@@ -1,7 +1,7 @@
 import { createPrefersReducedMotion } from './prefersReducedMotion.svelte';
 import { ReplayAnimationRunState, type ReplayAnimationRunChange } from './replayAnimationRunState';
 import {
-  replayAnimationMotionsKey,
+  replayAnimationSelectedMotionsPlanKey,
   type AnimationMotion,
   type ReplayAnimationPhasePlan,
 } from './replayAnimationPlan';
@@ -111,5 +111,5 @@ function selectedMotionPlanKey<Motion extends AnimationMotion>(
   motions: readonly Motion[],
   plan: ReplayAnimationPhasePlan | undefined,
 ): string {
-  return plan ? `${plan.key}:${plan.durationMs}:${replayAnimationMotionsKey(motions)}` : '';
+  return replayAnimationSelectedMotionsPlanKey(motions, plan);
 }

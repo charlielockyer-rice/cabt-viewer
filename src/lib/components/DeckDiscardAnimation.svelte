@@ -10,7 +10,7 @@
   import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import { scheduleReplayAnimationGroupRemoval, scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
   import { replayAnimationScopeExitSettleMs } from '../animations/replayAnimationHandoff';
-  import { replayAnimationMotionsKey, replayAnimationPlanHasPhase, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
+  import { replayAnimationPlanHasPhase, replayAnimationSelectedMotionsPlanKey, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { actionAnimationBatchEvents, actionAnimationStartMs } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -66,7 +66,7 @@
   let motionLayer = $state<HTMLElement>();
   const replayPlanRunner = createReplayPhasePlanRunner({
     selectMotions: deckDiscardPlanMotions,
-    planKey: replayAnimationMotionsKey,
+    planKey: replayAnimationSelectedMotionsPlanKey,
     lifecycle: 'replay',
     onScopeChange: settleDiscards,
     onPlanChange: clearDiscards,

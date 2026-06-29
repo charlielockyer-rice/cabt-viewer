@@ -323,8 +323,15 @@ export function replayAnimationMotionsKey(motions: readonly AnimationMotion[]): 
   return motions.map(replayAnimationMotionKey).join('|');
 }
 
+export function replayAnimationSelectedMotionsPlanKey(
+  motions: readonly AnimationMotion[],
+  plan: Pick<ReplayAnimationPhasePlan, 'key' | 'durationMs'> | undefined,
+): string {
+  return plan ? `${plan.key}:${plan.durationMs}:${replayAnimationMotionsKey(motions)}` : '';
+}
+
 export function replayAnimationPhasePlanKey(plan: Pick<ReplayAnimationPhasePlan, 'key' | 'durationMs' | 'motions'> | undefined): string {
-  return plan ? `${plan.key}:${plan.durationMs}:${replayAnimationMotionsKey(plan.motions)}` : '';
+  return plan ? replayAnimationSelectedMotionsPlanKey(plan.motions, plan) : '';
 }
 
 export function replayAnimationMotionSpanMs(motions: readonly AnimationMotion[]): number {

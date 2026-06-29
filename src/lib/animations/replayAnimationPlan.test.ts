@@ -5,6 +5,7 @@ import {
   replayAnimationPlanHasAnyPhase,
   replayAnimationPlanHasPhase,
   replayAnimationPlanOwnsMotion,
+  replayAnimationSelectedMotionsPlanKey,
   replayAnimationMotionSpanMs,
   replayAnimationVisibilityClaimsForMotions,
   type AnimationMotion,
@@ -309,6 +310,25 @@ describe('replay animation phase plans', () => {
     });
 
     expect(replayAnimationPhasePlanKey(first)).not.toBe(replayAnimationPhasePlanKey(second));
+  });
+
+  it('includes phase identity and duration in selected-motion plan keys', () => {
+    const motions = [cardMoveMotion('draw', 0, 320)];
+
+    expect(replayAnimationSelectedMotionsPlanKey(motions, {
+      key: 'Draw:0:first',
+      durationMs: 420,
+    })).not.toBe(replayAnimationSelectedMotionsPlanKey(motions, {
+      key: 'Draw:0:second',
+      durationMs: 420,
+    }));
+    expect(replayAnimationSelectedMotionsPlanKey(motions, {
+      key: 'Draw:0:first',
+      durationMs: 420,
+    })).not.toBe(replayAnimationSelectedMotionsPlanKey(motions, {
+      key: 'Draw:0:first',
+      durationMs: 640,
+    }));
   });
 
   it('validates nested reveal session timing explicitly', () => {

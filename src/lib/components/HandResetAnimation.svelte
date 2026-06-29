@@ -9,7 +9,7 @@
   import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import { scheduleReplayAnimationGroupRemoval, scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
   import { replayAnimationScopeExitSettleMs } from '../animations/replayAnimationHandoff';
-  import { replayAnimationMotionsKey, replayAnimationPlanHasPhase, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
+  import { replayAnimationPlanHasPhase, replayAnimationSelectedMotionsPlanKey, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import {
     animationElementForMotionAnchor,
     centerOf,
@@ -93,7 +93,7 @@
   let hiddenSources: HiddenResetSource[] = [];
   const replayPlanRunner = createReplayPhasePlanRunner({
     selectMotions: handToDeckPlanMotions,
-    planKey: replayAnimationMotionsKey,
+    planKey: replayAnimationSelectedMotionsPlanKey,
     lifecycle: 'replay',
     onScopeChange: settleResets,
     onPlanChange: () => clearResets({ restoreSources: false, restoreConnectedSourcesAfterMs: handOutroSettleMs }),

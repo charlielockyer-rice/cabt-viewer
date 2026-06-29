@@ -3,7 +3,7 @@
   import { actionAnimationBatchEvents, actionAnimationStartMs } from '../cabt/actionAnimationSchedule';
   import { cardBackCssVar } from '../game/cardAssets';
   import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
-  import { replayAnimationMotionsKey, replayAnimationPlanHasPhase, type ReplayAnimationPhasePlan, type ShuffleAnimationMotion } from '../animations/replayAnimationPlan';
+  import { replayAnimationPlanHasPhase, replayAnimationSelectedMotionsPlanKey, type ReplayAnimationPhasePlan, type ShuffleAnimationMotion } from '../animations/replayAnimationPlan';
   import type { ActionTimelineEvent } from '../game/types';
 
   type Props = {
@@ -48,7 +48,7 @@
   const timers: ReturnType<typeof setTimeout>[] = [];
   const replayPlanRunner = createReplayPhasePlanRunner({
     selectMotions: shufflePlanMotions,
-    planKey: replayAnimationMotionsKey,
+    planKey: replayAnimationSelectedMotionsPlanKey,
     onScopeChange: clearShuffles,
     onPlanChange: clearShuffles,
     startPlanned: startPlannedShuffles,

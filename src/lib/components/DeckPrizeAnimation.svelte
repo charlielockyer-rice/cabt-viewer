@@ -14,7 +14,7 @@
   import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import { scheduleReplayAnimationGroupRemoval, scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
   import { replayAnimationScopeExitSettleMs } from '../animations/replayAnimationHandoff';
-  import { replayAnimationMotionsKey, replayAnimationPlanHasPhase, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
+  import { replayAnimationPlanHasPhase, replayAnimationSelectedMotionsPlanKey, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import {
     animationElementForMotionAnchor,
     cardHeightToWidthRatio,
@@ -110,7 +110,7 @@
   let activeTargets: ActivePrizeTargetEffect[] = [];
   const replayPlanRunner = createReplayPhasePlanRunner({
     selectMotions: (plan) => animateTakes ? prizeTakePlanMotions(plan) : [],
-    planKey: replayAnimationMotionsKey,
+    planKey: replayAnimationSelectedMotionsPlanKey,
     lifecycle: 'replay',
     onScopeChange: settlePrizeTakes,
     onPlanChange: clearAnimations,
