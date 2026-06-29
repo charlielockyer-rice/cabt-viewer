@@ -7,7 +7,8 @@
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
   import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
-  import { replayAnimationSpriteGroupRemovalMs } from '../animations/replayAnimationHandoff';
+  import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
+  import { replayAnimationScopeExitSettleMs, replayAnimationSpriteGroupRemovalMs } from '../animations/replayAnimationHandoff';
   import { replayAnimationPlanHasPhase, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import {
     animationElementForMotionAnchor,
@@ -128,7 +129,11 @@
 
     if (animateTakes && plannedTakeMotions.length) {
       if (run.shouldStartPlan) {
-        clearAnimations();
+        if (run.scopeChanged) {
+          settlePrizeTakes();
+        } else {
+          clearAnimations();
+        }
         if (!reduceMotion) {
           startPlannedPrizeTake(plannedTakeMotions);
         }
@@ -146,7 +151,7 @@
     }
 
     if (replayMode && run.scopeChanged) {
-      clearAnimations();
+      settlePrizeTakes();
     }
 
     if (replayMode) {
@@ -306,7 +311,7 @@
     const removalMs = replayAnimationSpriteGroupRemovalMs(motions, animationPlan?.durationMs);
     if (removalMs !== undefined) {
       const timer = setTimeout(() => {
-        prizeTakes = prizeTakes.filter((item) => item.id !== animation.id);
+        removePrizeTakes(new Set([animation.id]));
       }, removalMs);
       timers.push(timer);
     }
@@ -322,6 +327,19 @@
     activeTargets = [];
     clearHiddenTargets();
     prizeTakes = [];
+  }
+
+  function settlePrizeTakes() {
+    scheduleReplayAnimationScopeClear({
+      items: prizeTakes,
+      timers,
+      delayMs: replayAnimationScopeExitSettleMs,
+      removeIds: removePrizeTakes,
+    });
+  }
+
+  function removePrizeTakes(ids: ReadonlySet<number>) {
+    prizeTakes = prizeTakes.filter((item) => !ids.has(item.id));
   }
 
   function targetAnimationsForPlayer(playerIndex: number, playerEvents: ActionTimelineEvent[]): PrizeTargetAnimation[] {

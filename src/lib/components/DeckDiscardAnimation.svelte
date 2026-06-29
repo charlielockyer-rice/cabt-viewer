@@ -8,7 +8,8 @@
   } from '../animations/animationVisibilityClaims';
   import { resolveExactAnimationAnchorElement } from '../animations/animationAnchors';
   import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
-  import { replayAnimationSpriteGroupRemovalMs } from '../animations/replayAnimationHandoff';
+  import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
+  import { replayAnimationScopeExitSettleMs, replayAnimationSpriteGroupRemovalMs } from '../animations/replayAnimationHandoff';
   import { replayAnimationPlanHasPhase, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { actionAnimationBatchEvents, actionAnimationStartMs } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
@@ -92,7 +93,11 @@
 
     if (plannedMotions.length) {
       if (run.shouldStartPlan) {
-        clearDiscards();
+        if (run.scopeChanged) {
+          settleDiscards();
+        } else {
+          clearDiscards();
+        }
         if (!reduceMotion) {
           startPlannedDiscard(plannedMotions);
         }
@@ -107,7 +112,7 @@
     }
 
     if (run.scopeChanged && replayMode) {
-      clearDiscards();
+      settleDiscards();
     }
 
     if (replayMode) {
@@ -231,8 +236,7 @@
     const removalMs = replayAnimationSpriteGroupRemovalMs(motions, animationPlan?.durationMs);
     if (removalMs !== undefined) {
       const timer = setTimeout(() => {
-        releaseDestinationClaims(animation);
-        discards = discards.filter((item) => item.id !== animation.id);
+        removeDiscards(new Set([animation.id]));
         const timerIndex = timers.indexOf(timer);
         if (timerIndex >= 0) {
           timers.splice(timerIndex, 1);
@@ -307,6 +311,23 @@
       releaseDestinationClaims(discard);
     }
     discards = [];
+  }
+
+  function settleDiscards() {
+    scheduleReplayAnimationScopeClear({
+      items: discards,
+      timers,
+      delayMs: replayAnimationScopeExitSettleMs,
+      removeIds: removeDiscards,
+    });
+  }
+
+  function removeDiscards(ids: ReadonlySet<number>) {
+    const removed = discards.filter((item) => ids.has(item.id));
+    for (const animation of removed) {
+      releaseDestinationClaims(animation);
+    }
+    discards = discards.filter((item) => !ids.has(item.id));
   }
 
   function destinationClaimsForEvent(event: ActionTimelineEvent): ElementVisibilityClaim[] {

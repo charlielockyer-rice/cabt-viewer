@@ -7,7 +7,8 @@
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
   import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
-  import { replayAnimationSpriteGroupRemovalMs } from '../animations/replayAnimationHandoff';
+  import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
+  import { replayAnimationScopeExitSettleMs, replayAnimationSpriteGroupRemovalMs } from '../animations/replayAnimationHandoff';
   import { replayAnimationPlanHasPhase, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import {
     animationElementForMotionAnchor,
@@ -123,7 +124,11 @@
 
     if (plannedMotions.length) {
       if (run.shouldStartPlan) {
-        clearResets({ restoreSources: false, restoreConnectedSourcesAfterMs: handOutroSettleMs });
+        if (run.scopeChanged) {
+          settleResets();
+        } else {
+          clearResets({ restoreSources: false, restoreConnectedSourcesAfterMs: handOutroSettleMs });
+        }
         if (!reduceMotion) {
           startPlannedReset(plannedMotions);
         }
@@ -142,7 +147,7 @@
 
     if (replayMode) {
       if (run.scopeChanged) {
-        clearResets({ restoreSources: false, restoreConnectedSourcesAfterMs: handOutroSettleMs });
+        settleResets();
       }
       runState.markEventsSeen(currentEvents);
       return;
@@ -195,7 +200,7 @@
     const removalMs = replayAnimationSpriteGroupRemovalMs(motions, animationPlan?.durationMs);
     if (removalMs !== undefined) {
       const timer = setTimeout(() => {
-        resets = resets.filter((item) => item.id !== animation.id);
+        removeResets(new Set([animation.id]));
       }, removalMs);
       timers.push(timer);
     }
@@ -254,6 +259,19 @@
     }
     hiddenSources = [];
     resets = [];
+  }
+
+  function settleResets() {
+    scheduleReplayAnimationScopeClear({
+      items: resets,
+      timers,
+      delayMs: replayAnimationScopeExitSettleMs,
+      removeIds: removeResets,
+    });
+  }
+
+  function removeResets(ids: ReadonlySet<number>) {
+    resets = resets.filter((item) => !ids.has(item.id));
   }
 
   function resetSpriteForEvent(

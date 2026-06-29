@@ -7,7 +7,8 @@
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
   import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
-  import { replayAnimationSpriteGroupRemovalMs } from '../animations/replayAnimationHandoff';
+  import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
+  import { replayAnimationScopeExitSettleMs, replayAnimationSpriteGroupRemovalMs } from '../animations/replayAnimationHandoff';
   import { replayAnimationPlanHasPhase, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import {
     animationElementForMotionAnchor,
@@ -107,7 +108,11 @@
 
     if (plannedMotions.length) {
       if (run.shouldStartPlan) {
-        clearDraws();
+        if (run.scopeChanged) {
+          settleDraws();
+        } else {
+          clearDraws();
+        }
         if (!reduceMotion) {
           startPlannedDraw(plannedMotions);
         }
@@ -126,7 +131,7 @@
 
     if (replayMode) {
       if (run.scopeChanged) {
-        clearDraws();
+        settleDraws();
       }
       runState.markEventsSeen(currentEvents);
       return;
@@ -184,8 +189,7 @@
     const removalMs = replayAnimationSpriteGroupRemovalMs(motions, animationPlan?.durationMs);
     if (removalMs !== undefined) {
       const timer = setTimeout(() => {
-        showTargets(animation.hiddenTargets);
-        draws = draws.filter((item) => item.id !== animation.id);
+        removeDraws(new Set([animation.id]));
       }, removalMs);
       timers.push(timer);
     }
@@ -290,6 +294,23 @@
       showTargets(draw.hiddenTargets);
     }
     draws = [];
+  }
+
+  function settleDraws() {
+    scheduleReplayAnimationScopeClear({
+      items: draws,
+      timers,
+      delayMs: replayAnimationScopeExitSettleMs,
+      removeIds: removeDraws,
+    });
+  }
+
+  function removeDraws(ids: ReadonlySet<number>) {
+    const removed = draws.filter((item) => ids.has(item.id));
+    for (const animation of removed) {
+      showTargets(animation.hiddenTargets);
+    }
+    draws = draws.filter((item) => !ids.has(item.id));
   }
 
   function spritesForPlayer(playerIndex: number, playerEvents: ActionTimelineEvent[], animationEvents: ActionTimelineEvent[]): PlayerDrawSprites {

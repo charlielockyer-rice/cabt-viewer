@@ -6,7 +6,8 @@
     centerOf,
     isConcealedHandTarget,
   } from '../animations/viewportCardMotion';
-  import { replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
+  import { replayAnimationScopeExitSettleMs, replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
+  import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
   import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import type { CardView } from '../game/types';
   import CardTile from './CardTile.svelte';
@@ -62,7 +63,9 @@
     lastPlanKey = planKey;
     initialized = true;
 
-    if (scopeChanged || planChanged) {
+    if (scopeChanged) {
+      settleSprites();
+    } else if (planChanged) {
       clearSprites();
     }
     if (!motions.length || (!planChanged && !scopeChanged)) {
@@ -86,7 +89,7 @@
     if (!sprites.length) {
       return;
     }
-    activeSprites = sprites;
+    activeSprites = [...activeSprites, ...sprites];
     await tick();
     if (nextGeneration !== generation) {
       return;
@@ -181,6 +184,26 @@
     }
     frameIds.length = 0;
     activeSprites = [];
+  }
+
+  function settleSprites() {
+    generation += 1;
+    for (const timer of timers) {
+      clearTimeout(timer);
+    }
+    timers.length = 0;
+    for (const frameId of frameIds) {
+      cancelAnimationFrame(frameId);
+    }
+    frameIds.length = 0;
+    scheduleReplayAnimationScopeClear({
+      items: activeSprites,
+      timers,
+      delayMs: replayAnimationScopeExitSettleMs,
+      removeIds(ids) {
+        activeSprites = activeSprites.filter((sprite) => !ids.has(sprite.id));
+      },
+    });
   }
 
   function spriteStyle(sprite: CrossPlaneSprite): string {
