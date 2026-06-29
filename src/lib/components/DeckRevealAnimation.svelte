@@ -66,9 +66,7 @@
     sprites: RevealSprite[];
   };
 
-  type DestinationHideOptions = {
-    disableLocalDestinationClaims?: boolean;
-  };
+  type DestinationVisibilityMode = 'local' | 'planned';
 
   type RevealStepAction = {
     motion: RevealSessionAnimationMotion;
@@ -146,17 +144,16 @@
           !revealActions.some((revealAction) => revealAction.id === action.id),
         );
         const returnActions = revealCardActionsForSteps(planSteps, 'return');
-        const plannedHideOptions: DestinationHideOptions = { disableLocalDestinationClaims: true };
         if (revealActions.length) {
-          startReveal(revealActions, plannedHideOptions);
+          startReveal(revealActions, 'planned');
         } else {
           seedHeldRevealSprites(currentPlanMotions);
         }
         if (attachActions.length) {
-          attachRevealedCards(attachActions, plannedHideOptions);
+          attachRevealedCards(attachActions, 'planned');
         }
         if (takeActions.length) {
-          takeRevealedCards(takeActions, plannedHideOptions);
+          takeRevealedCards(takeActions, 'planned');
         }
         if (returnActions.length) {
           returnRevealedCards(returnActions);
@@ -481,7 +478,7 @@
 
   function startReveal(
     revealActions: RevealStartAction[],
-    hideOptions: DestinationHideOptions = {},
+    visibilityMode: DestinationVisibilityMode = 'local',
   ) {
     const actionsByPlayer = new Map<number, RevealStartAction[]>();
     for (const action of revealActions) {
@@ -501,7 +498,7 @@
     const hiddenTargets = sprites
       .filter((sprite) => sprite.mode === 'searching' && sprite.targetElement)
       .map((sprite) => sprite.targetElement!);
-    const hiddenSearchTargets = hideTargets(hiddenTargets, hideOptions);
+    const hiddenSearchTargets = hideTargets(hiddenTargets, visibilityMode);
     const animation: RevealAnimation = {
       id: nextAnimationId++,
       sprites,
@@ -531,7 +528,7 @@
 
   function attachRevealedCards(
     attachActions: RevealCardAction[],
-    hideOptions: DestinationHideOptions = {},
+    visibilityMode: DestinationVisibilityMode = 'local',
   ) {
     for (const action of attachActions) {
       const sprite = revealSprite(action.serial);
@@ -545,7 +542,7 @@
       const sourceCenter = spriteCenter(sprite);
       const targetCenter = centerOf(targetRect);
       const delayMs = action.startMs;
-      markAttachTarget(target, action.serial, delayMs, hideOptions);
+      markAttachTarget(target, action.serial, delayMs, visibilityMode);
       updateSprites((item) => item.serial === action.serial
         ? {
             ...item,
@@ -565,7 +562,7 @@
 
   function takeRevealedCards(
     takeActions: RevealCardAction[],
-    hideOptions: DestinationHideOptions = {},
+    visibilityMode: DestinationVisibilityMode = 'local',
   ) {
     for (const action of takeActions) {
       const sprite = revealSprite(action.serial);
@@ -579,7 +576,7 @@
       const takeSource = normalizedSpriteForTake(sprite);
       const sourceCenter = spriteCenter(takeSource);
       const delayMs = action.startMs;
-      const hiddenTakeTargets = target.element ? hideTargets([target.element], hideOptions) : [];
+      const hiddenTakeTargets = target.element ? hideTargets([target.element], visibilityMode) : [];
       updateSprites((item) => item.serial === action.serial
         ? {
             ...normalizedSpriteForTake(item),
@@ -742,10 +739,10 @@
     target: HTMLElement,
     serial: number,
     delayMs: number,
-    hideOptions: DestinationHideOptions = {},
+    visibilityMode: DestinationVisibilityMode = 'local',
   ) {
     const immediateElement = attachedCardElement(target, serial);
-    const immediateClaim = immediateElement && !shouldSkipLocalDestinationClaim(immediateElement, hideOptions)
+    const immediateClaim = immediateElement && visibilityMode === 'local'
       ? hideElementForAnimation({
           element: immediateElement,
           scopeKey,
@@ -961,12 +958,12 @@
     };
   }
 
-  function hideTargets(targets: HTMLElement[], options: DestinationHideOptions = {}) {
+  function hideTargets(targets: HTMLElement[], visibilityMode: DestinationVisibilityMode = 'local') {
     const hidden: HiddenRevealTarget[] = [];
+    if (visibilityMode === 'planned') {
+      return hidden;
+    }
     for (const target of targets) {
-      if (shouldSkipLocalDestinationClaim(target, options)) {
-        continue;
-      }
       hidden.push(hideElementForAnimation({
         element: target,
         scopeKey,
@@ -976,10 +973,6 @@
     }
     hiddenTargets = [...hiddenTargets, ...hidden];
     return hidden;
-  }
-
-  function shouldSkipLocalDestinationClaim(_element: HTMLElement, options: DestinationHideOptions): boolean {
-    return !!options.disableLocalDestinationClaims;
   }
 
   function showTargets(targets: HiddenRevealTarget[]) {
