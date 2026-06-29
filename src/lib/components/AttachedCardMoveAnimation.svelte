@@ -12,7 +12,9 @@
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
   import type { AnimationVisibilityRole } from '../animations/animationVisibility';
-  import { replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
+  import { replayAnimationScopeExitSettleMs, replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
+  import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
+  import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
   import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
@@ -54,6 +56,7 @@
   };
 
   type ActiveAttachedMoveSprite = AttachedMoveSprite & {
+    instanceId: number;
     element: HTMLElement;
     visibilityClaims: ElementVisibilityClaim[];
   };
@@ -76,12 +79,10 @@
   let snapshotTimer: ReturnType<typeof setInterval> | undefined;
   let previousAttachedRects = new Map<number, RectSnapshot>();
   let motionLayer = $state<HTMLElement>();
-  let seenEventIds = new Set<number>();
-  let initialized = false;
-  let lastScopeKey: string | number = '';
-  let lastPlanKey = '';
+  const runState = new ReplayAnimationRunState();
   let reduceMotion = $state(false);
   let activeSprites: ActiveAttachedMoveSprite[] = [];
+  let nextSpriteInstanceId = 1;
 
   onMount(() => {
     if (typeof window.matchMedia !== 'function') {
@@ -121,56 +122,46 @@
     const currentPlan = animationPlan;
     const planKey = currentPlanKey(currentPlan);
     const plannedMotions = attachedCardMoveMotions(currentPlan);
-    const scopeChanged = initialized && currentScopeKey !== lastScopeKey;
-    const planChanged = planKey !== lastPlanKey;
-    if (scopeChanged || (plannedMotions.length && planChanged)) {
+    const run = runState.update(currentScopeKey, planKey);
+    if (run.scopeChanged) {
+      settleSprites();
+    } else if (plannedMotions.length && run.planChanged) {
       clearSprites();
     }
-    lastScopeKey = currentScopeKey;
-    lastPlanKey = planKey;
 
     if (plannedMotions.length) {
-      const shouldStartPlan = !initialized || planChanged || scopeChanged;
-      initialized = true;
       previousAttachedRects = snapshotAttachedRects();
-      if (shouldStartPlan && !reduceMotion) {
-        startAttachedSprites(plannedMotions.flatMap(spriteForMotion));
+      if (run.shouldStartPlan && !reduceMotion) {
+        startAttachedSprites(plannedMotions.flatMap(spriteForMotion), { clearExisting: false });
       }
-      markEventsSeen(currentEvents);
+      runState.markEventsSeen(currentEvents);
       return;
     }
 
-    if (!initialized) {
-      markEventsSeen(currentEvents);
-      initialized = true;
+    if (run.firstRun) {
+      runState.markEventsSeen(currentEvents);
       previousAttachedRects = snapshotAttachedRects();
       return;
     }
 
     if (replayMode) {
-      markEventsSeen(currentEvents);
+      runState.markEventsSeen(currentEvents);
       previousAttachedRects = snapshotAttachedRects();
       return;
     }
 
-    const animationEvents = actionAnimationBatchEvents(currentEvents, seenEventIds);
+    const animationEvents = actionAnimationBatchEvents(currentEvents, runState.seenEventIds);
     const moveEvents = animationEvents.filter((event) =>
       isAttachedMoveEvent(event)
-      && !seenEventIds.has(event.id));
+      && !runState.hasSeen(event));
 
-    markEventsSeen(currentEvents);
+    runState.markEventsSeen(currentEvents);
 
     if (moveEvents.length) {
       startAttachedMoves(moveEvents, animationEvents);
     }
     previousAttachedRects = snapshotAttachedRects();
   });
-
-  function markEventsSeen(currentEvents: ActionTimelineEvent[]) {
-    for (const event of currentEvents) {
-      seenEventIds.add(event.id);
-    }
-  }
 
   function startAttachedMoves(moveEvents: ActionTimelineEvent[], animationEvents: ActionTimelineEvent[]): boolean {
     if (reduceMotion) {
@@ -180,17 +171,23 @@
     return startAttachedSprites(moveEvents.flatMap((event) => spriteForEvent(event, animationEvents)));
   }
 
-  function startAttachedSprites(nextSprites: AttachedMoveSprite[]): boolean {
+  function startAttachedSprites(
+    nextSprites: AttachedMoveSprite[],
+    { clearExisting = true }: { clearExisting?: boolean } = {},
+  ): boolean {
     if (!nextSprites.length) {
       return false;
     }
 
-    clearSprites();
+    if (clearExisting) {
+      clearSprites();
+    }
     for (const sprite of nextSprites) {
       const element = renderSprite(sprite);
       motionLayer?.appendChild(element);
       const activeSprite: ActiveAttachedMoveSprite = {
         ...sprite,
+        instanceId: nextSpriteInstanceId++,
         element,
         visibilityClaims: [],
       };
@@ -218,9 +215,7 @@
         : sprite.delayMs + sprite.durationMs + replayHandoffHoldMs();
       if (cleanupDelayMs !== undefined) {
         const cleanupTimer = setTimeout(() => {
-          releaseActiveSprite(activeSprite);
-          element.remove();
-          activeSprites = activeSprites.filter((item) => item.element !== element);
+          removeActiveSpritesByInstanceIds(new Set([activeSprite.instanceId]));
         }, cleanupDelayMs);
         timers.push(cleanupTimer);
       }
@@ -519,6 +514,24 @@
       sprite.element.remove();
     }
     activeSprites = [];
+  }
+
+  function settleSprites() {
+    scheduleReplayAnimationScopeClear({
+      items: activeSprites.map((sprite) => ({ id: sprite.instanceId })),
+      timers,
+      delayMs: replayAnimationScopeExitSettleMs,
+      removeIds: removeActiveSpritesByInstanceIds,
+    });
+  }
+
+  function removeActiveSpritesByInstanceIds(ids: ReadonlySet<number>) {
+    const removed = activeSprites.filter((sprite) => ids.has(sprite.instanceId));
+    for (const sprite of removed) {
+      releaseActiveSprite(sprite);
+      sprite.element.remove();
+    }
+    activeSprites = activeSprites.filter((sprite) => !ids.has(sprite.instanceId));
   }
 
   function hideActiveElement(
