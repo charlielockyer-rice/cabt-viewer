@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy } from 'svelte';
   import {
     resolveExactAnimationAnchorElement,
     resolveAnimationAnchorElements,
@@ -89,22 +89,18 @@
     startPlanned: startPlannedAttachedSprites,
   });
 
-  onMount(() => {
-    snapshotTimer = setInterval(() => {
-      const nextRects = snapshotAttachedRects();
-      if (nextRects.size) {
-        previousAttachedRects = nextRects;
-      }
-    }, 100);
-    return () => {
-      if (snapshotTimer) {
-        clearInterval(snapshotTimer);
-      }
-    };
+  onDestroy(() => {
+    stopLiveSnapshotTimer();
+    clearSprites();
   });
 
-  onDestroy(() => {
-    clearSprites();
+  $effect(() => {
+    if (replayMode) {
+      stopLiveSnapshotTimer();
+      return;
+    }
+    startLiveSnapshotTimer();
+    return stopLiveSnapshotTimer;
   });
 
   $effect(() => {
@@ -121,7 +117,6 @@
       animationPlan,
     });
     if (replay.handled) {
-      previousAttachedRects = snapshotAttachedRects();
       return;
     }
 
@@ -136,7 +131,9 @@
     if (moveEvents.length) {
       startAttachedMoves(moveEvents, animationEvents);
     }
-    previousAttachedRects = snapshotAttachedRects();
+    if (!replayMode) {
+      previousAttachedRects = snapshotAttachedRects();
+    }
   });
 
   function startAttachedMoves(moveEvents: ActionTimelineEvent[], animationEvents: ActionTimelineEvent[]): boolean {
@@ -148,8 +145,27 @@
   }
 
   function startPlannedAttachedSprites(motions: CardMoveAnimationMotion[]): boolean {
-    previousAttachedRects = snapshotAttachedRects();
     return startAttachedSprites(motions.flatMap(spriteForMotion), { clearExisting: false });
+  }
+
+  function startLiveSnapshotTimer() {
+    if (snapshotTimer) {
+      return;
+    }
+    snapshotTimer = setInterval(() => {
+      const nextRects = snapshotAttachedRects();
+      if (nextRects.size) {
+        previousAttachedRects = nextRects;
+      }
+    }, 100);
+  }
+
+  function stopLiveSnapshotTimer() {
+    if (!snapshotTimer) {
+      return;
+    }
+    clearInterval(snapshotTimer);
+    snapshotTimer = undefined;
   }
 
   function startAttachedSprites(
