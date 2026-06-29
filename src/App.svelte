@@ -1394,6 +1394,7 @@
           {boardLift}
           animationEvents={game.actionTimeline ?? []}
           {animationScopeKey}
+          animationPlan={replayAnimationPlan}
           evolutionChromeEvents={finalEvolutionEvents}
           {replayMode}
         />

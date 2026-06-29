@@ -1,9 +1,15 @@
 import cardRows from './cardData.generated.json';
 import attackRows from './attackData.generated.json';
-import { actionAnimationTiming } from './actionAnimationSchedule';
+import { actionAnimationStartMs, actionAnimationTiming } from './actionAnimationSchedule';
 import { cabtLogsToTimeline } from './logFormat';
 import { CabtAreaType, CabtOptionType, CabtSelectContext } from './types';
-import { createReplayAnimationPhasePlan, type AnimationVisibilityClaim } from '../animations/replayAnimationPlan';
+import {
+  createReplayAnimationPhasePlan,
+  type AnimationAnchorRef,
+  type AnimationIdentity,
+  type AnimationMotion,
+  type AnimationVisibilityClaim,
+} from '../animations/replayAnimationPlan';
 import { resolveCardImageUrl } from '../game/cardImages';
 import { SlotType, targetFor, type ActionTimelineEvent, type CardView, type GameView, type LogView, type PlayerView, type PokemonSlotView } from '../game/types';
 import type { ReplayAnimationPhase, ReplaySnapshot, ReplayStep } from '../game/replay';
@@ -1414,7 +1420,8 @@ function replayAnimationPlanForPhase(
   label: string | undefined,
 ) {
   const visibilityClaims = animationPhaseVisibilityClaims(phase, view);
-  if (!visibilityClaims.length) {
+  const motions = animationPhaseMotions(phase, view);
+  if (!visibilityClaims.length && !motions.length) {
     return undefined;
   }
   return createReplayAnimationPhasePlan({
@@ -1423,8 +1430,258 @@ function replayAnimationPlanForPhase(
     view,
     actionTimeline: phase.events,
     durationMs: phase.durationMs,
+    motions,
     visibilityClaims,
   });
+}
+
+function animationPhaseMotions(phase: AnimationEventPhase, view: GameView): AnimationMotion[] {
+  if (
+    phase.key.startsWith('BoardMove:')
+    || phase.key.startsWith('BoardToDeck:')
+    || phase.key.startsWith('DeckBoardPlace:')
+    || phase.key.startsWith('StadiumMove:')
+  ) {
+    return boardCardMoveMotions(phase, view);
+  }
+  return [];
+}
+
+function boardCardMoveMotions(phase: AnimationEventPhase, view: GameView): AnimationMotion[] {
+  const motionGroups = phase.events.map((event) => boardCardMoveMotionsForEvent(phase, view, event));
+  if (motionGroups.some((motions) => motions === null)) {
+    return [];
+  }
+  return motionGroups.flatMap((motions) => motions ?? []);
+}
+
+function boardCardMoveMotionsForEvent(
+  phase: AnimationEventPhase,
+  view: GameView,
+  event: ActionTimelineEvent,
+): AnimationMotion[] | null {
+  if (event.kind === 'Switch') {
+    return switchBoardCardMoveMotions(phase, view, event);
+  }
+  if (!isMoveCardKind(event.kind)) {
+    return [];
+  }
+
+  const params = event.params as Record<string, unknown> | undefined;
+  const playerIndex = event.playerIndex;
+  const fromArea = Number(params?.fromArea);
+  const toArea = Number(params?.toArea);
+  const serial = finiteNumber(params?.serial);
+  const cardId = finiteNumber(params?.cardId);
+  if (playerIndex === undefined || cardId === undefined) {
+    return null;
+  }
+
+  const sourceAnchor = boardMoveSourceAnchor(view, event, fromArea);
+  const targetAnchor = boardMoveTargetAnchor(phase, view, event, toArea);
+  if (!sourceAnchor || !targetAnchor) {
+    return null;
+  }
+
+  return [cardMoveMotion({
+    id: `${phase.key}:${event.id}:${serial ?? cardId}`,
+    event,
+    phase,
+    sourceAnchor,
+    targetAnchor,
+    identity: {
+      kind: fromArea === CabtAreaType.STADIUM ? 'stadium' : 'pokemon',
+      serial,
+      cardId,
+      name: stringValue(params?.cardName),
+    },
+    removeSprite: (fromArea === CabtAreaType.ACTIVE || fromArea === CabtAreaType.BENCH) && (toArea === CabtAreaType.ACTIVE || toArea === CabtAreaType.BENCH)
+      ? 'scope-exit'
+      : 'prepaint',
+  })];
+}
+
+function switchBoardCardMoveMotions(
+  phase: AnimationEventPhase,
+  view: GameView,
+  event: ActionTimelineEvent,
+): AnimationMotion[] | null {
+  const playerIndex = event.playerIndex;
+  const params = event.params as Record<string, unknown> | undefined;
+  if (playerIndex === undefined) {
+    return null;
+  }
+  const activeAnchor = boardSlotAnchorForPokemon(view.players[playerIndex], finiteNumber(params?.serialActive), finiteNumber(params?.cardIdActive));
+  const benchAnchor = boardSlotAnchorForPokemon(view.players[playerIndex], finiteNumber(params?.serialBench), finiteNumber(params?.cardIdBench));
+  if (!activeAnchor || !benchAnchor) {
+    return null;
+  }
+  return [
+    cardMoveMotion({
+      id: `${phase.key}:${event.id}:active-${params?.serialActive ?? params?.cardIdActive}`,
+      event,
+      phase,
+      sourceAnchor: activeAnchor,
+      targetAnchor: benchAnchor,
+      identity: {
+        kind: 'pokemon',
+        serial: finiteNumber(params?.serialActive),
+        cardId: finiteNumber(params?.cardIdActive),
+      },
+      removeSprite: 'scope-exit',
+    }),
+    cardMoveMotion({
+      id: `${phase.key}:${event.id}:bench-${params?.serialBench ?? params?.cardIdBench}`,
+      event,
+      phase,
+      sourceAnchor: benchAnchor,
+      targetAnchor: activeAnchor,
+      identity: {
+        kind: 'pokemon',
+        serial: finiteNumber(params?.serialBench),
+        cardId: finiteNumber(params?.cardIdBench),
+      },
+      removeSprite: 'scope-exit',
+    }),
+  ];
+}
+
+function cardMoveMotion(input: {
+  id: string;
+  event: ActionTimelineEvent;
+  phase: AnimationEventPhase;
+  sourceAnchor: AnimationAnchorRef;
+  targetAnchor: AnimationAnchorRef;
+  identity: AnimationIdentity;
+  removeSprite: 'prepaint' | 'scope-exit';
+}): AnimationMotion {
+  return {
+    id: input.id,
+    kind: 'card-move',
+    identity: input.identity,
+    sourceAnchor: input.sourceAnchor,
+    targetAnchor: input.targetAnchor,
+    coordinateSpace: 'board',
+    startMs: actionAnimationStartMs(input.phase.events, input.event),
+    durationMs: actionAnimationTiming.boardMoveMs,
+    spriteVisual: {
+      kind: 'anchor-snapshot',
+      anchor: input.sourceAnchor,
+    },
+    handoffPolicy: {
+      hideSourceUntil: 'snapshot',
+      hideDestinationUntil: 'prepaint',
+      removeSprite: input.removeSprite,
+      prepaintFrames: 2,
+    },
+  };
+}
+
+function boardMoveSourceAnchor(view: GameView, event: ActionTimelineEvent, fromArea: number): AnimationAnchorRef | undefined {
+  const playerIndex = event.playerIndex;
+  if (playerIndex === undefined) {
+    return undefined;
+  }
+  if (fromArea === CabtAreaType.DECK) {
+    return { kind: 'deck-top', playerIndex };
+  }
+  if (fromArea === CabtAreaType.STADIUM) {
+    const player = view.players[playerIndex];
+    const card = player?.stadium.find((candidate) => eventCardMatches(candidate, event));
+    return card ? { kind: 'stadium-card', playerIndex, serial: card.serial } : undefined;
+  }
+  if (fromArea === CabtAreaType.ACTIVE || fromArea === CabtAreaType.BENCH) {
+    return boardSlotAnchorForEvent(view.players[playerIndex], event);
+  }
+  return undefined;
+}
+
+function boardMoveTargetAnchor(
+  phase: AnimationEventPhase,
+  view: GameView,
+  event: ActionTimelineEvent,
+  toArea: number,
+): AnimationAnchorRef | undefined {
+  const playerIndex = event.playerIndex;
+  if (playerIndex === undefined) {
+    return undefined;
+  }
+  if (toArea === CabtAreaType.DECK) {
+    return { kind: 'deck-top', playerIndex };
+  }
+  if (toArea === CabtAreaType.DISCARD) {
+    return { kind: 'discard-pile', playerIndex };
+  }
+  if (toArea === CabtAreaType.ACTIVE) {
+    const reciprocal = reciprocalBoardPositionEvent(phase, event);
+    if (reciprocal) {
+      return boardSlotAnchorForEvent(view.players[playerIndex], reciprocal);
+    }
+    return { kind: 'board-slot', playerIndex, slot: 'active', slotIndex: 0 };
+  }
+  if (toArea === CabtAreaType.BENCH) {
+    const reciprocal = reciprocalBoardPositionEvent(phase, event);
+    if (reciprocal) {
+      return boardSlotAnchorForEvent(view.players[playerIndex], reciprocal);
+    }
+    const destination = boardPokemonDestinationForEvent(view.players[playerIndex], event);
+    if (destination) {
+      return { kind: 'board-slot', playerIndex, slot: destination.kind, slotIndex: destination.slot.index };
+    }
+    const params = event.params as Record<string, unknown> | undefined;
+    const benchIndex = finiteNumber(params?.toIndex) ?? finiteNumber(params?.index) ?? finiteNumber(params?.benchIndex);
+    return benchIndex === undefined ? undefined : { kind: 'board-slot', playerIndex, slot: 'bench', slotIndex: benchIndex };
+  }
+  return undefined;
+}
+
+function reciprocalBoardPositionEvent(phase: AnimationEventPhase, event: ActionTimelineEvent): ActionTimelineEvent | undefined {
+  const params = event.params as Record<string, unknown> | undefined;
+  const fromArea = Number(params?.fromArea);
+  const toArea = Number(params?.toArea);
+  if (!isBoardPositionMove(fromArea, toArea)) {
+    return undefined;
+  }
+  return phase.events.find((candidate) => {
+    if (candidate === event || candidate.playerIndex !== event.playerIndex || !isMoveCardKind(candidate.kind)) {
+      return false;
+    }
+    const candidateParams = candidate.params as Record<string, unknown> | undefined;
+    return Number(candidateParams?.fromArea) === toArea
+      && Number(candidateParams?.toArea) === fromArea;
+  });
+}
+
+function boardSlotAnchorForEvent(player: PlayerView | undefined, event: ActionTimelineEvent): AnimationAnchorRef | undefined {
+  const params = event.params as Record<string, unknown> | undefined;
+  return boardSlotAnchorForPokemon(player, finiteNumber(params?.serial), finiteNumber(params?.cardId));
+}
+
+function boardSlotAnchorForPokemon(
+  player: PlayerView | undefined,
+  serial: number | undefined,
+  cardId: number | undefined,
+): AnimationAnchorRef | undefined {
+  if (!player) {
+    return undefined;
+  }
+  const matches = (slot: PokemonSlotView) =>
+    (serial !== undefined && slot.pokemon?.serial === serial)
+    || (serial === undefined && cardId !== undefined && slot.pokemon?.id === cardId);
+  if (matches(player.active)) {
+    return { kind: 'board-slot', playerIndex: player.index, slot: 'active', slotIndex: player.active.index };
+  }
+  const benchSlot = player.bench.find(matches);
+  return benchSlot ? { kind: 'board-slot', playerIndex: player.index, slot: 'bench', slotIndex: benchSlot.index } : undefined;
+}
+
+function finiteNumber(value: unknown): number | undefined {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
 }
 
 function animationPhaseVisibilityClaims(phase: AnimationEventPhase, view: GameView): AnimationVisibilityClaim[] {

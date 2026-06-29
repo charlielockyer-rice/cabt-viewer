@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, tick } from 'svelte';
   import { replayAnimationVisibility, type AnimationVisibilityToken } from '../animations/animationVisibility';
+  import { releaseAnimationVisibilityScope } from '../animations/animationVisibilityClaims';
   import type { ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
 
   type Props = {
@@ -26,7 +27,7 @@
     releasePlanTokens();
     clearStaleScopeReleaseTimers();
     if (lastScopeKey) {
-      replayAnimationVisibility.releaseScope(lastScopeKey);
+      releaseAnimationVisibilityScope(lastScopeKey);
       lastScopeKey = undefined;
     }
   });
@@ -42,7 +43,7 @@
       releasePlanTokens();
       clearStaleScopeReleaseTimers();
       if (lastScopeKey) {
-        replayAnimationVisibility.releaseScope(lastScopeKey);
+        releaseAnimationVisibilityScope(lastScopeKey);
         lastScopeKey = undefined;
       }
       lastPlan = undefined;
@@ -94,7 +95,7 @@
         staleScopeReleaseTimers.splice(timerIndex, 1);
       }
       if (lastScopeKey !== scopeKey) {
-        replayAnimationVisibility.releaseScope(scopeKey);
+        releaseAnimationVisibilityScope(scopeKey);
         scheduleVisibilityRefresh();
       }
     }, 220);

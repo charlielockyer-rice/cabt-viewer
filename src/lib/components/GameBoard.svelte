@@ -4,6 +4,7 @@
   import BoardMoveAnimation from './BoardMoveAnimation.svelte';
   import CenterPiles from './CenterPiles.svelte';
   import DeckPrizeAnimation from './DeckPrizeAnimation.svelte';
+  import type { ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import type { ActionTimelineEvent, PlayerView, PokemonSlotView } from '../game/types';
 
   type ZoneName = 'discard' | 'lostZone' | 'stadium' | 'playZone';
@@ -41,6 +42,7 @@
     boardLift?: number;
     animationEvents?: ActionTimelineEvent[];
     animationScopeKey?: string | number;
+    animationPlan?: ReplayAnimationPhasePlan;
     evolutionChromeEvents?: ActionTimelineEvent[];
     replayMode?: boolean;
   };
@@ -78,6 +80,7 @@
     boardLift = 0,
     animationEvents = [],
     animationScopeKey = '',
+    animationPlan,
     evolutionChromeEvents = [],
     replayMode = false,
   }: Props = $props();
@@ -275,6 +278,7 @@
     <BoardMoveAnimation
       events={animationEvents}
       scopeKey={animationScopeKey}
+      {animationPlan}
       {replayMode}
     />
   </div>

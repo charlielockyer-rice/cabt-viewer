@@ -810,6 +810,24 @@ describe('cabtReplayToSnapshot', () => {
     expect(step.animationPhases?.[1].view.players[0].playZone.map((card) => card.serial)).toEqual([14]);
     expect(step.animationPhases?.[1].view.players[0].discard).toHaveLength(0);
     expect(step.animationPhases?.[1].view.players[0].active.pokemon?.serial).toBe(79);
+    expect(step.animationPhases?.[1].animationPlan?.motions).toMatchObject([
+      {
+        kind: 'card-move',
+        coordinateSpace: 'board',
+        sourceAnchor: { kind: 'board-slot', playerIndex: 0, slot: 'active', slotIndex: 0 },
+        targetAnchor: { kind: 'board-slot', playerIndex: 0, slot: 'bench', slotIndex: 0 },
+        identity: { kind: 'pokemon', serial: 79, cardId: 304 },
+        handoffPolicy: { removeSprite: 'scope-exit' },
+      },
+      {
+        kind: 'card-move',
+        coordinateSpace: 'board',
+        sourceAnchor: { kind: 'board-slot', playerIndex: 0, slot: 'bench', slotIndex: 0 },
+        targetAnchor: { kind: 'board-slot', playerIndex: 0, slot: 'active', slotIndex: 0 },
+        identity: { kind: 'pokemon', serial: 81, cardId: 878 },
+        handoffPolicy: { removeSprite: 'scope-exit' },
+      },
+    ]);
     expect(step.displayView?.players[0].playZone).toHaveLength(0);
     expect(step.displayView?.players[0].discard.map((card) => card.serial)).toEqual([14]);
     expect(step.displayView?.players[0].active.pokemon?.serial).toBe(81);
@@ -3105,6 +3123,16 @@ describe('cabtReplayToSnapshot', () => {
     expect(step.animationPhases?.map((phase) => phase.key)).toEqual(['BoardMove:1']);
     expect(step.animationPhases?.[0].view.players[1].bench[0].pokemon?.serial).toBe(67);
     expect(step.animationPhases?.[0].view.players[1].active.empty).toBe(true);
+    expect(step.animationPhases?.[0].animationPlan?.motions).toMatchObject([
+      {
+        kind: 'card-move',
+        coordinateSpace: 'board',
+        sourceAnchor: { kind: 'board-slot', playerIndex: 1, slot: 'bench', slotIndex: 0 },
+        targetAnchor: { kind: 'board-slot', playerIndex: 1, slot: 'active', slotIndex: 0 },
+        identity: { kind: 'pokemon', serial: 67, cardId: 722 },
+        handoffPolicy: { removeSprite: 'scope-exit' },
+      },
+    ]);
     expect(snapshot.views[step.stateIndex].players[1].active.pokemon?.serial).toBe(67);
     expect(snapshot.views[step.stateIndex].players[1].bench.some((slot) => slot.pokemon?.serial === 67)).toBe(false);
   });
@@ -3165,6 +3193,22 @@ describe('cabtReplayToSnapshot', () => {
     expect(step.animationPhases?.[0].actionTimeline).toHaveLength(2);
     expect(step.animationPhases?.[0].view.players[0].active.pokemon?.serial).toBe(64);
     expect(step.animationPhases?.[0].view.players[0].bench[0].pokemon?.serial).toBe(67);
+    expect(step.animationPhases?.[0].animationPlan?.motions).toMatchObject([
+      {
+        kind: 'card-move',
+        coordinateSpace: 'board',
+        sourceAnchor: { kind: 'board-slot', playerIndex: 0, slot: 'active', slotIndex: 0 },
+        targetAnchor: { kind: 'board-slot', playerIndex: 0, slot: 'bench', slotIndex: 0 },
+        handoffPolicy: { removeSprite: 'scope-exit' },
+      },
+      {
+        kind: 'card-move',
+        coordinateSpace: 'board',
+        sourceAnchor: { kind: 'board-slot', playerIndex: 0, slot: 'bench', slotIndex: 0 },
+        targetAnchor: { kind: 'board-slot', playerIndex: 0, slot: 'active', slotIndex: 0 },
+        handoffPolicy: { removeSprite: 'scope-exit' },
+      },
+    ]);
     expect(snapshot.views[step.stateIndex].players[0].active.pokemon?.serial).toBe(67);
     expect(snapshot.views[step.stateIndex].players[0].bench[0].pokemon?.serial).toBe(64);
   });

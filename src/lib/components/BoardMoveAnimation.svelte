@@ -1,11 +1,13 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
+  import { resolveAnimationAnchorElements, type AnimationAnchorRef } from '../animations/animationAnchors';
   import {
     hideElementForAnimation,
     releaseElementVisibilityClaim,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
+  import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
   import { cardBackCssVar } from '../game/cardAssets';
@@ -16,6 +18,7 @@
     events?: ActionTimelineEvent[];
     scopeKey?: string | number;
     replayMode?: boolean;
+    animationPlan?: ReplayAnimationPhasePlan;
   };
 
   type BoardMoveSprite = {
@@ -38,6 +41,7 @@
     fromDeck: boolean;
     opponentSide: boolean;
     delayMs: number;
+    durationMs: number;
     measuring: boolean;
   };
 
@@ -64,6 +68,7 @@
     events = [],
     scopeKey = '',
     replayMode = false,
+    animationPlan,
   }: Props = $props();
 
   let motionLayer = $state<HTMLElement>();
@@ -73,6 +78,7 @@
   let seenEventIds = new Set<number>();
   let initialized = false;
   let lastScopeKey: string | number = '';
+  let lastPlanKey = '';
   let reduceMotion = $state(false);
   let sprites = $state<BoardMoveSprite[]>([]);
   let animationGeneration = 0;
@@ -106,11 +112,24 @@
   $effect(() => {
     const currentEvents = events;
     const currentScopeKey = scopeKey;
+    const currentPlan = animationPlan;
+    const planKey = currentPlanKey(currentPlan);
+    const plannedMotions = boardCardMoveMotions(currentPlan);
     const scopeChanged = initialized && currentScopeKey !== lastScopeKey;
-    if (scopeChanged) {
+    const planChanged = planKey !== lastPlanKey;
+    if (scopeChanged || (plannedMotions.length && planChanged)) {
       clearBoardMoves({ settleHandoff: replayMode });
     }
     lastScopeKey = currentScopeKey;
+    lastPlanKey = planKey;
+
+    if (plannedMotions.length) {
+      initialized = true;
+      if (!reduceMotion) {
+        startPlannedBoardMoves(plannedMotions);
+      }
+      return;
+    }
 
     if (!initialized) {
       for (const event of currentEvents) {
@@ -131,6 +150,60 @@
     startBoardMoves(animationEvents);
   });
 
+  function currentPlanKey(plan: ReplayAnimationPhasePlan | undefined) {
+    return plan ? `${plan.key}:${plan.motions.map((motion) => motion.id).join(',')}` : '';
+  }
+
+  function boardCardMoveMotions(plan: ReplayAnimationPhasePlan | undefined): CardMoveAnimationMotion[] {
+    return (plan?.motions ?? []).filter((motion): motion is CardMoveAnimationMotion =>
+      motion.kind === 'card-move' && motion.coordinateSpace === 'board');
+  }
+
+  function startPlannedBoardMoves(motions: CardMoveAnimationMotion[]) {
+    const boardPlane = motionLayer?.parentElement;
+    if (!motionLayer || !boardPlane) {
+      return;
+    }
+    const generation = animationGeneration;
+    const latestDeckPlacementStartMs = Math.max(
+      0,
+      ...motions
+        .filter((motion) => motion.sourceAnchor.kind === 'deck-top')
+        .map((motion) => motion.startMs),
+    );
+    for (const motion of motions) {
+      const sourceElement = elementForAnchor(motion.sourceAnchor);
+      const targetElement = elementForAnchor(motion.targetAnchor);
+      if (!sourceElement || !targetElement) {
+        continue;
+      }
+      startBoardMoveInstruction({
+        source: sourceElement,
+        target: targetElement,
+        cardId: motion.identity?.cardId ?? (motion.spriteVisual.kind === 'card' ? motion.spriteVisual.card?.id : undefined),
+        serial: motion.identity?.serial,
+        fallbackName: motion.identity?.name,
+        waitForDestinationCard: motion.targetAnchor.kind === 'discard-pile' || motion.targetAnchor.kind === 'discard-card',
+        holdUntilScopeChange: motion.handoffPolicy.removeSprite === 'scope-exit',
+        toDeck: motion.targetAnchor.kind === 'deck-top',
+        fromDeck: motion.sourceAnchor.kind === 'deck-top',
+        opponentSide: isOpponentAnchor(motion.sourceAnchor) || isOpponentAnchor(motion.targetAnchor),
+        delayMs: motion.startMs,
+        durationMs: motion.durationMs,
+        key: motion.id,
+      }, generation, plannedBoardMoveHandoffDelayMs(motion, latestDeckPlacementStartMs));
+    }
+  }
+
+  function plannedBoardMoveHandoffDelayMs(motion: CardMoveAnimationMotion, latestDeckPlacementStartMs: number) {
+    if (motion.sourceAnchor.kind !== 'deck-top') {
+      return motion.durationMs + replayHandoffHoldMs();
+    }
+    return motion.durationMs
+      + Math.max(0, latestDeckPlacementStartMs - motion.startMs)
+      + replayHandoffHoldMs();
+  }
+
   function startBoardMoves(animationEvents: ActionTimelineEvent[]) {
     const boardPlane = motionLayer?.parentElement;
     if (!motionLayer || !boardPlane) {
@@ -148,64 +221,141 @@
       }
 
       const delayMs = actionAnimationStartMs(animationEvents, instruction.event);
-      const sprite: BoardMoveSprite = {
-        id: `${instruction.event.id}-${instruction.key}`,
-        html: spriteHtml(sourceElement, targetElement, instruction.fromDeck),
-        fallbackName: cabtCardToView(instruction.cardId).name,
-        left: targetRect.left,
-        top: targetRect.top,
-        width: targetRect.width,
-        height: targetRect.height,
-        startX: sourceRect.left + sourceRect.width / 2 - (targetRect.left + targetRect.width / 2),
-        startY: sourceRect.top + sourceRect.height / 2 - (targetRect.top + targetRect.height / 2),
-        startScale: sourceRect.width / targetRect.width,
-        correctionX: 0,
-        correctionY: 0,
-        destinationCardId: instruction.cardId,
-        destinationSerial: instruction.serial,
+      startBoardMoveInstruction({
+        source: sourceElement,
+        target: targetElement,
+        cardId: instruction.cardId,
+        serial: instruction.serial,
         waitForDestinationCard: instruction.waitForDestinationCard,
+        holdUntilScopeChange: instruction.holdUntilScopeChange,
         toDeck: instruction.toDeck,
         fromDeck: instruction.fromDeck,
         opponentSide: isOpponentSide(sourceElement) || isOpponentSide(targetElement),
         delayMs,
-        measuring: true,
-      };
-
-      const startTimer = setTimeout(async () => {
-        if (generation !== animationGeneration) {
-          return;
-        }
-        sprites = [...sprites, sprite];
-        await tick();
-        if (generation !== animationGeneration) {
-          return;
-        }
-        if (!document.body.contains(sourceElement) || !document.body.contains(targetElement)) {
-          sprites = sprites.filter((item) => item.id !== sprite.id);
-          return;
-        }
-
-        const correction = measureSpriteCorrection(sprite, targetElement);
-        hideBoardMoveElement(sourceElement);
-        hideBoardMoveElement(targetElement);
-        sprites = sprites.map((item) => item.id === sprite.id
-          ? {
-              ...item,
-              correctionX: correction.x,
-              correctionY: correction.y,
-              measuring: false,
-            }
-          : item);
-        if (instruction.holdUntilScopeChange) {
-          return;
-        }
-        const finishTimer = setTimeout(() => {
-          handOffWhenDestinationReady(sourceElement, targetElement, sprite, Date.now(), generation);
-        }, boardMoveHandoffDelayMs(animationEvents, instruction, delayMs));
-        timers.push(finishTimer);
-      }, delayMs);
-      timers.push(startTimer);
+        durationMs: actionAnimationTiming.boardMoveMs,
+        key: `${instruction.event.id}-${instruction.key}`,
+      }, generation, boardMoveHandoffDelayMs(animationEvents, instruction, delayMs));
     }
+  }
+
+  function startBoardMoveInstruction(
+    instruction: {
+      source: HTMLElement;
+      target: HTMLElement;
+      cardId?: number;
+      serial?: number;
+      fallbackName?: string;
+      waitForDestinationCard: boolean;
+      holdUntilScopeChange: boolean;
+      toDeck: boolean;
+      fromDeck: boolean;
+      opponentSide: boolean;
+      delayMs: number;
+      durationMs: number;
+      key: string;
+    },
+    generation: number,
+    handoffDelayMs = instruction.durationMs + replayHandoffHoldMs(),
+  ) {
+    const boardPlane = motionLayer?.parentElement;
+    if (!boardPlane) {
+      return;
+    }
+    const sourceRect = localElementRect(instruction.source, boardPlane);
+    const targetRect = localElementRect(instruction.target, boardPlane);
+    if (!sourceRect || !targetRect || sourceRect.width <= 0 || targetRect.width <= 0) {
+      return;
+    }
+
+    const sprite: BoardMoveSprite = {
+      id: `${generation}:${instruction.key}`,
+      html: spriteHtml(instruction.source, instruction.target, instruction.fromDeck),
+      fallbackName: instruction.fallbackName ?? (instruction.cardId !== undefined ? cabtCardToView(instruction.cardId).name : 'Card'),
+      left: targetRect.left,
+      top: targetRect.top,
+      width: targetRect.width,
+      height: targetRect.height,
+      startX: sourceRect.left + sourceRect.width / 2 - (targetRect.left + targetRect.width / 2),
+      startY: sourceRect.top + sourceRect.height / 2 - (targetRect.top + targetRect.height / 2),
+      startScale: sourceRect.width / targetRect.width,
+      correctionX: 0,
+      correctionY: 0,
+      destinationCardId: instruction.cardId ?? 0,
+      destinationSerial: instruction.serial,
+      waitForDestinationCard: instruction.waitForDestinationCard,
+      toDeck: instruction.toDeck,
+      fromDeck: instruction.fromDeck,
+      opponentSide: instruction.opponentSide,
+      delayMs: instruction.delayMs,
+      durationMs: instruction.durationMs,
+      measuring: true,
+    };
+
+    const startTimer = setTimeout(async () => {
+      if (generation !== animationGeneration) {
+        return;
+      }
+      sprites = [...sprites, sprite];
+      await tick();
+      if (generation !== animationGeneration) {
+        return;
+      }
+      if (!document.body.contains(instruction.source) || !document.body.contains(instruction.target)) {
+        sprites = sprites.filter((item) => item.id !== sprite.id);
+        return;
+      }
+
+      const correction = measureSpriteCorrection(sprite, instruction.target);
+      hideBoardMoveElement(instruction.source);
+      hideBoardMoveElement(instruction.target);
+      sprites = sprites.map((item) => item.id === sprite.id
+        ? {
+            ...item,
+            correctionX: correction.x,
+            correctionY: correction.y,
+            measuring: false,
+          }
+        : item);
+      if (instruction.holdUntilScopeChange) {
+        return;
+      }
+      const finishTimer = setTimeout(() => {
+        handOffWhenDestinationReady(instruction.source, instruction.target, sprite, Date.now(), generation);
+      }, handoffDelayMs);
+      timers.push(finishTimer);
+    }, instruction.delayMs);
+    timers.push(startTimer);
+  }
+
+  function elementForAnchor(anchor: AnimationAnchorRef): HTMLElement | null {
+    const exact = resolveAnimationAnchorElements(anchor).at(0);
+    if (exact) {
+      return visualElementForAnchor(exact, anchor);
+    }
+    if ('serial' in anchor && anchor.serial !== undefined) {
+      const fallbackAnchor = { ...anchor, serial: undefined } as AnimationAnchorRef;
+      const fallback = resolveAnimationAnchorElements(fallbackAnchor).at(0);
+      if (fallback) {
+        return visualElementForAnchor(fallback, fallbackAnchor);
+      }
+    }
+    return null;
+  }
+
+  function visualElementForAnchor(element: HTMLElement, anchor: AnimationAnchorRef): HTMLElement {
+    if (anchor.kind === 'deck-top') {
+      const pile = element.closest('.deck-pile');
+      if (pile instanceof HTMLElement) {
+        const face = pile.querySelector('.deck-card-face');
+        return face instanceof HTMLElement ? face : pile;
+      }
+    }
+    return element;
+  }
+
+  function isOpponentAnchor(anchor: AnimationAnchorRef): boolean {
+    const element = elementForAnchor(anchor);
+    return !!element && isOpponentSide(element);
   }
 
   function boardMoveHandoffDelayMs(
@@ -678,6 +828,7 @@
       `--board-move-start-scale: ${sprite.startScale.toFixed(6)}`,
       `--board-move-correction-x: ${sprite.correctionX.toFixed(3)}px`,
       `--board-move-correction-y: ${sprite.correctionY.toFixed(3)}px`,
+      `--board-move-duration: ${sprite.durationMs}ms`,
     ].join('; ');
   }
 
@@ -718,7 +869,7 @@
     display: block;
     transform-origin: 50% 50%;
     transform-style: preserve-3d;
-    animation: board-card-move 520ms cubic-bezier(0.22, 0.78, 0.2, 1) both;
+    animation: board-card-move var(--board-move-duration, 520ms) cubic-bezier(0.22, 0.78, 0.2, 1) both;
     will-change: transform;
   }
 
@@ -739,7 +890,7 @@
   }
 
   .board-move-card.to-deck .board-move-card-inner {
-    animation: board-card-flip-to-back 520ms ease-in-out both;
+    animation: board-card-flip-to-back var(--board-move-duration, 520ms) ease-in-out both;
   }
 
   .board-move-card.to-deck .board-move-card-inner::after {

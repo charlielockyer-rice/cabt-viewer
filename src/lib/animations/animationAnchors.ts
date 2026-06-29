@@ -1,20 +1,38 @@
 export type AnimationBoardSlot = 'active' | 'bench';
 
+export type AnimationHandAnchorRef = { kind: 'hand'; playerIndex: number };
+export type AnimationHandCardAnchorRef = { kind: 'hand-card'; playerIndex: number; handIndex?: number; serial?: number };
+export type AnimationHandInsertionSlotAnchorRef = { kind: 'hand-slot'; playerIndex: number; handIndex: number };
+export type AnimationDeckTopAnchorRef = { kind: 'deck-top'; playerIndex: number };
+export type AnimationDiscardTopCardAnchorRef = { kind: 'discard-card'; playerIndex: number; serial?: number };
+export type AnimationDiscardPileSurfaceAnchorRef = { kind: 'discard-pile'; playerIndex: number };
+export type AnimationPlayZoneCardAnchorRef = { kind: 'play-zone-card'; playerIndex: number; serial?: number };
+export type AnimationStadiumCardAnchorRef = { kind: 'stadium-card'; playerIndex: number; serial?: number };
+export type AnimationActivePokemonCardAnchorRef = { kind: 'pokemon-card'; playerIndex: number; slot: 'active'; slotIndex: number; serial?: number };
+export type AnimationBenchPokemonCardAnchorRef = { kind: 'pokemon-card'; playerIndex: number; slot: 'bench'; slotIndex: number; serial?: number };
+export type AnimationBoardSlotSurfaceAnchorRef = { kind: 'board-slot'; playerIndex: number; slot: AnimationBoardSlot; slotIndex: number };
+export type AnimationBenchSlotSurfaceAnchorRef = { kind: 'board-slot'; playerIndex: number; slot: 'bench'; slotIndex: number };
+export type AnimationAttachedEnergyAnchorRef = { kind: 'attached-energy'; playerIndex: number; slot: AnimationBoardSlot; slotIndex: number; serial?: number };
+export type AnimationAttachedToolAnchorRef = { kind: 'attached-tool'; playerIndex: number; slot: AnimationBoardSlot; slotIndex: number; serial?: number };
+export type AnimationPrizeAnchorRef = { kind: 'prize-card'; playerIndex: number; prizeIndex: number; face?: 'card' | 'back' };
+export type AnimationRevealSearchCardSlotAnchorRef = { kind: 'reveal-card'; playerIndex: number; revealIndex: number; serial?: number };
+
 export type AnimationAnchorRef =
-  | { kind: 'hand'; playerIndex: number }
-  | { kind: 'hand-slot'; playerIndex: number; handIndex: number }
-  | { kind: 'hand-card'; playerIndex: number; handIndex?: number; serial?: number }
-  | { kind: 'deck-top'; playerIndex: number }
-  | { kind: 'discard-pile'; playerIndex: number }
-  | { kind: 'discard-card'; playerIndex: number; serial?: number }
-  | { kind: 'play-zone-card'; playerIndex: number; serial?: number }
-  | { kind: 'stadium-card'; playerIndex: number; serial?: number }
-  | { kind: 'pokemon-card'; playerIndex: number; slot: AnimationBoardSlot; slotIndex: number; serial?: number }
-  | { kind: 'board-slot'; playerIndex: number; slot: AnimationBoardSlot; slotIndex: number }
-  | { kind: 'attached-energy'; playerIndex: number; slot: AnimationBoardSlot; slotIndex: number; serial?: number }
-  | { kind: 'attached-tool'; playerIndex: number; slot: AnimationBoardSlot; slotIndex: number; serial?: number }
-  | { kind: 'prize-card'; playerIndex: number; prizeIndex: number }
-  | { kind: 'reveal-card'; playerIndex: number; revealIndex: number; serial?: number };
+  | AnimationHandAnchorRef
+  | AnimationHandInsertionSlotAnchorRef
+  | AnimationHandCardAnchorRef
+  | AnimationDeckTopAnchorRef
+  | AnimationDiscardPileSurfaceAnchorRef
+  | AnimationDiscardTopCardAnchorRef
+  | AnimationPlayZoneCardAnchorRef
+  | AnimationStadiumCardAnchorRef
+  | AnimationActivePokemonCardAnchorRef
+  | AnimationBenchPokemonCardAnchorRef
+  | AnimationBoardSlotSurfaceAnchorRef
+  | AnimationAttachedEnergyAnchorRef
+  | AnimationAttachedToolAnchorRef
+  | AnimationPrizeAnchorRef
+  | AnimationRevealSearchCardSlotAnchorRef;
 
 export type AnimationIdentityKind = 'card' | 'pokemon' | 'energy' | 'tool' | 'stadium' | 'prize' | 'unknown';
 
@@ -84,7 +102,7 @@ export function serializeAnimationAnchor(anchor: AnimationAnchorRef): string {
     case 'attached-tool':
       return serializeParts('player', anchor.playerIndex, 'attached-tool', anchor.slot, anchor.slotIndex, taggedPart('serial', anchor.serial));
     case 'prize-card':
-      return serializeParts('player', anchor.playerIndex, 'prize-card', anchor.prizeIndex);
+      return serializeParts('player', anchor.playerIndex, 'prize-card', anchor.prizeIndex, taggedPart('face', anchor.face));
     case 'reveal-card':
       return serializeParts('player', anchor.playerIndex, 'reveal-card', anchor.revealIndex, taggedPart('serial', anchor.serial));
   }
@@ -154,7 +172,17 @@ export function parseAnimationAnchor(value: string): AnimationAnchorRef | null {
     }
     case 'prize-card': {
       const prizeIndex = parseNumber(parts[3]);
-      return prizeIndex === null || parts.length !== 4 ? null : { kind, playerIndex, prizeIndex };
+      if (prizeIndex === null) {
+        return null;
+      }
+      if (parts.length === 4) {
+        return { kind, playerIndex, prizeIndex };
+      }
+      const tags = parseTags(parts, 4, ['face']);
+      const face = tags?.get('face');
+      return face === 'card' || face === 'back'
+        ? { kind, playerIndex, prizeIndex, face }
+        : null;
     }
     case 'reveal-card': {
       const revealIndex = parseNumber(parts[3]);
@@ -229,6 +257,7 @@ export function animationAnchorAttributes(anchor: AnimationAnchorRef, identity?:
   }
   if ('prizeIndex' in anchor) {
     attrs['data-animation-prize-index'] = anchor.prizeIndex;
+    attrs['data-animation-prize-face'] = anchor.face;
   }
   if ('revealIndex' in anchor) {
     attrs['data-animation-reveal-index'] = anchor.revealIndex;
@@ -238,23 +267,48 @@ export function animationAnchorAttributes(anchor: AnimationAnchorRef, identity?:
     attrs['data-animation-identity-kind'] = identity.kind;
     attrs['data-animation-card-serial'] = identity.serial ?? attrs['data-animation-card-serial'];
     attrs['data-animation-card-id'] = identity.cardId;
+    attrs['data-animation-card-name'] = identity.name;
   }
 
   return attrs;
 }
 
 export function animationAnchorSelector(anchor: AnimationAnchorRef, identity?: AnimationIdentity): string {
-  const attrs = animationAnchorAttributes(anchor, identity);
-  const selectorParts = [
-    `[data-animation-anchor-key="${escapeCssAttributeValue(String(attrs['data-animation-anchor-key']))}"]`,
-  ];
+  const selector = baseAnimationAnchorSelector(anchor);
+  const identitySelectors = animationIdentitySelectorParts(identity);
+  return [selector, ...identitySelectors].join('');
+}
+
+export function animationAnchorCandidateSelectors(anchor: AnimationAnchorRef, identity?: AnimationIdentity): string[] {
+  const selector = baseAnimationAnchorSelector(anchor);
+  const identitySelectors = animationIdentitySelectorParts(identity);
+  if (identitySelectors.length === 0) {
+    return [selector];
+  }
+  return Array.from(new Set([
+    [selector, ...identitySelectors].join(''),
+    ...identitySelectors.map((identitySelector) => `${selector}${identitySelector}`),
+    selector,
+  ]));
+}
+
+function baseAnimationAnchorSelector(anchor: AnimationAnchorRef): string {
+  const attrs = animationAnchorAttributes(anchor);
+  return `[data-animation-anchor-key="${escapeCssAttributeValue(String(attrs['data-animation-anchor-key']))}"]`;
+}
+
+function animationIdentitySelectorParts(identity: AnimationIdentity | undefined): string[] {
+  const selectorParts: string[] = [];
   if (identity?.serial !== undefined) {
     selectorParts.push(`[data-animation-card-serial="${identity.serial}"]`);
   }
   if (identity?.cardId !== undefined) {
     selectorParts.push(`[data-animation-card-id="${identity.cardId}"]`);
   }
-  return selectorParts.join('');
+  if (identity?.name) {
+    selectorParts.push(`[data-animation-card-name="${escapeCssAttributeValue(identity.name)}"]`);
+  }
+  return selectorParts;
 }
 
 export function resolveAnimationAnchorElements(
@@ -265,8 +319,15 @@ export function resolveAnimationAnchorElements(
   if (!resolvedRoot) {
     return [];
   }
-  return Array.from(resolvedRoot.querySelectorAll(animationAnchorSelector(anchor, identity)))
-    .filter((element): element is HTMLElement => element instanceof HTMLElement);
+  const elements = new Set<HTMLElement>();
+  for (const selector of animationAnchorCandidateSelectors(anchor, identity)) {
+    for (const element of Array.from(resolvedRoot.querySelectorAll(selector))) {
+      if (element instanceof HTMLElement && animationIdentityMatchesElement(element, identity)) {
+        elements.add(element);
+      }
+    }
+  }
+  return Array.from(elements);
 }
 
 export function animationAnchorForElement(element: Element): ResolvedAnimationAnchor | null {
@@ -298,12 +359,16 @@ export function animationIdentityForElement(element: HTMLElement): AnimationIden
   if (!kind) {
     return undefined;
   }
-  const serial = Number(element.dataset.animationCardSerial);
-  const cardId = Number(element.dataset.animationCardId);
+  const anchor = parseAnimationAnchor(element.dataset.animationAnchorKey ?? '');
+  const serial = parseOptionalDatasetNumber(element.dataset.animationCardSerial ?? element.dataset.cardSerial)
+    ?? (anchor && 'serial' in anchor ? anchor.serial : undefined);
+  const cardId = parseOptionalDatasetNumber(element.dataset.animationCardId ?? element.dataset.cardId);
+  const name = element.dataset.animationCardName ?? element.dataset.cardName;
   return compact({
     kind,
-    serial: Number.isFinite(serial) ? serial : undefined,
-    cardId: Number.isFinite(cardId) ? cardId : undefined,
+    serial,
+    cardId,
+    name,
   });
 }
 
@@ -345,6 +410,26 @@ export function animationClaimKey(parts: {
   ].join('|');
 }
 
+function animationIdentityMatchesElement(element: HTMLElement, identity: AnimationIdentity | undefined): boolean {
+  if (!identity) {
+    return true;
+  }
+  const elementIdentity = animationIdentityForElement(element);
+  if (!elementIdentity) {
+    return true;
+  }
+  if (identity.serial !== undefined && elementIdentity.serial !== undefined) {
+    return identity.serial === elementIdentity.serial;
+  }
+  if (identity.cardId !== undefined && elementIdentity.cardId !== undefined) {
+    return identity.cardId === elementIdentity.cardId;
+  }
+  if (identity.name && elementIdentity.name) {
+    return identity.name === elementIdentity.name;
+  }
+  return true;
+}
+
 function serializeParts(...parts: Array<string | number | string[] | undefined>): string {
   return parts
     .filter((part) => part !== undefined)
@@ -372,6 +457,14 @@ function compact<T extends Record<string, unknown>>(value: T): T {
     }
   }
   return value;
+}
+
+function parseOptionalDatasetNumber(value: string | undefined): number | undefined {
+  if (value === undefined || value === '') {
+    return undefined;
+  }
+  const number = Number(value);
+  return Number.isInteger(number) && number >= 0 ? number : undefined;
 }
 
 function escapeCssAttributeValue(value: string): string {
