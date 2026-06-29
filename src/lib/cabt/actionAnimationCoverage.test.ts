@@ -116,6 +116,28 @@ describe('classifyAnimationCoverage', () => {
     expect(coverage.label).toBe('Coin flip announcement');
   });
 
+  it('recognizes special conditions as polished announcements', () => {
+    const coverage = classifyAnimationCoverage(event('Poisoned', {
+      cardId: 721,
+      serial: 14,
+    }));
+
+    expect(coverage.level).toBe('polished');
+    expect(coverage.label).toBe('Special-condition announcement');
+  });
+
+  it('marks special-condition announcements conditional without a player index', () => {
+    const coverage = classifyAnimationCoverage({
+      id: 1,
+      kind: 'Poisoned',
+      message: 'Poisoned',
+      params: { type: 'Poisoned', cardId: 721, serial: 14 },
+    });
+
+    expect(coverage.level).toBe('conditional');
+    expect(coverage.notes[0]).toContain('player index');
+  });
+
   it('recognizes board Pokemon returning to deck as polished', () => {
     const coverage = classifyAnimationCoverage(event('MoveCard', {
       fromArea: CabtAreaType.ACTIVE,

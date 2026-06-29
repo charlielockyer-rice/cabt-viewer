@@ -1435,7 +1435,7 @@ function groupedStepAnimationPhases(
 
   let phaseStartView = projectedViewForEvents(previousView, currentView, groups.slice(0, groupIndex).flatMap((item) => item.events));
   const phases: ReplayAnimationPhase[] = [];
-  for (const phase of eventPhases) {
+  for (const [phaseIndex, phase] of eventPhases.entries()) {
     let phaseView = phase.usesSourceView
       ? animationSourceViewForPhase(phaseStartView, currentView, phase)
       : projectedViewForEvents(phaseStartView, currentView, phase.events);
@@ -1467,7 +1467,9 @@ function groupedStepAnimationPhases(
       durationMs,
       animationPlan: replayAnimationPlanForPhase(phase, view, label, group.events, { motions, durationMs }),
     });
-    phaseStartView = projectedViewForEvents(phaseStartView, currentView, phase.events);
+    phaseStartView = projectedViewForEvents(phaseStartView, currentView, phase.events, {
+      deferSpecialConditionState: eventPhases.slice(phaseIndex + 1).some((laterPhase) => laterPhase.key.startsWith('Condition:')),
+    });
   }
   return phases;
 }
@@ -1537,6 +1539,9 @@ function animationPhaseMotions(
   }
   if (phase.key.startsWith('Coin:')) {
     return coinPulseMotions(phase);
+  }
+  if (phase.key.startsWith('Condition:')) {
+    return conditionPulseMotions(phase, view);
   }
   if (phase.key.startsWith('Damage:')) {
     return damagePulseMotions(phase, view, stepEvents);
@@ -1700,6 +1705,39 @@ function coinPulseMotions(phase: AnimationEventPhase): AnimationMotion[] {
     } satisfies AnimationMotion];
   });
   return compactAnimationMotions(motions);
+}
+
+function conditionPulseMotions(phase: AnimationEventPhase, view: GameView): AnimationMotion[] {
+  const motions = phase.events.map((event) => {
+    if (!isSpecialConditionEvent(event.kind) || event.playerIndex === undefined) {
+      return [];
+    }
+    const anchor = conditionAnchorForEvent(view, event);
+    if (!anchor) {
+      return null;
+    }
+    return [{
+      kind: 'pulse',
+      id: `${phase.key}:${event.id}:condition`,
+      identity: animationIdentityForEvent(event, 'pokemon'),
+      anchor,
+      coordinateSpace: 'board',
+      spriteVisual: { kind: 'pulse', tone: 'neutral' },
+      label: conditionPulseLabel(event),
+      startMs: actionAnimationStartMs(phase.events, event),
+      durationMs: actionAnimationTiming.conditionAnnounceMs,
+    } satisfies AnimationMotion];
+  });
+  return compactAnimationMotions(motions);
+}
+
+function conditionAnchorForEvent(view: GameView, event: ActionTimelineEvent): AnimationAnchorRef | undefined {
+  if (event.playerIndex === undefined) {
+    return undefined;
+  }
+  const player = view.players[event.playerIndex];
+  return boardSlotAnchorForEvent(player, event)
+    ?? (player ? { kind: 'board-slot', playerIndex: event.playerIndex, slot: 'active', slotIndex: player.active.index } : undefined);
 }
 
 function shuffleMotions(phase: AnimationEventPhase): AnimationMotion[] {
@@ -2738,6 +2776,22 @@ function coinResultLabel(event: ActionTimelineEvent): string {
   return 'Coin';
 }
 
+function conditionPulseLabel(event: ActionTimelineEvent): string {
+  const params = event.params as Record<string, unknown> | undefined;
+  if (params?.isRecover) {
+    return event.kind === 'Asleep' ? 'Awake' : 'Recovered';
+  }
+  return event.kind ?? 'Condition';
+}
+
+function isSpecialConditionEvent(kind: string | undefined): boolean {
+  return kind === 'Poisoned'
+    || kind === 'Burned'
+    || kind === 'Asleep'
+    || kind === 'Paralyzed'
+    || kind === 'Confused';
+}
+
 function boardPokemonDestinationForEvent(
   player: PlayerView | undefined,
   event: ActionTimelineEvent,
@@ -2820,6 +2874,7 @@ function animationPhaseLabel(phase: AnimationEventPhase): string | undefined {
     || phase.key.startsWith('Shuffle:')
     || phase.key.startsWith('Attack:')
     || phase.key.startsWith('Coin:')
+    || phase.key.startsWith('Condition:')
     || phase.key.startsWith('Damage:')
     || phase.key.startsWith('KnockOut:')
   ) {
@@ -2888,6 +2943,9 @@ function animationPhaseKey(event: ActionTimelineEvent): string | null {
   }
   if (event.kind === 'Coin') {
     return `Coin:${playerKey}`;
+  }
+  if (isSpecialConditionEvent(event.kind)) {
+    return `Condition:${playerKey}`;
   }
   if (event.kind === 'Switch') {
     return `BoardMove:${playerKey}`;
@@ -2962,6 +3020,7 @@ function animationPhaseUsesSourceView(key: string): boolean {
     || key.startsWith('Evolve:')
     || key.startsWith('Ability:')
     || key.startsWith('Attack:')
+    || key.startsWith('Condition:')
     || key.startsWith('Damage:')
     || key.startsWith('KnockOut:')
     || key.startsWith('BoardToDeck:')
@@ -2977,6 +3036,7 @@ function animationPhaseNeedsDedicatedView(phase: AnimationEventPhase): boolean {
     || phase.key.startsWith('Ability:')
     || phase.key.startsWith('Attack:')
     || phase.key.startsWith('Coin:')
+    || phase.key.startsWith('Condition:')
     || phase.key.startsWith('Damage:')
     || phase.key.startsWith('KnockOut:')
     || phase.key.startsWith('BoardToDeck:')
@@ -2996,6 +3056,7 @@ function animationPhaseMayHavePlan(phase: AnimationEventPhase): boolean {
     || phase.key.startsWith('Ability:')
     || phase.key.startsWith('Attack:')
     || phase.key.startsWith('Coin:')
+    || phase.key.startsWith('Condition:')
     || phase.key.startsWith('Damage:')
     || phase.key.startsWith('Draw:')
     || phase.key.startsWith('Shuffle:')
@@ -3018,7 +3079,7 @@ function animationSourceViewForPhase(
   if (phase.key.startsWith('Evolve:')) {
     return handPlaySourceView(phaseStartView, currentView, phase);
   }
-  if (phase.key.startsWith('Ability:') || phase.key.startsWith('Attack:') || phase.key.startsWith('Damage:')) {
+  if (phase.key.startsWith('Ability:') || phase.key.startsWith('Attack:') || phase.key.startsWith('Condition:') || phase.key.startsWith('Damage:')) {
     return projectedViewForEvents(phaseStartView, currentView, phase.events, { deferBoardStateEvents: true });
   }
   if (phase.key.startsWith('KnockOut:')) {
@@ -3241,6 +3302,9 @@ function animationPhaseCardDurationMs(key: string): number {
   if (key.startsWith('Coin:')) {
     return actionAnimationTiming.coinAnnounceMs;
   }
+  if (key.startsWith('Condition:')) {
+    return actionAnimationTiming.conditionAnnounceMs;
+  }
   if (key.startsWith('Damage:')) {
     return actionAnimationTiming.damageVisualMs;
   }
@@ -3305,6 +3369,9 @@ function animationPhaseStepMs(key: string): number {
   if (key.startsWith('Coin:')) {
     return actionAnimationTiming.coinAnnounceMs;
   }
+  if (key.startsWith('Condition:')) {
+    return actionAnimationTiming.conditionAnnounceMs;
+  }
   if (key.startsWith('Damage:')) {
     return actionAnimationTiming.damageVisualMs;
   }
@@ -3324,7 +3391,7 @@ function projectedViewForEvents(
   baseView: GameView,
   currentView: GameView,
   events: ActionTimelineEvent[],
-  options: { deferBoardStateEvents?: boolean; deferMoveCardEvents?: boolean } = {},
+  options: { deferBoardStateEvents?: boolean; deferMoveCardEvents?: boolean; deferSpecialConditionState?: boolean } = {},
 ): GameView {
   const view: GameView = {
     ...currentView,
@@ -3724,7 +3791,7 @@ function applyReplayEvent(
   view: GameView,
   currentView: GameView,
   event: ActionTimelineEvent,
-  options: { deferBoardStateEvents?: boolean; deferMoveCardEvents?: boolean } = {},
+  options: { deferBoardStateEvents?: boolean; deferMoveCardEvents?: boolean; deferSpecialConditionState?: boolean } = {},
 ): void {
   const playerIndex = event.playerIndex;
   if (playerIndex === undefined || !view.players[playerIndex] || !currentView.players[playerIndex]) {
@@ -3732,6 +3799,9 @@ function applyReplayEvent(
   }
   const player = view.players[playerIndex];
   const currentPlayer = currentView.players[playerIndex];
+  const projectedCurrentBoard = options.deferSpecialConditionState
+    ? playerBoardWithDeferredSpecialConditions(currentPlayer, player)
+    : currentPlayer;
 
   if (event.kind === 'Draw' || event.kind === 'DrawReverse') {
     player.deckCount = Math.max(0, player.deckCount - 1);
@@ -3742,10 +3812,10 @@ function applyReplayEvent(
   if (event.kind === 'Play') {
     player.hand = removeMovedCardFromHand(player.hand, event);
     if (playerHasCardInPlay(currentPlayer, event)) {
-      player.active = currentPlayer.active;
-      player.bench = currentPlayer.bench;
-      player.stadium = currentPlayer.stadium;
-      player.playZone = currentPlayer.playZone;
+      player.active = projectedCurrentBoard.active;
+      player.bench = projectedCurrentBoard.bench;
+      player.stadium = projectedCurrentBoard.stadium;
+      player.playZone = projectedCurrentBoard.playZone;
       return;
     }
     player.discard = addCardToDiscard(player, currentPlayer, event);
@@ -3755,9 +3825,9 @@ function applyReplayEvent(
   if (event.kind === 'Evolve') {
     player.hand = removeMovedCardFromHand(player.hand, event);
     if (!options.deferBoardStateEvents) {
-      player.active = currentPlayer.active;
-      player.bench = currentPlayer.bench;
-      player.discard = currentPlayer.discard;
+      player.active = projectedCurrentBoard.active;
+      player.bench = projectedCurrentBoard.bench;
+      player.discard = projectedCurrentBoard.discard;
     }
     return;
   }
@@ -3769,9 +3839,9 @@ function applyReplayEvent(
     if (applyDamageReplayEvent(player, event)) {
       return;
     }
-    player.active = currentPlayer.active;
-    player.bench = currentPlayer.bench;
-    player.discard = currentPlayer.discard;
+    player.active = projectedCurrentBoard.active;
+    player.bench = projectedCurrentBoard.bench;
+    player.discard = projectedCurrentBoard.discard;
     return;
   }
 
@@ -3779,9 +3849,9 @@ function applyReplayEvent(
     if (options.deferBoardStateEvents) {
       return;
     }
-    player.active = currentPlayer.active;
-    player.bench = currentPlayer.bench;
-    player.discard = currentPlayer.discard;
+    player.active = projectedCurrentBoard.active;
+    player.bench = projectedCurrentBoard.bench;
+    player.discard = projectedCurrentBoard.discard;
     return;
   }
 
@@ -3797,6 +3867,44 @@ function applyReplayEvent(
   const toArea = Number(params?.toArea);
   applyReplayAreaDelta(player, currentPlayer, fromArea, -1, event);
   applyReplayAreaDelta(player, currentPlayer, toArea, 1, event);
+}
+
+function playerBoardWithDeferredSpecialConditions(currentPlayer: PlayerView, basePlayer: PlayerView): PlayerView {
+  return {
+    ...currentPlayer,
+    active: slotWithDeferredSpecialConditions(currentPlayer.active, basePlayer),
+    bench: currentPlayer.bench.map((slot) => slotWithDeferredSpecialConditions(slot, basePlayer)),
+  };
+}
+
+function slotWithDeferredSpecialConditions(slot: PokemonSlotView, basePlayer: PlayerView): PokemonSlotView {
+  if (slot.slot !== 'active') {
+    return slot.specialConditions.length ? { ...slot, specialConditions: [] } : slot;
+  }
+  const baseSlot = matchingBoardSlot(basePlayer, slot);
+  const specialConditions = baseSlot?.specialConditions ?? [];
+  return shallowArrayEqual(slot.specialConditions, specialConditions)
+    ? slot
+    : { ...slot, specialConditions };
+}
+
+function matchingBoardSlot(player: PlayerView, slot: PokemonSlotView): PokemonSlotView | undefined {
+  const matches = (candidate: PokemonSlotView) => {
+    const serial = slot.pokemon?.serial;
+    if (serial !== undefined) {
+      return candidate.pokemon?.serial === serial;
+    }
+    const cardId = slot.pokemon?.id;
+    return cardId !== undefined && candidate.pokemon?.id === cardId;
+  };
+  if (matches(player.active)) {
+    return player.active;
+  }
+  return player.bench.find(matches);
+}
+
+function shallowArrayEqual(left: readonly unknown[], right: readonly unknown[]): boolean {
+  return left.length === right.length && left.every((item, index) => item === right[index]);
 }
 
 function isKnockOutMove(fromArea: number, toArea: number): boolean {
@@ -4300,13 +4408,15 @@ function pokemonToSlot(
     retreat: Array.from({ length: retreatCostFor(cardDatabase.get(pokemonCard?.id ?? -1)) }, () => 'Colorless'),
     energy: (pokemonCard?.energyCards ?? []).map(cardToView),
     tools: (pokemonCard?.tools ?? []).map(cardToView),
-    specialConditions: [
-      player.poisoned ? 'Poisoned' : null,
-      player.burned ? 'Burned' : null,
-      player.asleep ? 'Asleep' : null,
-      player.paralyzed ? 'Paralyzed' : null,
-      player.confused ? 'Confused' : null,
-    ].filter((condition): condition is string => !!condition),
+    specialConditions: slot === 'active'
+      ? [
+          player.poisoned ? 'Poisoned' : null,
+          player.burned ? 'Burned' : null,
+          player.asleep ? 'Asleep' : null,
+          player.paralyzed ? 'Paralyzed' : null,
+          player.confused ? 'Confused' : null,
+        ].filter((condition): condition is string => !!condition)
+      : [],
   };
 }
 

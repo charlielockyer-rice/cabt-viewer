@@ -98,6 +98,16 @@ describe('actionAnimationStartMs', () => {
     expect(actionAnimationStartMs(events, events[1])).toBe(actionAnimationTiming.coinAnnounceMs);
   });
 
+  it('announces special conditions before their follow-up effects', () => {
+    const events: ActionTimelineEvent[] = [
+      event(1, 'Poisoned', { cardId: 721, serial: 14 }),
+      event(2, 'HpChange', { cardId: 721, serial: 14, value: -10 }),
+    ];
+
+    expect(actionAnimationStartMs(events, events[0])).toBe(0);
+    expect(actionAnimationStartMs(events, events[1])).toBe(actionAnimationTiming.conditionAnnounceMs);
+  });
+
   it('sequences board Pokemon returning to deck before follow-up effects', () => {
     const events: ActionTimelineEvent[] = [
       event(1, 'MoveCard', { cardId: 66, serial: 14, fromArea: CabtAreaType.ACTIVE, toArea: CabtAreaType.DECK }),

@@ -1,6 +1,5 @@
 import {
   releaseAnimationElementEffectClaim,
-  releaseAnimationElementEffectClaims,
   type AnimationElementEffectClaim,
 } from './animationElementEffects';
 import { serializeAnimationAnchor, serializeAnimationIdentity } from './animationAnchors';
@@ -11,16 +10,21 @@ type TimedEffectMotion = {
   durationMs: number;
 };
 
+type ScheduledAnimationEffect = {
+  claim: AnimationElementEffectClaim;
+  cleanup?: () => void;
+};
+
 export class ScheduledAnimationEffectRunner<Motion extends TimedEffectMotion> {
   private readonly timers: ReturnType<typeof setTimeout>[] = [];
-  private readonly activeClaims = new Set<AnimationElementEffectClaim>();
+  private readonly activeEffects = new Map<AnimationElementEffectClaim, (() => void) | undefined>();
   private generation = 0;
 
   start(
     motions: readonly Motion[],
     callbacks: {
       resolveElement: (motion: Motion) => HTMLElement | null;
-      activate: (element: HTMLElement, motion: Motion) => AnimationElementEffectClaim | null | undefined;
+      activate: (element: HTMLElement, motion: Motion) => ScheduledAnimationEffect | AnimationElementEffectClaim | null | undefined;
     },
   ) {
     const generation = this.generation;
@@ -33,16 +37,16 @@ export class ScheduledAnimationEffectRunner<Motion extends TimedEffectMotion> {
         if (!element) {
           return;
         }
-        const claim = callbacks.activate(element, motion);
-        if (!claim) {
+        const effect = normalizeEffect(callbacks.activate(element, motion));
+        if (!effect) {
           return;
         }
-        this.activeClaims.add(claim);
+        this.activeEffects.set(effect.claim, effect.cleanup);
         const cleanup = setTimeout(() => {
           if (generation !== this.generation) {
             return;
           }
-          this.clearClaim(claim);
+          this.clearEffect(effect.claim);
         }, motion.durationMs);
         this.timers.push(cleanup);
       }, motion.startMs);
@@ -56,14 +60,28 @@ export class ScheduledAnimationEffectRunner<Motion extends TimedEffectMotion> {
       clearTimeout(timer);
     }
     this.timers.length = 0;
-    releaseAnimationElementEffectClaims(this.activeClaims);
-    this.activeClaims.clear();
+    for (const [claim, cleanup] of this.activeEffects) {
+      cleanup?.();
+      releaseAnimationElementEffectClaim(claim);
+    }
+    this.activeEffects.clear();
   }
 
-  private clearClaim(claim: AnimationElementEffectClaim) {
+  private clearEffect(claim: AnimationElementEffectClaim) {
+    const cleanup = this.activeEffects.get(claim);
+    cleanup?.();
     releaseAnimationElementEffectClaim(claim);
-    this.activeClaims.delete(claim);
+    this.activeEffects.delete(claim);
   }
+}
+
+function normalizeEffect(
+  effect: ScheduledAnimationEffect | AnimationElementEffectClaim | null | undefined,
+): ScheduledAnimationEffect | null {
+  if (!effect) {
+    return null;
+  }
+  return 'claim' in effect ? effect : { claim: effect };
 }
 
 export function pulseMotionPlanKey(motions: readonly PulseAnimationMotion[]): string {

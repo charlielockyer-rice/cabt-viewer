@@ -20,6 +20,7 @@ export const actionAnimationTiming = {
   attackAnnounceMs: 520,
   abilityAnnounceMs: 560,
   coinAnnounceMs: 520,
+  conditionAnnounceMs: 560,
   damageMs: 320,
   damageVisualMs: 560,
   knockOutMs: 620,
@@ -110,6 +111,14 @@ function animationPhaseForEvent(event: ActionTimelineEvent): AnimationPhase | nu
       key: `Coin:${playerKey}`,
       durationMs: actionAnimationTiming.coinAnnounceMs,
       stepMs: actionAnimationTiming.coinAnnounceMs,
+    };
+  }
+
+  if (isSpecialConditionEvent(event.kind)) {
+    return {
+      key: `Condition:${playerKey}`,
+      durationMs: actionAnimationTiming.conditionAnnounceMs,
+      stepMs: actionAnimationTiming.conditionAnnounceMs,
     };
   }
 
@@ -254,6 +263,14 @@ function animationPhaseForEvent(event: ActionTimelineEvent): AnimationPhase | nu
   }
 
   return null;
+}
+
+function isSpecialConditionEvent(kind: string | undefined): boolean {
+  return kind === 'Poisoned'
+    || kind === 'Burned'
+    || kind === 'Asleep'
+    || kind === 'Paralyzed'
+    || kind === 'Confused';
 }
 
 function phaseDurationMs(durationMs: number, stepMs: number, count: number): number {

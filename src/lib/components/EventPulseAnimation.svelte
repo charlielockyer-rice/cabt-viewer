@@ -13,6 +13,14 @@
     animationPlan?: ReplayAnimationPhasePlan;
   };
 
+  type EventPulseLabel = {
+    id: string;
+    label: string;
+    left: number;
+    top: number;
+    durationMs: number;
+  };
+
   let {
     scopeKey = '',
     replayMode = false,
@@ -23,6 +31,7 @@
   const effectRunner = new ScheduledAnimationEffectRunner<PulseAnimationMotion>();
   const prefersReducedMotion = createPrefersReducedMotion();
   let reduceMotion = $derived(prefersReducedMotion.current);
+  let labels = $state<EventPulseLabel[]>([]);
 
   onDestroy(() => {
     clearPulses();
@@ -48,14 +57,17 @@
       motion.kind === 'pulse'
       && motion.spriteVisual.kind === 'pulse'
       && motion.spriteVisual.tone === 'neutral'
-      && replayAnimationPlanHasPhase(plan, 'Coin', motion.anchor.playerIndex),
+      && (
+        replayAnimationPlanHasPhase(plan, 'Coin', motion.anchor.playerIndex)
+        || replayAnimationPlanHasPhase(plan, 'Condition', motion.anchor.playerIndex)
+      ),
     );
   }
 
   function startEventPulses(motions: PulseAnimationMotion[]) {
     effectRunner.start(motions, {
       resolveElement: pulseElementForMotion,
-      activate: (element, motion) => activatePulse(element, motion.label ?? 'Event', motion.durationMs),
+      activate: activatePulse,
     });
   }
 
@@ -68,23 +80,54 @@
     return pile instanceof HTMLElement ? pile : anchor;
   }
 
-  function activatePulse(element: HTMLElement, label: string, durationMs: number) {
-    return claimAnimationElementEffect({
+  function activatePulse(element: HTMLElement, motion: PulseAnimationMotion) {
+    const sprite = pulseLabelForElement(element, motion);
+    labels = [...labels, sprite];
+    const claim = claimAnimationElementEffect({
       element,
       attributes: { 'data-event-pulse-active': 'true' },
       styles: {
-        '--event-pulse-label': JSON.stringify(label),
-        '--event-pulse-ms': `${durationMs}ms`,
+        '--event-pulse-ms': `${motion.durationMs}ms`,
       },
     });
+    return {
+      claim,
+      cleanup: () => {
+        labels = labels.filter((label) => label.id !== sprite.id);
+      },
+    };
+  }
+
+  function pulseLabelForElement(element: HTMLElement, motion: PulseAnimationMotion): EventPulseLabel {
+    const rect = element.getBoundingClientRect();
+    return {
+      id: motion.id,
+      label: motion.label ?? 'Event',
+      left: rect.left + rect.width / 2,
+      top: rect.top + rect.height / 2,
+      durationMs: motion.durationMs,
+    };
+  }
+
+  function labelStyle(label: EventPulseLabel) {
+    return [
+      `left: ${label.left}px`,
+      `top: ${label.top}px`,
+      `--event-pulse-ms: ${label.durationMs}ms`,
+    ].join('; ');
   }
 
   function clearPulses() {
     effectRunner.clear();
+    labels = [];
   }
 </script>
 
-<span class="event-pulse-animation-layer" aria-hidden="true"></span>
+<span class="event-pulse-animation-layer" aria-hidden="true">
+  {#each labels as label (label.id)}
+    <span class="event-pulse-label" style={labelStyle(label)}>{label.label}</span>
+  {/each}
+</span>
 
 <style>
   .event-pulse-animation-layer {
@@ -94,16 +137,17 @@
     pointer-events: none;
   }
 
-  :global(.stack-pile[data-event-pulse-active="true"]) {
+  :global(.stack-pile[data-event-pulse-active="true"]),
+  :global(.board-slot[data-event-pulse-active="true"]) {
     animation: event-pulse-glow var(--event-pulse-ms, 520ms) ease-out both;
   }
 
-  :global(.stack-pile[data-event-pulse-active="true"]::after) {
-    content: var(--event-pulse-label);
-    position: absolute;
-    left: 50%;
-    top: 50%;
+  .event-pulse-label {
+    position: fixed;
     z-index: 14;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     min-width: max-content;
     padding: 6px 10px;
     border: 1px solid rgba(254, 240, 138, 0.88);
@@ -158,7 +202,8 @@
 
   @media (prefers-reduced-motion: reduce) {
     :global(.stack-pile[data-event-pulse-active="true"]),
-    :global(.stack-pile[data-event-pulse-active="true"]::after) {
+    :global(.board-slot[data-event-pulse-active="true"]),
+    .event-pulse-label {
       animation: none;
     }
   }

@@ -105,6 +105,7 @@ export type ReplayAnimationPhaseKind =
   | 'Ability'
   | 'Attack'
   | 'Coin'
+  | 'Condition'
   | 'Damage'
   | 'DeckDiscard'
   | 'Draw'
