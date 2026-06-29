@@ -212,7 +212,7 @@
 
   function plannedBoardMoveHandoffDelayMs(motion: CardMoveAnimationMotion) {
     const removeMs = replayAnimationSpriteRemovalMs(motion, animationPlan?.durationMs);
-    return removeMs === undefined ? motion.durationMs : Math.max(0, removeMs - motion.startMs);
+    return removeMs === undefined ? undefined : Math.max(0, removeMs - motion.startMs);
   }
 
   function startBoardMoves(animationEvents: ActionTimelineEvent[]) {
@@ -270,7 +270,7 @@
       planned: boolean;
     },
     generation: number,
-    handoffDelayMs = instruction.durationMs + replayHandoffHoldMs(),
+    handoffDelayMs?: number,
   ) {
     const boardPlane = motionLayer?.parentElement;
     if (!boardPlane) {
@@ -338,9 +338,19 @@
       if (instruction.holdUntilScopeChange) {
         return;
       }
+      const resolvedHandoffDelayMs = handoffDelayMs ?? (instruction.planned
+        ? undefined
+        : instruction.durationMs + replayHandoffHoldMs());
+      if (resolvedHandoffDelayMs === undefined) {
+        return;
+      }
       const finishTimer = setTimeout(() => {
+        if (instruction.planned) {
+          removeSpritesAfterPrepaint(new Set([sprite.id]), generation);
+          return;
+        }
         handOffWhenDestinationReady(instruction.source, instruction.target, sprite, Date.now(), generation);
-      }, handoffDelayMs);
+      }, resolvedHandoffDelayMs);
       timers.push(finishTimer);
     }, instruction.delayMs);
     timers.push(startTimer);
