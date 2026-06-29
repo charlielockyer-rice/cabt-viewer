@@ -10,9 +10,9 @@ import {
   boardSlotAnchorForPokemon,
 } from './replayAnimationAnchors';
 import { compactAnimationMotions } from './replayAnimationMotionUtils';
-import { isMoveCardKind } from './replayActionGroups';
 import { cabtCardToView } from './replayCardData';
 import { cardViewFromEvent } from './replayCardIdentity';
+import { replayEventMoveAreas, replayEventSerial } from './replayEventAreas';
 import { finiteNumber, stringValue } from './replayEventParams';
 import type { AnimationEventPhase } from './replayAnimationPhases';
 import { CabtAreaType } from './types';
@@ -38,15 +38,15 @@ function boardCardMoveMotionsForEvent(
   if (event.kind === 'Switch') {
     return switchBoardCardMoveMotions(phase, view, event);
   }
-  if (!isMoveCardKind(event.kind)) {
+  const areas = replayEventMoveAreas(event);
+  if (!areas) {
     return [];
   }
 
   const params = event.params as Record<string, unknown> | undefined;
   const playerIndex = event.playerIndex;
-  const fromArea = Number(params?.fromArea);
-  const toArea = Number(params?.toArea);
-  const serial = finiteNumber(params?.serial);
+  const { fromArea, toArea } = areas;
+  const serial = replayEventSerial(event);
   const cardId = finiteNumber(params?.cardId);
   if (phase.kind === 'KnockOut' && !isKnockOutMove(fromArea, toArea)) {
     return [];
