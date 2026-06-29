@@ -45,7 +45,7 @@
   type DiscardAnimation = {
     id: number;
     sprites: DiscardSprite[];
-    destinationClaims: ElementVisibilityClaim[];
+    liveDestinationClaims: ElementVisibilityClaim[];
   };
 
   let {
@@ -167,12 +167,12 @@
     const animation: DiscardAnimation = {
       id: nextAnimationId++,
       sprites,
-      destinationClaims: discardEvents.flatMap((event) => destinationClaimsForEvent(event)),
+      liveDestinationClaims: discardEvents.flatMap((event) => liveDestinationClaimsForEvent(event)),
     };
 
     discards = [...discards, animation];
     const timer = setTimeout(() => {
-      releaseDestinationClaims(animation);
+      releaseLiveDestinationClaims(animation);
       discards = discards.filter((item) => item.id !== animation.id);
       const timerIndex = timers.indexOf(timer);
       if (timerIndex >= 0) {
@@ -195,7 +195,7 @@
     const animation: DiscardAnimation = {
       id: nextAnimationId++,
       sprites,
-      destinationClaims: [],
+      liveDestinationClaims: [],
     };
 
     discards = [...discards, animation];
@@ -251,7 +251,7 @@
     }
     timers.length = 0;
     for (const discard of discards) {
-      releaseDestinationClaims(discard);
+      releaseLiveDestinationClaims(discard);
     }
     discards = [];
   }
@@ -268,12 +268,12 @@
   function removeDiscards(ids: ReadonlySet<number>) {
     const removed = discards.filter((item) => ids.has(item.id));
     for (const animation of removed) {
-      releaseDestinationClaims(animation);
+      releaseLiveDestinationClaims(animation);
     }
     discards = discards.filter((item) => !ids.has(item.id));
   }
 
-  function destinationClaimsForEvent(event: ActionTimelineEvent): ElementVisibilityClaim[] {
+  function liveDestinationClaimsForEvent(event: ActionTimelineEvent): ElementVisibilityClaim[] {
     const params = event.params as Record<string, unknown> | undefined;
     const target = discardDestinationElement(Number(params?.serial), Number(params?.cardId));
     if (!target) {
@@ -298,9 +298,9 @@
     return target instanceof HTMLElement ? target : null;
   }
 
-  function releaseDestinationClaims(animation: DiscardAnimation) {
-    releaseElementVisibilityClaims(animation.destinationClaims);
-    animation.destinationClaims = [];
+  function releaseLiveDestinationClaims(animation: DiscardAnimation) {
+    releaseElementVisibilityClaims(animation.liveDestinationClaims);
+    animation.liveDestinationClaims = [];
   }
 
   function spriteStyle(sprite: DiscardSprite) {

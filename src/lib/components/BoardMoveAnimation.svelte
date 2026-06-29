@@ -46,9 +46,7 @@
     startScale: number;
     correctionX: number;
     correctionY: number;
-    destinationCardId: number;
-    destinationSerial?: number;
-    waitForDestinationCard: boolean;
+    liveHandoff?: LiveBoardMoveHandoff;
     toDeck: boolean;
     fromDeck: boolean;
     opponentSide: boolean;
@@ -57,6 +55,12 @@
     measuring: boolean;
     card?: Pick<CardView, 'id' | 'serial' | 'name' | 'fullName' | 'cardImage' | 'imageUrl'>;
     faceDown?: boolean;
+  };
+
+  type LiveBoardMoveHandoff = {
+    destinationCardId: number;
+    destinationSerial?: number;
+    waitForDestinationCard: boolean;
   };
 
   type BoardMoveInstruction = {
@@ -217,9 +221,6 @@
       startScale: sourceRect.width / targetRect.width,
       correctionX: 0,
       correctionY: 0,
-      destinationCardId: cardId ?? 0,
-      destinationSerial: motion.identity?.serial,
-      waitForDestinationCard: motion.targetAnchor.kind === 'discard-pile' || motion.targetAnchor.kind === 'discard-card',
       toDeck: motion.targetAnchor.kind === 'deck-top',
       fromDeck: motion.sourceAnchor.kind === 'deck-top',
       opponentSide: isOpponentAnchor(motion.sourceAnchor) || isOpponentAnchor(motion.targetAnchor),
@@ -356,9 +357,11 @@
       startScale: sourceRect.width / targetRect.width,
       correctionX: 0,
       correctionY: 0,
-      destinationCardId: instruction.cardId ?? 0,
-      destinationSerial: instruction.serial,
-      waitForDestinationCard: instruction.waitForDestinationCard,
+      liveHandoff: {
+        destinationCardId: instruction.cardId ?? 0,
+        destinationSerial: instruction.serial,
+        waitForDestinationCard: instruction.waitForDestinationCard,
+      },
       toDeck: instruction.toDeck,
       fromDeck: instruction.fromDeck,
       opponentSide: instruction.opponentSide,
@@ -814,8 +817,8 @@
     if (generation !== animationGeneration) {
       return;
     }
-    const destinationReady = sprite.waitForDestinationCard
-      ? liveDestinationContainsCard(target, sprite)
+    const destinationReady = sprite.liveHandoff?.waitForDestinationCard
+      ? liveDestinationContainsCard(target, sprite.liveHandoff)
       : sprite.toDeck
         ? true
       : !!target.querySelector('.card-tile');
@@ -834,10 +837,10 @@
     timers.push(retry);
   }
 
-  function liveDestinationContainsCard(target: HTMLElement, sprite: BoardMoveSprite) {
-    const selector = sprite.destinationSerial !== undefined
-      ? `.card-tile[data-card-serial="${sprite.destinationSerial}"]`
-      : `.card-tile[data-card-id="${sprite.destinationCardId}"]`;
+  function liveDestinationContainsCard(target: HTMLElement, handoff: LiveBoardMoveHandoff) {
+    const selector = handoff.destinationSerial !== undefined
+      ? `.card-tile[data-card-serial="${handoff.destinationSerial}"]`
+      : `.card-tile[data-card-id="${handoff.destinationCardId}"]`;
     return target.matches(selector) || !!target.querySelector(selector);
   }
 

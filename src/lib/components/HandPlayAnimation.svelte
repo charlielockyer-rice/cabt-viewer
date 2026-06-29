@@ -82,7 +82,7 @@
   type ActiveTargetEffect = {
     target: HTMLElement;
     effectClaim: AnimationElementEffectClaim;
-    hiddenClaim?: ElementVisibilityClaim;
+    liveHiddenClaim?: ElementVisibilityClaim;
   };
 
   let {
@@ -523,7 +523,7 @@
         attributes,
         styles,
       }),
-      hiddenClaim: animation.hideContents ? hideTargetContents(animation.target) : undefined,
+      liveHiddenClaim: animation.hideContents ? hideLiveTargetContents(animation.target) : undefined,
     };
     activeTargets = [...activeTargets, activeTarget];
     return activeTarget;
@@ -533,14 +533,14 @@
     const targetSet = new Set(targets);
     for (const target of targetSet) {
       releaseAnimationElementEffectClaim(target.effectClaim);
-      if (target.hiddenClaim) {
-        releaseElementVisibilityClaim(target.hiddenClaim);
+      if (target.liveHiddenClaim) {
+        releaseElementVisibilityClaim(target.liveHiddenClaim);
       }
     }
     activeTargets = activeTargets.filter((target) => !targetSet.has(target));
   }
 
-  function hideTargetContents(target: HTMLElement) {
+  function hideLiveTargetContents(target: HTMLElement) {
     return hideElementForAnimation({
       element: target,
       scopeKey,
