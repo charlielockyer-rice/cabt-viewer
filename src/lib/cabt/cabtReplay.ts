@@ -9,8 +9,6 @@ import {
   type ReplayFrameEntry,
 } from './replayContinuations';
 import {
-  gameViewWithResolvingCards,
-  gameViewWithResolvingDiscardDestinations,
   resolvingContextForStep,
   resolvingDisplayView,
   resolvingFinalizerCardsForGroup,
@@ -20,7 +18,6 @@ import {
 } from './replayResolvingCards';
 import {
   applyReplayEvent,
-  projectedViewForEvents,
   shouldProjectSingleGroup,
 } from './replayProjection';
 import { cabtCardNames } from './replayCardData';
@@ -32,45 +29,14 @@ import {
 } from './replayInput';
 import { logsWithSynthesizedAbility } from './replaySyntheticLogs';
 import {
-  animationEventPhases,
-  animationPhaseLabel,
-  animationPhaseMayHavePlan,
-  animationPhaseNeedsDedicatedView,
-  type AnimationEventPhase,
-} from './replayAnimationPhases';
+  groupedStepAnimationPhases,
+  shouldBuildGroupedStepAnimationPhases,
+} from './replayGroupedAnimationPhases';
 import { cabtReplayStepLabel } from './replayStepLabels';
 import { frameToGameView } from './replayView';
-import {
-  abilityPulseMotions,
-  attackPulseMotions,
-  boardMutationPulseMotions,
-  changePulseMotions,
-  coinPulseMotions,
-  conditionPulseMotions,
-  damagePulseMotions,
-  shuffleMotions,
-} from './replayPulseMotions';
-import { animationSourceViewForPhase } from './replayAnimationSourceViews';
-import { boardCardMoveMotions } from './replayBoardCardMotions';
-import { revealSessionMotions } from './replayRevealSessionMotions';
-import {
-  applyKnockOutDiscardTopOrdering,
-  resolvingDiscardCardMoveMotions,
-  resolvingDiscardHandoffGapMs,
-} from './replayResolvingDiscardMotions';
-import {
-  drawCardMoveMotions,
-  handPlayCardMoveMotions,
-  handToDeckCardMoveMotions,
-  prizeTakeCardMoveMotions,
-} from './replayViewportCardMotions';
-import {
-  createReplayAnimationPhasePlan,
-  replayAnimationMotionSpanMs,
-  type AnimationMotion,
-} from '../animations/replayAnimationPlan';
+import { applyKnockOutDiscardTopOrdering } from './replayResolvingDiscardMotions';
 import { type ActionTimelineEvent, type GameView, type LogView, type PokemonSlotView } from '../game/types';
-import type { ReplayAnimationPhase, ReplaySnapshot, ReplayStep } from '../game/replay';
+import type { ReplaySnapshot, ReplayStep } from '../game/replay';
 
 export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
   const visualFrames = extractVisualizeFrames(input);
@@ -290,161 +256,4 @@ function groupedStepDisplayView(
   }
 
   return resolvingDisplayView(view, resolvingContext) ?? view;
-}
-
-function groupedStepAnimationPhases(
-  previousView: GameView | undefined,
-  currentView: GameView,
-  groups: ReplayActionGroup[],
-  groupIndex: number,
-  resolvingContext?: ResolvingPlayedCardContext,
-): ReplayAnimationPhase[] | undefined {
-  const group = groups[groupIndex];
-  if (!previousView || !group) {
-    return undefined;
-  }
-  const eventPhases = animationEventPhases(group.events);
-  if (eventPhases.length <= 1 && !eventPhases.some(animationPhaseNeedsDedicatedView) && !eventPhases.some(animationPhaseMayHavePlan)) {
-    return undefined;
-  }
-
-  let phaseStartView = projectedViewForEvents(previousView, currentView, groups.slice(0, groupIndex).flatMap((item) => item.events));
-  const phases: ReplayAnimationPhase[] = [];
-  for (const [phaseIndex, phase] of eventPhases.entries()) {
-    let phaseView = phase.usesSourceView
-      ? animationSourceViewForPhase(phaseStartView, currentView, phase)
-      : projectedViewForEvents(phaseStartView, currentView, phase.events);
-    const label = animationPhaseLabel(phase);
-    const isLastPhase = phases.length === eventPhases.length - 1;
-    const resolvedInPhase = isLastPhase ? (resolvingContext?.displayResolved ?? []) : [];
-    const phaseResolving = resolvingContext?.phaseResolving ?? [];
-    if (phaseResolving.length) {
-      phaseView = gameViewWithResolvingCards(phaseView, phaseResolving);
-    }
-    if (resolvedInPhase.length) {
-      phaseView = gameViewWithResolvingDiscardDestinations(phaseView, resolvedInPhase);
-    }
-    const view = {
-      ...phaseView,
-      actionTimeline: phase.events,
-    };
-    const baseMotions = animationPhaseMotions(phase, view, group.events);
-    const resolvingMotions = resolvedInPhase.length
-      ? resolvingDiscardCardMoveMotions(phase, resolvedInPhase, Math.max(phase.durationMs, replayAnimationMotionSpanMs(baseMotions)) + resolvingDiscardHandoffGapMs)
-      : [];
-    const motions = [...baseMotions, ...resolvingMotions];
-    const durationMs = Math.max(phase.durationMs, replayAnimationMotionSpanMs(motions));
-    phases.push({
-      key: phase.key,
-      kind: phase.kind,
-      label,
-      view,
-      actionTimeline: phase.events,
-      durationMs,
-      animationPlan: replayAnimationPlanForPhase(phase, view, label, group.events, { motions, durationMs }),
-    });
-    phaseStartView = projectedViewForEvents(phaseStartView, currentView, phase.events, {
-      deferSpecialConditionState: eventPhases.slice(phaseIndex + 1).some((laterPhase) => laterPhase.kind === 'Condition'),
-    });
-  }
-  return phases;
-}
-
-function replayAnimationPlanForPhase(
-  phase: AnimationEventPhase,
-  view: GameView,
-  label: string | undefined,
-  stepEvents: ActionTimelineEvent[] = phase.events,
-  options: {
-    motions?: AnimationMotion[];
-    durationMs?: number;
-  } = {},
-) {
-  const motions = options.motions ?? animationPhaseMotions(phase, view, stepEvents);
-  if (!motions.length) {
-    return undefined;
-  }
-  return createReplayAnimationPhasePlan({
-    key: phase.key,
-    kind: phase.kind,
-    playerIndex: phase.playerIndex,
-    label,
-    view,
-    durationMs: options.durationMs ?? phase.durationMs,
-    motions,
-  });
-}
-
-function shouldBuildGroupedStepAnimationPhases(
-  previousView: GameView | undefined,
-  group: ReplayActionGroup | undefined,
-): boolean {
-  if (!previousView || !group) {
-    return false;
-  }
-  const eventPhases = animationEventPhases(group.events);
-  return eventPhases.length > 1
-    || eventPhases.some(animationPhaseNeedsDedicatedView)
-    || eventPhases.some(animationPhaseMayHavePlan);
-}
-
-function animationPhaseMotions(
-  phase: AnimationEventPhase,
-  view: GameView,
-  stepEvents: ActionTimelineEvent[] = phase.events,
-): AnimationMotion[] {
-  switch (phase.kind) {
-    case 'BoardMove':
-    case 'BoardToDeck':
-    case 'DeckDiscard':
-    case 'DeckBoardPlace':
-    case 'DeckPrizePlace':
-    case 'StadiumMove':
-    case 'AttachedMove':
-    case 'DiscardRecover':
-    case 'KnockOut':
-      return boardCardMoveMotions(phase, view);
-    case 'Draw':
-      return drawCardMoveMotions(phase, view);
-    case 'Ability':
-      return abilityPulseMotions(phase, view);
-    case 'Attack':
-      return attackPulseMotions(phase, view);
-    case 'Coin':
-      return coinPulseMotions(phase);
-    case 'Change':
-      return changePulseMotions(phase, view);
-    case 'Devolve':
-    case 'MoveAttached':
-      return boardMutationPulseMotions(phase, view);
-    case 'Condition':
-      return conditionPulseMotions(phase, view);
-    case 'Damage':
-      return damagePulseMotions(phase, view, stepEvents);
-    case 'Shuffle':
-      return shuffleMotions(phase);
-    case 'PrizeTake':
-      return prizeTakeCardMoveMotions(phase, view);
-    case 'HandToDeck':
-      return handToDeckCardMoveMotions(phase, view);
-    case 'Play':
-    case 'HandMove':
-    case 'Evolve':
-      return handPlayCardMoveMotions(phase, view);
-    case 'Attach':
-      return [
-        ...handPlayCardMoveMotions(phase, view),
-        ...revealSessionMotions(phase, view, stepEvents),
-      ];
-    case 'DeckReveal':
-    case 'DeckSearchReveal':
-    case 'DeckRevealReturn':
-    case 'DeckRevealTake':
-      return revealSessionMotions(phase, view, stepEvents);
-  }
-  return assertUnhandledActionAnimationPhaseKind(phase.kind);
-}
-
-function assertUnhandledActionAnimationPhaseKind(kind: never): never {
-  throw new Error(`Unhandled replay animation phase kind: ${kind}`);
 }
