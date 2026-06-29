@@ -7,11 +7,10 @@
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
   import { resolveExactAnimationAnchorElement } from '../animations/animationAnchors';
-  import { createPrefersReducedMotion } from '../animations/prefersReducedMotion.svelte';
-  import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
+  import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
   import { replayAnimationScopeExitSettleMs, replayAnimationSpriteGroupRemovalMs } from '../animations/replayAnimationHandoff';
-  import { replayAnimationPlanHasPhase, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
+  import { replayAnimationMotionsKey, replayAnimationPlanHasPhase, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { actionAnimationBatchEvents, actionAnimationStartMs } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -63,11 +62,16 @@
   const timers: ReturnType<typeof setTimeout>[] = [];
   const cardMoveDurationMs = 300;
   let discards = $state<DiscardAnimation[]>([]);
-  const runState = new ReplayAnimationRunState();
   let nextAnimationId = 1;
-  const prefersReducedMotion = createPrefersReducedMotion();
-  let reduceMotion = $derived(prefersReducedMotion.current);
   let motionLayer = $state<HTMLElement>();
+  const replayPlanRunner = createReplayPhasePlanRunner({
+    selectMotions: deckDiscardPlanMotions,
+    planKey: replayAnimationMotionsKey,
+    lifecycle: 'replay',
+    onScopeChange: settleDiscards,
+    onPlanChange: clearDiscards,
+    startPlanned: startPlannedDiscard,
+  });
 
   onDestroy(() => {
     clearDiscards();
@@ -76,51 +80,28 @@
   $effect(() => {
     const currentEvents = events;
     const currentScopeKey = scopeKey;
-    const plannedMotions = deckDiscardPlanMotions(animationPlan);
-    const planKey = deckDiscardPlanKey(plannedMotions);
-    const run = runState.update(currentScopeKey, planKey);
-
-    if (plannedMotions.length) {
-      if (run.shouldStartPlan) {
-        if (run.scopeChanged) {
-          settleDiscards();
-        } else {
-          clearDiscards();
-        }
-        if (!reduceMotion) {
-          startPlannedDiscard(plannedMotions);
-        }
-      }
-      runState.markEventsSeen(currentEvents);
+    const replay = replayPlanRunner.update({
+      events: currentEvents,
+      scopeKey: currentScopeKey,
+      replayMode,
+      animationPlan,
+    });
+    if (replay.handled) {
       return;
     }
 
-    if (run.firstRun) {
-      runState.markEventsSeen(currentEvents);
-      return;
-    }
-
-    if (run.scopeChanged && replayMode) {
-      settleDiscards();
-    }
-
-    if (replayMode) {
-      runState.markEventsSeen(currentEvents);
-      return;
-    }
-
-    const animationEvents = actionAnimationBatchEvents(currentEvents, runState.seenEventIds);
+    const animationEvents = actionAnimationBatchEvents(currentEvents, replay.seenEventIds);
     const discardEvents = animationEvents.filter((event) => {
       if (!isDeckDiscardEvent(event)) {
         return false;
       }
-      if (runState.hasSeen(event)) {
+      if (replayPlanRunner.hasSeen(event)) {
         return false;
       }
       return true;
     });
 
-    runState.markEventsSeen(currentEvents);
+    replay.markEventsSeen(currentEvents);
 
     if (discardEvents.length) {
       startDiscard(discardEvents, animationEvents);
@@ -138,10 +119,6 @@
     );
   }
 
-  function deckDiscardPlanKey(motions: CardMoveAnimationMotion[]): string {
-    return motions.map((motion) => `${motion.id}:${motion.startMs}:${motion.durationMs}`).join('|');
-  }
-
   function isDeckDiscardEvent(event: ActionTimelineEvent) {
     const params = event.params as Record<string, unknown> | undefined;
     return event.kind === 'MoveCard'
@@ -152,7 +129,7 @@
   }
 
   function startDiscard(discardEvents: ActionTimelineEvent[], animationEvents: ActionTimelineEvent[]) {
-    if (reduceMotion || !deckElement || !discardElement) {
+    if (replayPlanRunner.reduceMotion || !deckElement || !discardElement) {
       return;
     }
     const deckRect = deckElement.getBoundingClientRect();

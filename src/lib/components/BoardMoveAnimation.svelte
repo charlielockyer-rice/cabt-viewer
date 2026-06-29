@@ -10,10 +10,9 @@
     releaseElementVisibilityClaim,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
-  import { createPrefersReducedMotion } from '../animations/prefersReducedMotion.svelte';
   import { replayAnimationScopeExitSettleMs, replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
-  import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
-  import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
+  import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
+  import { replayAnimationPhasePlanKey, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
   import { elementRectInPlane } from '../dom/planeGeometry';
@@ -83,12 +82,16 @@
   const timers: ReturnType<typeof setTimeout>[] = [];
   const handoffTimers: ReturnType<typeof setTimeout>[] = [];
   const handoffFrameIds: number[] = [];
-  const runState = new ReplayAnimationRunState();
-  const prefersReducedMotion = createPrefersReducedMotion();
-  let reduceMotion = $derived(prefersReducedMotion.current);
   let sprites = $state<BoardMoveSprite[]>([]);
   let animationGeneration = 0;
   const hiddenElements = new Map<HTMLElement, HiddenBoardMoveElement[]>();
+  const replayPlanRunner = createReplayPhasePlanRunner({
+    selectMotions: boardCardMoveMotions,
+    planKey: (_motions, plan) => replayAnimationPhasePlanKey(plan),
+    onScopeChange: () => clearBoardMoves({ settleHandoff: replayMode }),
+    onPlanChange: () => clearBoardMoves({ settleHandoff: replayMode }),
+    startPlanned: startPlannedBoardMoves,
+  });
 
   onDestroy(() => {
     clearBoardMoves();
@@ -105,44 +108,24 @@
   $effect(() => {
     const currentEvents = events;
     const currentScopeKey = scopeKey;
-    const currentPlan = animationPlan;
-    const planKey = currentPlanKey(currentPlan);
-    const plannedMotions = boardCardMoveMotions(currentPlan);
-    const run = runState.update(currentScopeKey, planKey);
-    if (run.scopeChanged || (plannedMotions.length && run.planChanged)) {
-      clearBoardMoves({ settleHandoff: replayMode });
-    }
-
-    if (plannedMotions.length) {
-      if (!reduceMotion && run.shouldStartPlan) {
-        startPlannedBoardMoves(plannedMotions);
-      }
-      runState.markEventsSeen(currentEvents);
+    const replay = replayPlanRunner.update({
+      events: currentEvents,
+      scopeKey: currentScopeKey,
+      replayMode,
+      animationPlan,
+    });
+    if (replay.handled) {
       return;
     }
 
-    if (run.firstRun) {
-      runState.markEventsSeen(currentEvents);
-      return;
-    }
-
-    if (replayMode) {
-      runState.markEventsSeen(currentEvents);
-      return;
-    }
-
-    const animationEvents = actionAnimationBatchEvents(currentEvents, runState.seenEventIds);
-    runState.markEventsSeen(currentEvents);
-    if (!animationEvents.length || reduceMotion) {
+    const animationEvents = actionAnimationBatchEvents(currentEvents, replay.seenEventIds);
+    replay.markEventsSeen(currentEvents);
+    if (!animationEvents.length || replay.reduceMotion) {
       return;
     }
 
     startLiveBoardMoves(animationEvents);
   });
-
-  function currentPlanKey(plan: ReplayAnimationPhasePlan | undefined) {
-    return plan ? `${plan.key}:${plan.motions.map((motion) => motion.id).join(',')}` : '';
-  }
 
   function boardCardMoveMotions(plan: ReplayAnimationPhasePlan | undefined): CardMoveAnimationMotion[] {
     return (plan?.motions ?? []).filter((motion): motion is CardMoveAnimationMotion =>

@@ -11,9 +11,8 @@
     type AnimationElementEffectClaim,
   } from '../animations/animationElementEffects';
   import { resolveExactAnimationAnchorElement } from '../animations/animationAnchors';
-  import { createPrefersReducedMotion } from '../animations/prefersReducedMotion.svelte';
   import { replayAnimationScopeExitSettleMs, replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
-  import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
+  import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
   import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
@@ -94,12 +93,16 @@
   const evolveVisibleDurationMs = actionAnimationTiming.evolveMs + replayAnimationPhaseGapMs + 40;
   const cardHeightToWidthRatio = 88 / 63;
   let nextPlayId = 0;
-  const runState = new ReplayAnimationRunState();
-  const prefersReducedMotion = createPrefersReducedMotion();
-  let reduceMotion = $derived(prefersReducedMotion.current);
   let previousCardRects = new Map<number, RectSnapshot>();
   let activePlays = $state<ActivePlay[]>([]);
   let activeTargets: ActiveTargetEffect[] = [];
+  const replayPlanRunner = createReplayPhasePlanRunner({
+    selectMotions: handPlayPlanMotions,
+    lifecycle: 'replay',
+    onScopeChange: settlePlays,
+    onPlanChange: clearPlays,
+    startPlanned: startPlannedPlay,
+  });
 
   onDestroy(() => {
     clearPlays();
@@ -108,60 +111,35 @@
   $effect(() => {
     const currentEvents = events;
     const currentScopeKey = scopeKey;
-    const currentPlan = animationPlan;
-    const plannedMotions = handPlayPlanMotions(currentPlan);
-    const planKey = currentPlanKey(currentPlan);
-    const run = runState.update(currentScopeKey, planKey);
-
-    if (replayMode && run.scopeChanged) {
-      settlePlays();
-    } else if (replayMode && plannedMotions.length && run.planChanged) {
-      clearPlays();
-    }
-
-    if (plannedMotions.length) {
-      if (!reduceMotion && run.shouldStartPlan) {
-        startPlannedPlay(plannedMotions);
-      }
-      runState.markEventsSeen(currentEvents);
+    const replay = replayPlanRunner.update({
+      events: currentEvents,
+      scopeKey: currentScopeKey,
+      replayMode,
+      animationPlan,
+    });
+    if (replay.handled) {
       previousCardRects = snapshotHandCardRects();
       return;
     }
 
-    if (run.firstRun) {
-      runState.markEventsSeen(currentEvents);
-      previousCardRects = snapshotHandCardRects();
-      return;
-    }
-
-    if (replayMode) {
-      runState.markEventsSeen(currentEvents);
-      previousCardRects = snapshotHandCardRects();
-      return;
-    }
-
-    const animationEvents = actionAnimationBatchEvents(currentEvents, runState.seenEventIds);
+    const animationEvents = actionAnimationBatchEvents(currentEvents, replay.seenEventIds);
     const playEvents = animationEvents.filter((event) => {
       if (!isHandPlayEvent(event)) {
         return false;
       }
-      if (runState.hasSeen(event)) {
+      if (replayPlanRunner.hasSeen(event)) {
         return false;
       }
       return true;
     });
 
-    runState.markEventsSeen(currentEvents);
+    replay.markEventsSeen(currentEvents);
 
     if (playEvents.length) {
       startPlay(playEvents, animationEvents);
     }
     previousCardRects = snapshotHandCardRects();
   });
-
-  function currentPlanKey(plan: ReplayAnimationPhasePlan | undefined): string {
-    return plan ? `${plan.key}:${plan.motions.map((motion) => motion.id).join(',')}` : '';
-  }
 
   function handPlayPlanMotions(plan: ReplayAnimationPhasePlan | undefined): CardMoveAnimationMotion[] {
     return (plan?.motions ?? []).filter((motion): motion is CardMoveAnimationMotion =>
@@ -188,7 +166,7 @@
   }
 
   function startPlay(playEvents: ActionTimelineEvent[], animationEvents: ActionTimelineEvent[]) {
-    if (reduceMotion) {
+    if (replayPlanRunner.reduceMotion) {
       return;
     }
 

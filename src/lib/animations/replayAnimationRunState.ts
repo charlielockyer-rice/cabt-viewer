@@ -32,7 +32,7 @@ export class ReplayAnimationRunState {
     return this.seenEventIds.has(event.id);
   }
 
-  markEventsSeen(events: ActionTimelineEvent[]) {
+  markEventsSeen(events: readonly ActionTimelineEvent[]) {
     for (const event of events) {
       this.seenEventIds.add(event.id);
     }

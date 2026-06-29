@@ -11,11 +11,10 @@
     releaseAnimationElementEffectClaim,
     type AnimationElementEffectClaim,
   } from '../animations/animationElementEffects';
-  import { createPrefersReducedMotion } from '../animations/prefersReducedMotion.svelte';
-  import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
+  import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
   import { replayAnimationScopeExitSettleMs, replayAnimationSpriteGroupRemovalMs } from '../animations/replayAnimationHandoff';
-  import { replayAnimationPlanHasPhase, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
+  import { replayAnimationMotionsKey, replayAnimationPlanHasPhase, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import {
     animationElementForMotionAnchor,
     cardHeightToWidthRatio,
@@ -104,14 +103,19 @@
   const cardSequenceStepMs = 45;
   const cardHandoffMs = cardMoveDurationMs + 24;
   const directTakeDurationMs = 520;
-  const runState = new ReplayAnimationRunState();
-  const prefersReducedMotion = createPrefersReducedMotion();
-  let reduceMotion = $derived(prefersReducedMotion.current);
   let nextAnimationId = 1;
   let anchorElement = $state<HTMLElement>();
   let prizeTakes = $state<PrizeTakeAnimation[]>([]);
   let hiddenTargets: HiddenPrizeTarget[] = [];
   let activeTargets: ActivePrizeTargetEffect[] = [];
+  const replayPlanRunner = createReplayPhasePlanRunner({
+    selectMotions: (plan) => animateTakes ? prizeTakePlanMotions(plan) : [],
+    planKey: replayAnimationMotionsKey,
+    lifecycle: 'replay',
+    onScopeChange: settlePrizeTakes,
+    onPlanChange: clearAnimations,
+    startPlanned: startPlannedPrizeTake,
+  });
 
   onDestroy(() => {
     clearAnimations();
@@ -120,48 +124,22 @@
   $effect(() => {
     const currentEvents = events;
     const currentScopeKey = scopeKey;
-    const plannedTakeMotions = prizeTakePlanMotions(animationPlan);
-    const planKey = prizeTakePlanKey(plannedTakeMotions);
-    const run = runState.update(currentScopeKey, planKey);
-
-    if (animateTakes && plannedTakeMotions.length) {
-      if (run.shouldStartPlan) {
-        if (run.scopeChanged) {
-          settlePrizeTakes();
-        } else {
-          clearAnimations();
-        }
-        if (!reduceMotion) {
-          startPlannedPrizeTake(plannedTakeMotions);
-        }
-      } else {
-        runState.markEventsSeen(currentEvents);
-        return;
-      }
-      runState.markEventsSeen(currentEvents);
+    const replay = replayPlanRunner.update({
+      events: currentEvents,
+      scopeKey: currentScopeKey,
+      replayMode,
+      animationPlan,
+    });
+    if (replay.handled) {
       return;
     }
 
-    if (run.firstRun) {
-      runState.markEventsSeen(currentEvents);
-      return;
-    }
-
-    if (replayMode && run.scopeChanged) {
-      settlePrizeTakes();
-    }
-
-    if (replayMode) {
-      runState.markEventsSeen(currentEvents);
-      return;
-    }
-
-    const animationEvents = actionAnimationBatchEvents(currentEvents, runState.seenEventIds);
+    const animationEvents = actionAnimationBatchEvents(currentEvents, replay.seenEventIds);
     const placementEvents = animatePlacements ? animationEvents.filter((event) => {
       if (!isPrizePlacementEvent(event)) {
         return false;
       }
-      if (runState.hasSeen(event)) {
+      if (replayPlanRunner.hasSeen(event)) {
         return false;
       }
       return true;
@@ -170,7 +148,7 @@
       ? animationEvents.filter((event) => isPrizeTakeEvent(event) && shouldAnimateEvent(event))
       : [];
 
-    runState.markEventsSeen(currentEvents);
+    replay.markEventsSeen(currentEvents);
 
     if (placementEvents.length) {
       startPlacement(placementEvents);
@@ -190,12 +168,8 @@
     );
   }
 
-  function prizeTakePlanKey(motions: CardMoveAnimationMotion[]): string {
-    return motions.map((motion) => `${motion.id}:${motion.startMs}:${motion.durationMs}`).join('|');
-  }
-
   function shouldAnimateEvent(event: ActionTimelineEvent): boolean {
-    return !runState.hasSeen(event);
+    return !replayPlanRunner.hasSeen(event);
   }
 
   function isPrizePlacementEvent(event: ActionTimelineEvent): boolean {
@@ -213,7 +187,7 @@
   }
 
   function startPlacement(prizeEvents: ActionTimelineEvent[]) {
-    if (reduceMotion) {
+    if (replayPlanRunner.reduceMotion) {
       return;
     }
 
@@ -256,7 +230,7 @@
     takeEvents: ActionTimelineEvent[],
     animationEvents: ActionTimelineEvent[],
   ) {
-    if (reduceMotion) {
+    if (replayPlanRunner.reduceMotion) {
       return;
     }
 

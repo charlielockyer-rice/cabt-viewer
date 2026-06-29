@@ -12,9 +12,8 @@
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
   import type { AnimationVisibilityRole } from '../animations/animationVisibility';
-  import { createPrefersReducedMotion } from '../animations/prefersReducedMotion.svelte';
   import { replayAnimationScopeExitSettleMs, replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
-  import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
+  import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
   import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { actionAnimationTimelinePhaseKeyForEvent } from '../cabt/actionAnimationPhases';
@@ -80,12 +79,15 @@
   let snapshotTimer: ReturnType<typeof setInterval> | undefined;
   let previousAttachedRects = new Map<number, RectSnapshot>();
   let motionLayer = $state<HTMLElement>();
-  const runState = new ReplayAnimationRunState();
   const liveAttachedMoveHandoffHoldMs = 90;
-  const prefersReducedMotion = createPrefersReducedMotion();
-  let reduceMotion = $derived(prefersReducedMotion.current);
   let activeSprites: ActiveAttachedMoveSprite[] = [];
   let nextSpriteInstanceId = 1;
+  const replayPlanRunner = createReplayPhasePlanRunner({
+    selectMotions: attachedCardMoveMotions,
+    onScopeChange: settleSprites,
+    onPlanChange: clearSprites,
+    startPlanned: startPlannedAttachedSprites,
+  });
 
   onMount(() => {
     snapshotTimer = setInterval(() => {
@@ -112,44 +114,24 @@
   $effect(() => {
     const currentEvents = events;
     const currentScopeKey = scopeKey;
-    const currentPlan = animationPlan;
-    const planKey = currentPlanKey(currentPlan);
-    const plannedMotions = attachedCardMoveMotions(currentPlan);
-    const run = runState.update(currentScopeKey, planKey);
-    if (run.scopeChanged) {
-      settleSprites();
-    } else if (plannedMotions.length && run.planChanged) {
-      clearSprites();
-    }
-
-    if (plannedMotions.length) {
-      previousAttachedRects = snapshotAttachedRects();
-      if (run.shouldStartPlan && !reduceMotion) {
-        startAttachedSprites(plannedMotions.flatMap(spriteForMotion), { clearExisting: false });
-      }
-      runState.markEventsSeen(currentEvents);
-      return;
-    }
-
-    if (run.firstRun) {
-      runState.markEventsSeen(currentEvents);
+    const replay = replayPlanRunner.update({
+      events: currentEvents,
+      scopeKey: currentScopeKey,
+      replayMode,
+      animationPlan,
+    });
+    if (replay.handled) {
       previousAttachedRects = snapshotAttachedRects();
       return;
     }
 
-    if (replayMode) {
-      runState.markEventsSeen(currentEvents);
-      previousAttachedRects = snapshotAttachedRects();
-      return;
-    }
-
-    const animationEvents = actionAnimationBatchEvents(currentEvents, runState.seenEventIds);
+    const animationEvents = actionAnimationBatchEvents(currentEvents, replay.seenEventIds);
     const moveEvents = animationEvents.filter((event) =>
       isAttachedMoveEvent(event)
       && actionAnimationTimelinePhaseKeyForEvent(animationEvents, event)?.startsWith('AttachedMove:')
-      && !runState.hasSeen(event));
+      && !replayPlanRunner.hasSeen(event));
 
-    runState.markEventsSeen(currentEvents);
+    replay.markEventsSeen(currentEvents);
 
     if (moveEvents.length) {
       startAttachedMoves(moveEvents, animationEvents);
@@ -158,11 +140,16 @@
   });
 
   function startAttachedMoves(moveEvents: ActionTimelineEvent[], animationEvents: ActionTimelineEvent[]): boolean {
-    if (reduceMotion) {
+    if (replayPlanRunner.reduceMotion) {
       return false;
     }
 
     return startAttachedSprites(moveEvents.flatMap((event) => spriteForEvent(event, animationEvents)));
+  }
+
+  function startPlannedAttachedSprites(motions: CardMoveAnimationMotion[]): boolean {
+    previousAttachedRects = snapshotAttachedRects();
+    return startAttachedSprites(motions.flatMap(spriteForMotion), { clearExisting: false });
   }
 
   function startAttachedSprites(
@@ -216,10 +203,6 @@
       timers.push(startTimer);
     }
     return true;
-  }
-
-  function currentPlanKey(plan: ReplayAnimationPhasePlan | undefined) {
-    return plan ? `${plan.key}:${plan.motions.map((motion) => motion.id).join(',')}` : '';
   }
 
   function attachedCardMoveMotions(plan: ReplayAnimationPhasePlan | undefined): CardMoveAnimationMotion[] {

@@ -7,7 +7,7 @@
     isConcealedHandTarget,
   } from '../animations/viewportCardMotion';
   import { replayAnimationScopeExitSettleMs, replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
-  import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
+  import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
   import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import type { CardView } from '../game/types';
@@ -44,34 +44,21 @@
   const timers: ReturnType<typeof setTimeout>[] = [];
   const frameIds: number[] = [];
   let activeSprites = $state<CrossPlaneSprite[]>([]);
-  const runState = new ReplayAnimationRunState();
   let generation = 0;
+  const replayPlanRunner = createReplayPhasePlanRunner({
+    selectMotions: crossPlaneMotions,
+    onScopeChange: settleSprites,
+    onPlanChange: clearSprites,
+    startPlanned: startMotions,
+  });
 
   onDestroy(() => {
     clearSprites();
   });
 
   $effect(() => {
-    const currentScopeKey = scopeKey;
-    const currentPlan = animationPlan;
-    const motions = crossPlaneMotions(currentPlan);
-    const planKey = currentPlanKey(currentPlan);
-    const run = runState.update(currentScopeKey, planKey);
-
-    if (run.scopeChanged) {
-      settleSprites();
-    } else if (run.planChanged) {
-      clearSprites();
-    }
-    if (!motions.length || !run.shouldStartPlan) {
-      return;
-    }
-    startMotions(motions);
+    replayPlanRunner.update({ scopeKey, replayMode, animationPlan });
   });
-
-  function currentPlanKey(plan: ReplayAnimationPhasePlan | undefined): string {
-    return plan ? `${plan.key}:${plan.motions.map((motion) => motion.id).join(',')}` : '';
-  }
 
   function crossPlaneMotions(plan: ReplayAnimationPhasePlan | undefined): CardMoveAnimationMotion[] {
     return (plan?.motions ?? []).filter((motion): motion is CardMoveAnimationMotion =>

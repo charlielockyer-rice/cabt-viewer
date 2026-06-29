@@ -6,11 +6,10 @@
     releaseElementVisibilityClaim,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
-  import { createPrefersReducedMotion } from '../animations/prefersReducedMotion.svelte';
-  import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
+  import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
   import { replayAnimationScopeExitSettleMs, replayAnimationSpriteGroupRemovalMs } from '../animations/replayAnimationHandoff';
-  import { replayAnimationPlanHasPhase, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
+  import { replayAnimationMotionsKey, replayAnimationPlanHasPhase, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import {
     animationElementForMotionAnchor,
     centerOf,
@@ -89,12 +88,17 @@
   const sourceRestoreTimers: ReturnType<typeof setTimeout>[] = [];
   const cardMoveDurationMs = 360;
   const handOutroSettleMs = 180;
-  const runState = new ReplayAnimationRunState();
-  const prefersReducedMotion = createPrefersReducedMotion();
-  let reduceMotion = $derived(prefersReducedMotion.current);
   let nextAnimationId = 1;
   let resets = $state<ResetAnimation[]>([]);
   let hiddenSources: HiddenResetSource[] = [];
+  const replayPlanRunner = createReplayPhasePlanRunner({
+    selectMotions: handToDeckPlanMotions,
+    planKey: replayAnimationMotionsKey,
+    lifecycle: 'replay',
+    onScopeChange: settleResets,
+    onPlanChange: () => clearResets({ restoreSources: false, restoreConnectedSourcesAfterMs: handOutroSettleMs }),
+    startPlanned: startPlannedReset,
+  });
 
   onDestroy(() => {
     clearResets({ restoreSources: true });
@@ -107,53 +111,28 @@
   $effect(() => {
     const currentEvents = events;
     const currentScopeKey = scopeKey;
-    const plannedMotions = handToDeckPlanMotions(animationPlan);
-    const planKey = handToDeckPlanKey(plannedMotions);
-    const run = runState.update(currentScopeKey, planKey);
-
-    if (plannedMotions.length) {
-      if (run.shouldStartPlan) {
-        if (run.scopeChanged) {
-          settleResets();
-        } else {
-          clearResets({ restoreSources: false, restoreConnectedSourcesAfterMs: handOutroSettleMs });
-        }
-        if (!reduceMotion) {
-          startPlannedReset(plannedMotions);
-        }
-      } else {
-        runState.markEventsSeen(currentEvents);
-        return;
-      }
-      runState.markEventsSeen(currentEvents);
+    const replay = replayPlanRunner.update({
+      events: currentEvents,
+      scopeKey: currentScopeKey,
+      replayMode,
+      animationPlan,
+    });
+    if (replay.handled) {
       return;
     }
 
-    if (run.firstRun) {
-      runState.markEventsSeen(currentEvents);
-      return;
-    }
-
-    if (replayMode) {
-      if (run.scopeChanged) {
-        settleResets();
-      }
-      runState.markEventsSeen(currentEvents);
-      return;
-    }
-
-    const animationEvents = actionAnimationBatchEvents(currentEvents, runState.seenEventIds);
+    const animationEvents = actionAnimationBatchEvents(currentEvents, replay.seenEventIds);
     const resetEvents = animationEvents.filter((event) => {
       if (!isHandToDeckMove(event)) {
         return false;
       }
-      if (runState.hasSeen(event)) {
+      if (replayPlanRunner.hasSeen(event)) {
         return false;
       }
       return true;
     });
 
-    runState.markEventsSeen(currentEvents);
+    replay.markEventsSeen(currentEvents);
 
     if (resetEvents.length) {
       startReset(resetEvents, animationEvents);
@@ -168,10 +147,6 @@
       && motion.targetAnchor.kind === 'deck-top'
       && replayAnimationPlanHasPhase(plan, 'HandToDeck', motion.sourceAnchor.playerIndex),
     );
-  }
-
-  function handToDeckPlanKey(motions: CardMoveAnimationMotion[]): string {
-    return motions.map((motion) => `${motion.id}:${motion.startMs}:${motion.durationMs}`).join('|');
   }
 
   function startPlannedReset(motions: CardMoveAnimationMotion[]): boolean {
@@ -200,7 +175,7 @@
     resetEvents: ActionTimelineEvent[],
     animationEvents: ActionTimelineEvent[],
   ) {
-    if (reduceMotion) {
+    if (replayPlanRunner.reduceMotion) {
       return;
     }
 

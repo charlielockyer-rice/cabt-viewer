@@ -3,8 +3,7 @@
   import { resolveExactAnimationAnchorElement } from '../animations/animationAnchors';
   import { claimAnimationElementEffect } from '../animations/animationElementEffects';
   import { pulseMotionPlanKey, ScheduledAnimationEffectRunner } from '../animations/plannedPulseEffects';
-  import { createPrefersReducedMotion } from '../animations/prefersReducedMotion.svelte';
-  import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
+  import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import { replayAnimationPlanHasPhase, type PulseAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
 
   type Props = {
@@ -27,10 +26,14 @@
     animationPlan,
   }: Props = $props();
 
-  const runState = new ReplayAnimationRunState();
   const effectRunner = new ScheduledAnimationEffectRunner<PulseAnimationMotion>();
-  const prefersReducedMotion = createPrefersReducedMotion();
-  let reduceMotion = $derived(prefersReducedMotion.current);
+  const replayPlanRunner = createReplayPhasePlanRunner({
+    selectMotions: eventPulseMotions,
+    planKey: pulseMotionPlanKey,
+    onScopeChange: clearPulses,
+    onPlanChange: clearPulses,
+    startPlanned: startEventPulses,
+  });
   let labels = $state<EventPulseLabel[]>([]);
 
   onDestroy(() => {
@@ -38,18 +41,7 @@
   });
 
   $effect(() => {
-    const pulses = eventPulseMotions(animationPlan);
-    const planKey = pulseMotionPlanKey(pulses);
-    const run = runState.update(scopeKey, planKey);
-    if (run.scopeChanged || run.planChanged) {
-      clearPulses();
-    }
-
-    if (!replayMode || reduceMotion || !pulses.length || !run.shouldStartPlan) {
-      return;
-    }
-
-    startEventPulses(pulses);
+    replayPlanRunner.update({ scopeKey, replayMode, animationPlan });
   });
 
   function eventPulseMotions(plan: ReplayAnimationPhasePlan | undefined): PulseAnimationMotion[] {

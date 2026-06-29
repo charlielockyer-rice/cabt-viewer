@@ -7,9 +7,8 @@
     releaseAnimationElementEffectClaims,
     type AnimationElementEffectClaim,
   } from '../animations/animationElementEffects';
-  import { createPrefersReducedMotion } from '../animations/prefersReducedMotion.svelte';
   import { pulseMotionPlanKey, ScheduledAnimationEffectRunner } from '../animations/plannedPulseEffects';
-  import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
+  import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import { actionAnimationTimelinePhaseKeyForEvent } from '../cabt/actionAnimationPhases';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { replayAnimationPlanHasPhase, type PulseAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
@@ -47,13 +46,17 @@
   }: Props = $props();
 
   const timers: ReturnType<typeof setTimeout>[] = [];
-  const runState = new ReplayAnimationRunState();
   const attackAnnouncementRunner = new ScheduledAnimationEffectRunner<AttackAnnouncementMotion>();
-  const prefersReducedMotion = createPrefersReducedMotion();
-  let reduceMotion = $derived(prefersReducedMotion.current);
   let damageSprites = $state<DamageSprite[]>([]);
   let animationGeneration = 0;
   const activeAttackLunges = new Set<AnimationElementEffectClaim>();
+  const replayPlanRunner = createReplayPhasePlanRunner({
+    selectMotions: attackPulseMotions,
+    planKey: pulseMotionPlanKey,
+    onScopeChange: clearAttackAnimations,
+    onPlanChange: clearAttackAnimations,
+    startPlanned: startPlannedPulses,
+  });
 
   onDestroy(() => {
     clearAttackAnimations();
@@ -62,34 +65,19 @@
   $effect(() => {
     const currentEvents = events;
     const currentScopeKey = scopeKey;
-    const plannedPulses = attackPulseMotions(animationPlan);
-    const planKey = pulseMotionPlanKey(plannedPulses);
-    const run = runState.update(currentScopeKey, planKey);
-    if (run.scopeChanged || run.planChanged) {
-      clearAttackAnimations();
-    }
-
-    if (plannedPulses.length) {
-      if (!reduceMotion && run.shouldStartPlan) {
-        startPlannedPulses(plannedPulses);
-      }
-      runState.markEventsSeen(currentEvents);
+    const replay = replayPlanRunner.update({
+      events: currentEvents,
+      scopeKey: currentScopeKey,
+      replayMode,
+      animationPlan,
+    });
+    if (replay.handled) {
       return;
     }
 
-    if (run.firstRun) {
-      runState.markEventsSeen(currentEvents);
-      return;
-    }
-
-    if (replayMode) {
-      runState.markEventsSeen(currentEvents);
-      return;
-    }
-
-    const animationEvents = actionAnimationBatchEvents(currentEvents, runState.seenEventIds);
-    runState.markEventsSeen(currentEvents);
-    if (!animationEvents.length || reduceMotion) {
+    const animationEvents = actionAnimationBatchEvents(currentEvents, replay.seenEventIds);
+    replay.markEventsSeen(currentEvents);
+    if (!animationEvents.length || replay.reduceMotion) {
       return;
     }
 

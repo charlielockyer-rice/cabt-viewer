@@ -230,6 +230,18 @@ export function replayAnimationMotionTimings(plan: Pick<ReplayAnimationPhasePlan
   return plan.motions.map(replayAnimationMotionTiming);
 }
 
+export function replayAnimationMotionKey(motion: Pick<AnimationMotion, 'id' | 'startMs' | 'durationMs'>): string {
+  return `${motion.id}:${motion.startMs}:${motion.durationMs}`;
+}
+
+export function replayAnimationMotionsKey(motions: readonly Pick<AnimationMotion, 'id' | 'startMs' | 'durationMs'>[]): string {
+  return motions.map(replayAnimationMotionKey).join('|');
+}
+
+export function replayAnimationPhasePlanKey(plan: Pick<ReplayAnimationPhasePlan, 'key' | 'durationMs' | 'motions'> | undefined): string {
+  return plan ? `${plan.key}:${plan.durationMs}:${replayAnimationMotionsKey(plan.motions)}` : '';
+}
+
 export function replayAnimationMotionSpanMs(motions: readonly AnimationMotion[]): number {
   return motions.reduce((spanMs, motion) => Math.max(spanMs, motion.startMs + motion.durationMs), 0);
 }

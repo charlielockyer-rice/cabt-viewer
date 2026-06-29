@@ -10,9 +10,8 @@
     type AnimationAnchorRef,
   } from '../animations/animationAnchors';
   import { afterTwoAnimationFrames } from '../animations/animationFrames';
-  import { createPrefersReducedMotion } from '../animations/prefersReducedMotion.svelte';
   import { replayAnimationScopeExitSettleMs } from '../animations/replayAnimationHandoff';
-  import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
+  import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
   import type { ReplayAnimationPhasePlan, RevealSessionAnimationMotion, RevealSessionStep } from '../animations/replayAnimationPlan';
   import {
@@ -98,19 +97,22 @@
     animationPlan,
   }: Props = $props();
 
-  const plannedRevealMotions = $derived(revealSessionMotions(animationPlan));
-
   const timers: ReturnType<typeof setTimeout>[] = [];
   const handoffFrameIds: number[] = [];
   const handoffSettleMs = 48;
   let reveals = $state<RevealAnimation[]>([]);
-  const runState = new ReplayAnimationRunState();
   let nextAnimationId = 1;
-  const prefersReducedMotion = createPrefersReducedMotion();
-  let reduceMotion = $derived(prefersReducedMotion.current);
   const activeAttachElementCounts = new Map<HTMLElement, number>();
   let activeAttachClaims: ElementVisibilityClaim[] = [];
   let hiddenTargets: HiddenRevealTarget[] = [];
+  const replayPlanRunner = createReplayPhasePlanRunner({
+    selectMotions: revealSessionMotions,
+    planKey: revealSessionPlanKey,
+    lifecycle: 'replay',
+    onScopeChange: settleReveals,
+    onPlanChange: clearReveals,
+    startPlanned: startPlannedRevealSession,
+  });
 
   onDestroy(() => {
     clearReveals();
@@ -119,57 +121,17 @@
   $effect(() => {
     const currentEvents = events;
     const currentScopeKey = scopeKey;
-    const currentPlanMotions = plannedRevealMotions;
-    const planKey = revealSessionPlanKey(currentPlanMotions);
-    const run = runState.update(currentScopeKey, planKey);
-
-    if (currentPlanMotions.length) {
-      runState.markEventsSeen(currentEvents);
-      if (run.shouldStartPlan) {
-        if (run.scopeChanged) {
-          settleReveals();
-        } else {
-          clearReveals();
-        }
-        const planSteps = revealSessionPlanSteps(currentPlanMotions);
-        const revealActions = revealStartActionsForSteps(planSteps, animationPlan?.durationMs);
-        const attachActions = revealCardActionsForSteps(planSteps, 'attach', animationPlan?.durationMs);
-        const takeActions = revealCardActionsForSteps(planSteps, 'take', animationPlan?.durationMs).filter((action) =>
-          !revealActions.some((revealAction) => revealAction.id === action.id),
-        );
-        const returnActions = revealCardActionsForSteps(planSteps, 'return', animationPlan?.durationMs);
-        if (revealActions.length) {
-          startReveal(revealActions, 'planned');
-        } else {
-          seedHeldRevealSprites(currentPlanMotions);
-        }
-        if (attachActions.length) {
-          attachRevealedCards(attachActions, 'planned');
-        }
-        if (takeActions.length) {
-          takeRevealedCards(takeActions, 'planned');
-        }
-        if (returnActions.length) {
-          returnRevealedCards(returnActions);
-        }
-      }
+    const replay = replayPlanRunner.update({
+      events: currentEvents,
+      scopeKey: currentScopeKey,
+      replayMode,
+      animationPlan,
+    });
+    if (replay.handled) {
       return;
     }
 
-    if (run.firstRun) {
-      runState.markEventsSeen(currentEvents);
-      return;
-    }
-
-    if (replayMode) {
-      if (run.scopeChanged) {
-        settleReveals();
-      }
-      runState.markEventsSeen(currentEvents);
-      return;
-    }
-
-    const animationEvents = actionAnimationBatchEvents(currentEvents, runState.seenEventIds);
+    const animationEvents = actionAnimationBatchEvents(currentEvents, replay.seenEventIds);
     const revealActions = animationEvents
       .filter((event) => isDeckRevealEvent(event) && shouldAnimateEvent(event))
       .flatMap((event) => revealStartActionForEvent(event, animationEvents) ?? []);
@@ -183,7 +145,7 @@
       .filter((event) => isRevealReturnEvent(event) && shouldAnimateEvent(event))
       .flatMap((event) => revealCardActionForEvent(event, animationEvents) ?? []);
 
-    runState.markEventsSeen(currentEvents);
+    replay.markEventsSeen(currentEvents);
 
     if (revealActions.length) {
       startReveal(revealActions);
@@ -198,6 +160,31 @@
       returnRevealedCards(returnActions);
     }
   });
+
+  function startPlannedRevealSession(currentPlanMotions: RevealSessionAnimationMotion[]) {
+    const phaseDurationMs = animationPlan?.durationMs;
+    const planSteps = revealSessionPlanSteps(currentPlanMotions);
+    const revealActions = revealStartActionsForSteps(planSteps, phaseDurationMs);
+    const attachActions = revealCardActionsForSteps(planSteps, 'attach', phaseDurationMs);
+    const takeActions = revealCardActionsForSteps(planSteps, 'take', phaseDurationMs).filter((action) =>
+      !revealActions.some((revealAction) => revealAction.id === action.id),
+    );
+    const returnActions = revealCardActionsForSteps(planSteps, 'return', phaseDurationMs);
+    if (revealActions.length) {
+      startReveal(revealActions, 'planned');
+    } else {
+      seedHeldRevealSprites(currentPlanMotions);
+    }
+    if (attachActions.length) {
+      attachRevealedCards(attachActions, 'planned');
+    }
+    if (takeActions.length) {
+      takeRevealedCards(takeActions, 'planned');
+    }
+    if (returnActions.length) {
+      returnRevealedCards(returnActions);
+    }
+  }
 
   function seedHeldRevealSprites(motions: RevealSessionAnimationMotion[]) {
     const plannedCards = plannedRevealCards(motions);
@@ -260,7 +247,7 @@
   }
 
   function shouldAnimateEvent(event: ActionTimelineEvent): boolean {
-    return !runState.hasSeen(event);
+    return !replayPlanRunner.hasSeen(event);
   }
 
   function isDeckRevealEvent(event: ActionTimelineEvent): boolean {
@@ -905,7 +892,7 @@
   }
 
   function motionDurationMs(durationMs: number): number {
-    return reduceMotion ? 1 : durationMs;
+    return replayPlanRunner.reduceMotion ? 1 : durationMs;
   }
 
   function spriteCenter(sprite: RevealSprite): { x: number; y: number } {

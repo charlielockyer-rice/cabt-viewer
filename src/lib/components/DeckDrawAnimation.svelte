@@ -6,11 +6,10 @@
     releaseElementVisibilityClaim,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
-  import { createPrefersReducedMotion } from '../animations/prefersReducedMotion.svelte';
-  import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
+  import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
   import { replayAnimationScopeExitSettleMs, replayAnimationSpriteGroupRemovalMs } from '../animations/replayAnimationHandoff';
-  import { replayAnimationPlanHasPhase, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
+  import { replayAnimationMotionsKey, replayAnimationPlanHasPhase, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import {
     animationElementForMotionAnchor,
     cardHeightToWidthRatio,
@@ -79,10 +78,15 @@
   const cardMoveDurationMs = 320;
   const cardHandoffMs = Math.round(cardMoveDurationMs * 0.88);
   let draws = $state<DrawAnimation[]>([]);
-  const runState = new ReplayAnimationRunState();
   let nextAnimationId = 1;
-  const prefersReducedMotion = createPrefersReducedMotion();
-  let reduceMotion = $derived(prefersReducedMotion.current);
+  const replayPlanRunner = createReplayPhasePlanRunner({
+    selectMotions: drawPlanMotions,
+    planKey: replayAnimationMotionsKey,
+    lifecycle: 'replay',
+    onScopeChange: settleDraws,
+    onPlanChange: clearDraws,
+    startPlanned: startPlannedDraw,
+  });
 
   onDestroy(() => {
     clearDraws();
@@ -91,53 +95,28 @@
   $effect(() => {
     const currentEvents = events;
     const currentScopeKey = scopeKey;
-    const plannedMotions = drawPlanMotions(animationPlan);
-    const planKey = drawPlanKey(plannedMotions);
-    const run = runState.update(currentScopeKey, planKey);
-
-    if (plannedMotions.length) {
-      if (run.shouldStartPlan) {
-        if (run.scopeChanged) {
-          settleDraws();
-        } else {
-          clearDraws();
-        }
-        if (!reduceMotion) {
-          startPlannedDraw(plannedMotions);
-        }
-      } else {
-        runState.markEventsSeen(currentEvents);
-        return;
-      }
-      runState.markEventsSeen(currentEvents);
+    const replay = replayPlanRunner.update({
+      events: currentEvents,
+      scopeKey: currentScopeKey,
+      replayMode,
+      animationPlan,
+    });
+    if (replay.handled) {
       return;
     }
 
-    if (run.firstRun) {
-      runState.markEventsSeen(currentEvents);
-      return;
-    }
-
-    if (replayMode) {
-      if (run.scopeChanged) {
-        settleDraws();
-      }
-      runState.markEventsSeen(currentEvents);
-      return;
-    }
-
-    const animationEvents = actionAnimationBatchEvents(currentEvents, runState.seenEventIds);
+    const animationEvents = actionAnimationBatchEvents(currentEvents, replay.seenEventIds);
     const drawEvents = animationEvents.filter((event) => {
       if (!isDrawEvent(event)) {
         return false;
       }
-      if (runState.hasSeen(event)) {
+      if (replayPlanRunner.hasSeen(event)) {
         return false;
       }
       return true;
     });
 
-    runState.markEventsSeen(currentEvents);
+    replay.markEventsSeen(currentEvents);
 
     if (drawEvents.length) {
       startDraw(drawEvents, animationEvents);
@@ -152,10 +131,6 @@
       && motion.targetAnchor.kind === 'hand-card'
       && replayAnimationPlanHasPhase(plan, 'Draw', motion.sourceAnchor.playerIndex),
     );
-  }
-
-  function drawPlanKey(motions: CardMoveAnimationMotion[]): string {
-    return motions.map((motion) => motion.id).join('|');
   }
 
   function isDrawEvent(event: ActionTimelineEvent): boolean {
@@ -228,7 +203,7 @@
     drawEvents: ActionTimelineEvent[],
     animationEvents: ActionTimelineEvent[],
   ) {
-    if (reduceMotion) {
+    if (replayPlanRunner.reduceMotion) {
       return;
     }
 

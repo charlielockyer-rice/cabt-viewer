@@ -4,8 +4,7 @@
   import { claimAnimationElementEffect } from '../animations/animationElementEffects';
   import { resolveExactAnimationAnchorElement } from '../animations/animationAnchors';
   import { pulseMotionPlanKey, ScheduledAnimationEffectRunner } from '../animations/plannedPulseEffects';
-  import { createPrefersReducedMotion } from '../animations/prefersReducedMotion.svelte';
-  import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
+  import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import { replayAnimationPlanHasPhase, type PulseAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import type { ActionTimelineEvent } from '../game/types';
 
@@ -30,10 +29,14 @@
     animationPlan,
   }: Props = $props();
 
-  const runState = new ReplayAnimationRunState();
   const effectRunner = new ScheduledAnimationEffectRunner<AbilityEffectMotion>();
-  const prefersReducedMotion = createPrefersReducedMotion();
-  let reduceMotion = $derived(prefersReducedMotion.current);
+  const replayPlanRunner = createReplayPhasePlanRunner({
+    selectMotions: abilityPulseMotions,
+    planKey: pulseMotionPlanKey,
+    onScopeChange: clearAbilityAnimations,
+    onPlanChange: clearAbilityAnimations,
+    startPlanned: startPlannedAbilityAnnouncements,
+  });
 
   onDestroy(() => {
     clearAbilityAnimations();
@@ -42,35 +45,19 @@
   $effect(() => {
     const currentEvents = events;
     const currentScopeKey = scopeKey;
-    const currentPlan = animationPlan;
-    const plannedPulses = abilityPulseMotions(currentPlan);
-    const planKey = pulseMotionPlanKey(plannedPulses);
-    const run = runState.update(currentScopeKey, planKey);
-    if (run.scopeChanged || run.planChanged) {
-      clearAbilityAnimations();
-    }
-
-    if (plannedPulses.length) {
-      if (!reduceMotion && run.shouldStartPlan) {
-        startPlannedAbilityAnnouncements(plannedPulses);
-      }
-      runState.markEventsSeen(currentEvents);
+    const replay = replayPlanRunner.update({
+      events: currentEvents,
+      scopeKey: currentScopeKey,
+      replayMode,
+      animationPlan,
+    });
+    if (replay.handled) {
       return;
     }
 
-    if (run.firstRun) {
-      runState.markEventsSeen(currentEvents);
-      return;
-    }
-
-    if (replayMode) {
-      runState.markEventsSeen(currentEvents);
-      return;
-    }
-
-    const animationEvents = actionAnimationBatchEvents(currentEvents, runState.seenEventIds);
-    runState.markEventsSeen(currentEvents);
-    if (!animationEvents.length || reduceMotion) {
+    const animationEvents = actionAnimationBatchEvents(currentEvents, replay.seenEventIds);
+    replay.markEventsSeen(currentEvents);
+    if (!animationEvents.length || replay.reduceMotion) {
       return;
     }
 
