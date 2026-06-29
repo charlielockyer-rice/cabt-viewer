@@ -2505,11 +2505,10 @@ describe('cabtReplayToSnapshot', () => {
       expect.objectContaining({
         role: 'destination',
         anchor: {
-          kind: 'pokemon-card',
+          kind: 'board-slot',
           playerIndex: 0,
           slot: 'bench',
           slotIndex: 0,
-          serial: 6,
         },
         identity: expect.objectContaining({
           kind: 'pokemon',
@@ -3610,7 +3609,7 @@ describe('cabtReplayToSnapshot', () => {
         identity: { kind: 'pokemon', serial: 64, cardId: 721 },
         durationMs: 620,
         handoffPolicy: {
-          hideSourceUntil: 'snapshot',
+          hideSourceUntil: 'scope-exit',
           hideDestinationUntil: 'prepaint',
           removeSprite: 'scope-exit',
           prepaintFrames: 2,
@@ -3786,6 +3785,18 @@ describe('cabtReplayToSnapshot', () => {
         targetAnchor: { kind: 'discard-pile', playerIndex: 0 },
         identity: { kind: 'energy', serial: 91, cardId: 3 },
         durationMs: 360,
+      },
+    ]);
+    expect(step.animationPhases?.[0].animationPlan?.visibilityClaims).toMatchObject([
+      {
+        anchor: { kind: 'attached-energy', playerIndex: 0, slot: 'active', slotIndex: 0, serial: 91 },
+        identity: { kind: 'energy', serial: 91, cardId: 3 },
+        role: 'source',
+      },
+      {
+        anchor: { kind: 'discard-pile', playerIndex: 0 },
+        identity: { kind: 'energy', serial: 91, cardId: 3 },
+        role: 'destination',
       },
     ]);
     expect(snapshot.views[step.stateIndex].players[0].active.energy).toHaveLength(0);
@@ -4101,6 +4112,28 @@ describe('cabtReplayToSnapshot', () => {
         sourceAnchor: { kind: 'board-slot', playerIndex: 0, slot: 'bench', slotIndex: 0 },
         targetAnchor: { kind: 'board-slot', playerIndex: 0, slot: 'active', slotIndex: 0 },
         handoffPolicy: { removeSprite: 'scope-exit' },
+      },
+    ]);
+    expect(step.animationPhases?.[0].animationPlan?.visibilityClaims).toMatchObject([
+      {
+        anchor: { kind: 'board-slot', playerIndex: 0, slot: 'active', slotIndex: 0 },
+        identity: { kind: 'pokemon', serial: 64, cardId: 721 },
+        role: 'source',
+      },
+      {
+        anchor: { kind: 'board-slot', playerIndex: 0, slot: 'bench', slotIndex: 0 },
+        identity: { kind: 'pokemon', serial: 64, cardId: 721 },
+        role: 'destination',
+      },
+      {
+        anchor: { kind: 'board-slot', playerIndex: 0, slot: 'bench', slotIndex: 0 },
+        identity: { kind: 'pokemon', serial: 67, cardId: 722 },
+        role: 'source',
+      },
+      {
+        anchor: { kind: 'board-slot', playerIndex: 0, slot: 'active', slotIndex: 0 },
+        identity: { kind: 'pokemon', serial: 67, cardId: 722 },
+        role: 'destination',
       },
     ]);
     expect(snapshot.views[step.stateIndex].players[0].active.pokemon?.serial).toBe(67);

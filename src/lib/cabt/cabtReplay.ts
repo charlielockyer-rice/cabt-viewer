@@ -2193,7 +2193,7 @@ function cardMoveMotion(input: {
       anchor: input.sourceAnchor,
     },
     handoffPolicy: {
-      hideSourceUntil: 'snapshot',
+      hideSourceUntil: input.sourceAnchor.kind === 'deck-top' ? 'snapshot' : 'scope-exit',
       hideDestinationUntil: 'prepaint',
       removeSprite: input.removeSprite,
       prepaintFrames: 2,
@@ -2393,8 +2393,15 @@ function animationPhaseVisibilityClaims(phase: AnimationEventPhase, view: GameVi
   if (phase.key.startsWith('Draw:')) {
     return drawDestinationVisibilityClaims(phase, view);
   }
-  if (phase.key.startsWith('DeckBoardPlace:')) {
-    return boardPlaceDestinationVisibilityClaims(phase, view);
+  if (
+    phase.key.startsWith('BoardMove:')
+    || phase.key.startsWith('BoardToDeck:')
+    || phase.key.startsWith('DeckDiscard:')
+    || phase.key.startsWith('DeckBoardPlace:')
+    || phase.key.startsWith('StadiumMove:')
+    || phase.key.startsWith('KnockOut:')
+  ) {
+    return boardCardMoveVisibilityClaims(phase, view);
   }
   if (phase.key.startsWith('DeckRevealTake:')) {
     return handTakeDestinationVisibilityClaims(phase, view);
@@ -2403,9 +2410,38 @@ function animationPhaseVisibilityClaims(phase: AnimationEventPhase, view: GameVi
     return prizeTakeDestinationVisibilityClaims(phase, view);
   }
   if (phase.key.startsWith('AttachedMove:')) {
-    return attachedHandDestinationVisibilityClaims(phase, view);
+    return [
+      ...boardCardMoveVisibilityClaims(phase, view),
+      ...attachedHandDestinationVisibilityClaims(phase, view),
+    ];
   }
   return [];
+}
+
+function boardCardMoveVisibilityClaims(phase: AnimationEventPhase, view: GameView): AnimationVisibilityClaim[] {
+  const claims: AnimationVisibilityClaim[] = [];
+  for (const motion of boardCardMoveMotions(phase, view)) {
+    if (motion.kind !== 'card-move' || motion.coordinateSpace !== 'board') {
+      continue;
+    }
+    if (motion.handoffPolicy.hideSourceUntil !== 'none' && motion.sourceAnchor.kind !== 'deck-top') {
+      claims.push({
+        scopeKey: phase.key,
+        anchor: motion.sourceAnchor,
+        identity: motion.identity,
+        role: 'source',
+      });
+    }
+    if (motion.handoffPolicy.hideDestinationUntil !== 'none') {
+      claims.push({
+        scopeKey: phase.key,
+        anchor: motion.targetAnchor,
+        identity: motion.identity,
+        role: 'destination',
+      });
+    }
+  }
+  return claims;
 }
 
 function handPlayDestinationVisibilityClaims(phase: AnimationEventPhase, view: GameView): AnimationVisibilityClaim[] {

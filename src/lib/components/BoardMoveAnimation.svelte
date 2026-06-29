@@ -59,6 +59,7 @@
     toDeck: boolean;
     fromDeck: boolean;
     key: string;
+    planned: boolean;
   };
 
   type HiddenBoardMoveElement = ElementVisibilityClaim;
@@ -159,7 +160,10 @@
 
   function boardCardMoveMotions(plan: ReplayAnimationPhasePlan | undefined): CardMoveAnimationMotion[] {
     return (plan?.motions ?? []).filter((motion): motion is CardMoveAnimationMotion =>
-      motion.kind === 'card-move' && motion.coordinateSpace === 'board');
+      motion.kind === 'card-move'
+      && motion.coordinateSpace === 'board'
+      && motion.sourceAnchor.kind !== 'attached-energy'
+      && motion.sourceAnchor.kind !== 'attached-tool');
   }
 
   function startPlannedBoardMoves(motions: CardMoveAnimationMotion[]) {
@@ -196,6 +200,7 @@
         card: motion.spriteVisual.kind === 'card' ? motion.spriteVisual.card : undefined,
         faceDown: motion.spriteVisual.kind === 'card' ? motion.spriteVisual.faceDown : undefined,
         key: motion.id,
+        planned: true,
       }, generation, plannedBoardMoveHandoffDelayMs(motion, latestDeckPlacementStartMs));
     }
   }
@@ -239,6 +244,7 @@
         delayMs,
         durationMs: actionAnimationTiming.boardMoveMs,
         key: `${instruction.event.id}-${instruction.key}`,
+        planned: false,
       }, generation, boardMoveHandoffDelayMs(animationEvents, instruction, delayMs));
     }
   }
@@ -260,6 +266,7 @@
       card?: Pick<CardView, 'id' | 'serial' | 'name' | 'fullName' | 'cardImage' | 'imageUrl'>;
       faceDown?: boolean;
       key: string;
+      planned: boolean;
     },
     generation: number,
     handoffDelayMs = instruction.durationMs + replayHandoffHoldMs(),
@@ -315,8 +322,10 @@
       }
 
       const correction = measureSpriteCorrection(sprite, instruction.target);
-      hideBoardMoveElement(instruction.source);
-      hideBoardMoveElement(instruction.target);
+      if (!instruction.planned) {
+        hideBoardMoveElement(instruction.source);
+        hideBoardMoveElement(instruction.target);
+      }
       sprites = sprites.map((item) => item.id === sprite.id
         ? {
             ...item,
@@ -461,6 +470,7 @@
       toDeck: Number(params?.toArea) === CabtAreaType.DECK,
       fromDeck: Number(params?.fromArea) === CabtAreaType.DECK,
       key: `${params?.serial ?? cardId}`,
+      planned: false,
     }];
   }
 
@@ -485,6 +495,7 @@
         toDeck: false,
         fromDeck: false,
         key: `active-${params?.serialActive ?? activeCardId}`,
+        planned: false,
       },
       {
         event,
@@ -497,6 +508,7 @@
         toDeck: false,
         fromDeck: false,
         key: `bench-${params?.serialBench ?? benchCardId}`,
+        planned: false,
       },
     ];
   }

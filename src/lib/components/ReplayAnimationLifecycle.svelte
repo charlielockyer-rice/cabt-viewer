@@ -84,8 +84,9 @@
     lastPlan = currentPlan;
 
     if (currentPlan?.visibilityClaims.length) {
+      // Reduced motion renders no replacement sprite, so source cards must stay visible.
       const claims = reduceMotion
-        ? currentPlan.visibilityClaims.filter((claim) => claim.role === 'source')
+        ? currentPlan.visibilityClaims.filter((claim) => claim.role !== 'source')
         : currentPlan.visibilityClaims;
       for (const claim of claims) {
         const token = replayAnimationVisibility.hide({
