@@ -80,10 +80,9 @@
   type PrizeTakeAnimation = {
     id: number;
     sprites: PrizeTakeSprite[];
-    hiddenTargets: HiddenPrizeTarget[];
   };
 
-  type HiddenPrizeTarget = ElementVisibilityClaim;
+  type LiveHiddenPrizeTarget = ElementVisibilityClaim;
   type ActivePrizeTargetEffect = {
     target: HTMLElement;
     effectClaim: AnimationElementEffectClaim;
@@ -106,7 +105,7 @@
   let nextAnimationId = 1;
   let anchorElement = $state<HTMLElement>();
   let prizeTakes = $state<PrizeTakeAnimation[]>([]);
-  let hiddenTargets: HiddenPrizeTarget[] = [];
+  let liveHiddenTargets: LiveHiddenPrizeTarget[] = [];
   let activeTargets: ActivePrizeTargetEffect[] = [];
   const replayPlanRunner = createReplayPhasePlanRunner({
     selectMotions: (plan) => animateTakes ? prizeTakePlanMotions(plan) : [],
@@ -251,20 +250,19 @@
       return;
     }
 
-    const hiddenTargets = sprites
+    const liveTargetElements = sprites
       .map((sprite) => sprite.targetElement)
       .filter((target): target is HTMLElement => target instanceof HTMLElement);
-    const hiddenPrizeTargets = hideTargets(hiddenTargets);
+    const liveHiddenPrizeTargets = hideLiveTargets(liveTargetElements);
 
     const animation: PrizeTakeAnimation = {
       id: nextAnimationId++,
       sprites,
-      hiddenTargets: hiddenPrizeTargets,
     };
     prizeTakes = [...prizeTakes, animation];
 
     const timer = setTimeout(() => {
-      showTargets(hiddenPrizeTargets);
+      showLiveTargets(liveHiddenPrizeTargets);
       prizeTakes = prizeTakes.filter((item) => item.id !== animation.id);
     }, Math.max(...sprites.map((sprite) => sprite.delayMs + prizeTakeDurationMs(sprite))) + 20);
     timers.push(timer);
@@ -279,7 +277,6 @@
     const animation: PrizeTakeAnimation = {
       id: nextAnimationId++,
       sprites,
-      hiddenTargets: [],
     };
     prizeTakes = [...prizeTakes, animation];
 
@@ -299,7 +296,7 @@
     timers.length = 0;
     deactivateTargetEffects(activeTargets);
     activeTargets = [];
-    clearHiddenTargets();
+    clearLiveHiddenTargets();
     prizeTakes = [];
   }
 
@@ -492,31 +489,31 @@
     activeTargets = activeTargets.filter((target) => !targetSet.has(target));
   }
 
-  function hideTargets(targets: HTMLElement[]) {
-    const hidden: HiddenPrizeTarget[] = [];
+  function hideLiveTargets(targets: HTMLElement[]) {
+    const liveHiddenClaims: LiveHiddenPrizeTarget[] = [];
     for (const target of targets) {
-      hidden.push(hideElementForAnimation({
+      liveHiddenClaims.push(hideElementForAnimation({
         element: target,
         scopeKey,
         role: 'destination',
         fallbackAttribute: 'data-prize-take-animation-hidden',
       }));
     }
-    hiddenTargets = [...hiddenTargets, ...hidden];
-    return hidden;
+    liveHiddenTargets = [...liveHiddenTargets, ...liveHiddenClaims];
+    return liveHiddenClaims;
   }
 
-  function showTargets(targets: HiddenPrizeTarget[]) {
-    const nextHiddenTargets = new Set(hiddenTargets);
+  function showLiveTargets(targets: LiveHiddenPrizeTarget[]) {
+    const nextHiddenTargets = new Set(liveHiddenTargets);
     for (const target of targets) {
       releaseElementVisibilityClaim(target);
       nextHiddenTargets.delete(target);
     }
-    hiddenTargets = [...nextHiddenTargets];
+    liveHiddenTargets = [...nextHiddenTargets];
   }
 
-  function clearHiddenTargets() {
-    showTargets([...hiddenTargets]);
+  function clearLiveHiddenTargets() {
+    showLiveTargets([...liveHiddenTargets]);
   }
 
   function deckTopElement(playerIndex: number): HTMLElement | null {

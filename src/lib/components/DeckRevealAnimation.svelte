@@ -84,7 +84,7 @@
     sprites: RevealSprite[];
   };
 
-  type DestinationVisibilityMode = 'local' | 'planned';
+  type RevealExecution = 'live' | 'planned';
 
   type LiveRevealCardAction = RevealCardAction & {
     serialTarget?: number;
@@ -96,7 +96,7 @@
     concealed: boolean;
     element?: HTMLElement;
   };
-  type HiddenRevealTarget = ElementVisibilityClaim;
+  type LiveHiddenRevealTarget = ElementVisibilityClaim;
   let {
     events = [],
     scopeKey = '',
@@ -109,9 +109,9 @@
   const handoffSettleMs = 48;
   let reveals = $state<RevealAnimation[]>([]);
   let nextAnimationId = 1;
-  const activeAttachElementCounts = new Map<HTMLElement, number>();
-  let activeAttachClaims: ElementVisibilityClaim[] = [];
-  let hiddenTargets: HiddenRevealTarget[] = [];
+  const liveAttachElementCounts = new Map<HTMLElement, number>();
+  let liveAttachClaims: ElementVisibilityClaim[] = [];
+  let liveHiddenTargets: LiveHiddenRevealTarget[] = [];
   const replayPlanRunner = createReplayPhasePlanRunner({
     selectMotions: revealSessionMotions,
     planKey: revealSessionPlanKey,
@@ -340,7 +340,7 @@
 
   function startReveal(
     revealActions: RevealStartAction[],
-    visibilityMode: DestinationVisibilityMode = 'local',
+    execution: RevealExecution = 'live',
   ) {
     const actionsByPlayer = new Map<number, RevealStartAction[]>();
     for (const action of revealActions) {
@@ -350,17 +350,17 @@
     }
 
     const sprites = [...actionsByPlayer.entries()].flatMap(([playerIndex, playerActions]) =>
-      spritesForPlayer(playerIndex, playerActions, visibilityMode),
+      spritesForPlayer(playerIndex, playerActions, execution),
     );
     if (!sprites.length) {
       return;
     }
 
     clearReveals();
-    const hiddenTargets = sprites
+    const liveTargetElements = sprites
       .filter((sprite) => sprite.mode === 'searching' && sprite.targetElement)
       .map((sprite) => sprite.targetElement!);
-    const hiddenSearchTargets = hideTargets(hiddenTargets, visibilityMode);
+    const liveHiddenSearchTargets = execution === 'live' ? hideLiveTargets(liveTargetElements) : [];
     const animation: RevealAnimation = {
       id: nextAnimationId++,
       sprites,
@@ -375,7 +375,7 @@
       const target = sprite.targetElement;
       const handoffTimer = setTimeout(() => {
         if (target) {
-          showTargets(hiddenSearchTargets.filter((hidden) => hidden.element === target));
+          showLiveTargets(liveHiddenSearchTargets.filter((claim) => claim.element === target));
         }
         removeSpritesAfterPrepaint((item) => item.id === sprite.id);
       }, sprite.removeMs ?? (sprite.delayMs + revealMs + handoffSettleMs));
@@ -390,11 +390,11 @@
 
   function attachRevealedCards(
     attachActions: LiveRevealCardAction[],
-    visibilityMode: DestinationVisibilityMode = 'local',
+    execution: RevealExecution = 'live',
   ) {
     for (const action of attachActions) {
       const sprite = revealSprite(action.serial);
-      const target = visibilityMode === 'planned'
+      const target = execution === 'planned'
         ? plannedAttachTargetForAction(action)
         : boardSlotByPokemonIdentity(action.serialTarget, action.cardIdTarget, action.playerIndex)
           ?? boardSlotForRevealTargetAnchor(action.targetAnchor);
@@ -406,7 +406,7 @@
       const sourceCenter = spriteCenter(sprite);
       const targetCenter = centerOf(targetRect);
       const delayMs = action.startMs;
-      if (visibilityMode === 'local') {
+      if (execution === 'live') {
         markAttachTarget(target, action.serial, delayMs);
       }
       updateSprites((item) => item.serial === action.serial
@@ -428,14 +428,14 @@
 
   function takeRevealedCards(
     takeActions: RevealCardAction[],
-    visibilityMode: DestinationVisibilityMode = 'local',
+    execution: RevealExecution = 'live',
   ) {
     for (const action of takeActions) {
       const sprite = revealSprite(action.serial);
       if (!sprite) {
         continue;
       }
-      const target = visibilityMode === 'planned'
+      const target = execution === 'planned'
         ? plannedHandTargetForAction(action)
         : handTargetForPlayer(action.playerIndex, action.serial, 0, 1);
       if (!target) {
@@ -444,7 +444,7 @@
       const takeSource = normalizedSpriteForTake(sprite);
       const sourceCenter = spriteCenter(takeSource);
       const delayMs = action.startMs;
-      const hiddenTakeTargets = target.element ? hideTargets([target.element], visibilityMode) : [];
+      const liveHiddenTakeTargets = execution === 'live' && target.element ? hideLiveTargets([target.element]) : [];
       updateSprites((item) => item.serial === action.serial
         ? {
             ...normalizedSpriteForTake(item),
@@ -457,7 +457,7 @@
         : item);
       const timer = setTimeout(() => {
         if (target.element) {
-          showTargets(hiddenTakeTargets);
+          showLiveTargets(liveHiddenTakeTargets);
         }
         removeSpritesAfterPrepaint((item) => item.serial === action.serial);
       }, action.removeMs ?? (delayMs + actionAnimationTiming.handMoveMs + handoffSettleMs));
@@ -517,16 +517,16 @@
       cancelAnimationFrame(frameId);
     }
     handoffFrameIds.length = 0;
-    clearHiddenTargets();
+    clearLiveHiddenTargets();
     reveals = [];
     clearAttachTargets();
   }
 
   function settleReveals() {
     const revealIds = new Set(reveals.map((reveal) => reveal.id));
-    const hiddenToRelease = [...hiddenTargets];
-    const attachCountsToRelease = Array.from(activeAttachElementCounts.entries());
-    const attachClaimsToRelease = [...activeAttachClaims];
+    const hiddenToRelease = [...liveHiddenTargets];
+    const attachCountsToRelease = Array.from(liveAttachElementCounts.entries());
+    const attachClaimsToRelease = [...liveAttachClaims];
     for (const frameId of handoffFrameIds) {
       cancelAnimationFrame(frameId);
     }
@@ -542,7 +542,7 @@
       delayMs: replayAnimationScopeExitSettleMs,
       removeIds() {
         reveals = reveals.filter((reveal) => !revealIds.has(reveal.id));
-        showTargets(hiddenToRelease);
+        showLiveTargets(hiddenToRelease);
         for (const [element, count] of attachCountsToRelease) {
           for (let index = 0; index < count; index += 1) {
             deactivateAttachElement(element);
@@ -689,7 +689,7 @@
         })
       : undefined;
     if (immediateClaim) {
-      activeAttachClaims = [...activeAttachClaims, immediateClaim];
+      liveAttachClaims = [...liveAttachClaims, immediateClaim];
     }
     const startTimer = setTimeout(() => {
       const attachedElement = attachedCardElement(target, serial);
@@ -710,35 +710,35 @@
   }
 
   function clearAttachTargets() {
-    for (const element of activeAttachElementCounts.keys()) {
+    for (const element of liveAttachElementCounts.keys()) {
       element.classList.remove('reveal-attach-handoff-energy');
     }
-    activeAttachElementCounts.clear();
-    for (const claim of activeAttachClaims) {
+    liveAttachElementCounts.clear();
+    for (const claim of liveAttachClaims) {
       releaseElementVisibilityClaim(claim);
     }
-    activeAttachClaims = [];
+    liveAttachClaims = [];
   }
 
   function activateAttachElement(element: HTMLElement) {
-    const count = activeAttachElementCounts.get(element) ?? 0;
-    activeAttachElementCounts.set(element, count + 1);
+    const count = liveAttachElementCounts.get(element) ?? 0;
+    liveAttachElementCounts.set(element, count + 1);
     element.classList.add('reveal-attach-handoff-energy');
   }
 
   function deactivateAttachElement(element: HTMLElement) {
-    const count = (activeAttachElementCounts.get(element) ?? 1) - 1;
+    const count = (liveAttachElementCounts.get(element) ?? 1) - 1;
     if (count > 0) {
-      activeAttachElementCounts.set(element, count);
+      liveAttachElementCounts.set(element, count);
       return;
     }
-    activeAttachElementCounts.delete(element);
+    liveAttachElementCounts.delete(element);
     element.classList.remove('reveal-attach-handoff-energy');
   }
 
   function releaseAttachClaim(claim: ElementVisibilityClaim) {
     releaseElementVisibilityClaim(claim);
-    activeAttachClaims = activeAttachClaims.filter((item) => item !== claim);
+    liveAttachClaims = liveAttachClaims.filter((item) => item !== claim);
   }
 
   function attachedCardElement(target: HTMLElement, serial: number): HTMLElement | null {
@@ -764,7 +764,7 @@
   function spritesForPlayer(
     playerIndex: number,
     playerActions: RevealStartAction[],
-    visibilityMode: DestinationVisibilityMode,
+    execution: RevealExecution,
   ): RevealSprite[] {
     const deckRect = deckTopElement(playerIndex)?.getBoundingClientRect();
     if (!deckRect || deckRect.width <= 0 || deckRect.height <= 0) {
@@ -776,11 +776,11 @@
     return playerActions.flatMap((action, index) => {
       const target = layout.target(index);
       const takeTarget = action.toHand
-        ? visibilityMode === 'planned'
+        ? execution === 'planned'
           ? plannedHandTargetForStartAction(action)
           : handTargetForPlayer(playerIndex, action.serial ?? Number.NaN, index, playerActions.length)
         : undefined;
-      if (action.toHand && visibilityMode === 'planned' && !takeTarget) {
+      if (action.toHand && execution === 'planned' && !takeTarget) {
         return [];
       }
       const destination = takeTarget?.center ?? target;
@@ -917,34 +917,31 @@
     };
   }
 
-  function hideTargets(targets: HTMLElement[], visibilityMode: DestinationVisibilityMode = 'local') {
-    const hidden: HiddenRevealTarget[] = [];
-    if (visibilityMode === 'planned') {
-      return hidden;
-    }
+  function hideLiveTargets(targets: HTMLElement[]) {
+    const liveHiddenClaims: LiveHiddenRevealTarget[] = [];
     for (const target of targets) {
-      hidden.push(hideElementForAnimation({
+      liveHiddenClaims.push(hideElementForAnimation({
         element: target,
         scopeKey,
         role: 'destination',
         fallbackAttribute: 'data-reveal-animation-hidden',
       }));
     }
-    hiddenTargets = [...hiddenTargets, ...hidden];
-    return hidden;
+    liveHiddenTargets = [...liveHiddenTargets, ...liveHiddenClaims];
+    return liveHiddenClaims;
   }
 
-  function showTargets(targets: HiddenRevealTarget[]) {
-    const nextHiddenTargets = new Set(hiddenTargets);
+  function showLiveTargets(targets: LiveHiddenRevealTarget[]) {
+    const nextHiddenTargets = new Set(liveHiddenTargets);
     for (const target of targets) {
       releaseElementVisibilityClaim(target);
       nextHiddenTargets.delete(target);
     }
-    hiddenTargets = [...nextHiddenTargets];
+    liveHiddenTargets = [...nextHiddenTargets];
   }
 
-  function clearHiddenTargets() {
-    showTargets([...hiddenTargets]);
+  function clearLiveHiddenTargets() {
+    showLiveTargets([...liveHiddenTargets]);
   }
 
   function motionDurationMs(durationMs: number): number {

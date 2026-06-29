@@ -70,7 +70,7 @@
     sprites: ResetSprite[];
   };
 
-  type HiddenResetSource = ElementVisibilityClaim;
+  type LiveHiddenResetSource = ElementVisibilityClaim;
 
   type ClearOptions = {
     restoreSources?: boolean;
@@ -90,7 +90,7 @@
   const handOutroSettleMs = 180;
   let nextAnimationId = 1;
   let resets = $state<ResetAnimation[]>([]);
-  let hiddenSources: HiddenResetSource[] = [];
+  let liveHiddenSources: LiveHiddenResetSource[] = [];
   const replayPlanRunner = createReplayPhasePlanRunner({
     selectMotions: handToDeckPlanMotions,
     planKey: replayAnimationSelectedMotionsPlanKey,
@@ -188,10 +188,10 @@
       id: nextAnimationId++,
       sprites,
     };
-    const animationSources = hideSources(sprites.map((sprite) => sprite.sourceElement));
+    const animationSources = hideLiveSources(sprites.map((sprite) => sprite.sourceElement));
     resets = [...resets, animation];
     const timer = setTimeout(() => {
-      showSources(animationSources);
+      showLiveSources(animationSources);
       resets = resets.filter((item) => item.id !== animation.id);
     }, Math.max(...sprites.map((sprite) => sprite.delayMs)) + cardMoveDurationMs + 120);
     timers.push(timer);
@@ -201,16 +201,16 @@
     restoreSources: shouldRestoreSources = true,
     restoreConnectedSourcesAfterMs,
   }: ClearOptions = {}) {
-    const sourcesToRestore = [...hiddenSources];
+    const sourcesToRestore = [...liveHiddenSources];
     for (const timer of timers) {
       clearTimeout(timer);
     }
     timers.length = 0;
     if (shouldRestoreSources) {
-      showSources(sourcesToRestore);
+      showLiveSources(sourcesToRestore);
     } else if (restoreConnectedSourcesAfterMs !== undefined && sourcesToRestore.length) {
       const timer = setTimeout(() => {
-        showSources(sourcesToRestore.filter((source) => source.element.isConnected));
+        showLiveSources(sourcesToRestore.filter((source) => source.element.isConnected));
         const timerIndex = sourceRestoreTimers.indexOf(timer);
         if (timerIndex >= 0) {
           sourceRestoreTimers.splice(timerIndex, 1);
@@ -218,7 +218,7 @@
       }, restoreConnectedSourcesAfterMs);
       sourceRestoreTimers.push(timer);
     }
-    hiddenSources = [];
+    liveHiddenSources = [];
     resets = [];
   }
 
@@ -379,10 +379,10 @@
     return hands;
   }
 
-  function hideSources(sources: HTMLElement[]) {
-    const hidden: HiddenResetSource[] = [];
+  function hideLiveSources(sources: HTMLElement[]) {
+    const liveHiddenClaims: LiveHiddenResetSource[] = [];
     for (const source of sources) {
-      hidden.push(hideElementForAnimation({
+      liveHiddenClaims.push(hideElementForAnimation({
         element: source,
         scopeKey,
         role: 'source',
@@ -390,17 +390,17 @@
         forceFallback: true,
       }));
     }
-    hiddenSources = [...hiddenSources, ...hidden];
-    return hidden;
+    liveHiddenSources = [...liveHiddenSources, ...liveHiddenClaims];
+    return liveHiddenClaims;
   }
 
-  function showSources(sources: HiddenResetSource[]) {
-    const nextHiddenSources = new Set(hiddenSources);
+  function showLiveSources(sources: LiveHiddenResetSource[]) {
+    const nextHiddenSources = new Set(liveHiddenSources);
     for (const source of sources) {
       releaseElementVisibilityClaim(source);
       nextHiddenSources.delete(source);
     }
-    hiddenSources = [...nextHiddenSources];
+    liveHiddenSources = [...nextHiddenSources];
   }
 
   function spriteStyle(sprite: ResetSprite): string {

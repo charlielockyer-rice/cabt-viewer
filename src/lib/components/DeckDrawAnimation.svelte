@@ -57,15 +57,15 @@
   type DrawAnimation = {
     id: number;
     sprites: DrawSprite[];
-    hiddenTargets: HiddenDrawTarget[];
+    liveHiddenTargets: LiveHiddenDrawTarget[];
   };
 
   type PlayerDrawSprites = {
     sprites: DrawSprite[];
-    hiddenTargets: HTMLElement[];
+    liveHiddenTargets: HTMLElement[];
   };
 
-  type HiddenDrawTarget = ElementVisibilityClaim;
+  type LiveHiddenDrawTarget = ElementVisibilityClaim;
 
   let {
     events = [],
@@ -146,7 +146,7 @@
     const animation: DrawAnimation = {
       id: nextAnimationId++,
       sprites,
-      hiddenTargets: [],
+      liveHiddenTargets: [],
     };
     draws = [...draws, animation];
 
@@ -220,16 +220,16 @@
       spritesForPlayer(playerIndex, playerEvents, animationEvents),
     );
     const sprites = playerDraws.flatMap((draw) => draw.sprites);
-    const targetElements = playerDraws.flatMap((draw) => draw.hiddenTargets);
+    const targetElements = playerDraws.flatMap((draw) => draw.liveHiddenTargets);
     if (!sprites.length) {
       return;
     }
-    const hiddenTargets = hideTargets(targetElements);
+    const liveHiddenTargets = hideLiveTargets(targetElements);
 
     const animation: DrawAnimation = {
       id: nextAnimationId++,
       sprites,
-      hiddenTargets,
+      liveHiddenTargets,
     };
     draws = [...draws, animation];
     for (const sprite of sprites) {
@@ -237,12 +237,12 @@
         continue;
       }
       const timer = setTimeout(() => {
-        showTargets(hiddenTargets.filter((target) => target.element === sprite.targetElement));
+        showLiveTargets(liveHiddenTargets.filter((target) => target.element === sprite.targetElement));
       }, sprite.delayMs + cardHandoffMs);
       timers.push(timer);
     }
     const timer = setTimeout(() => {
-      showTargets(animation.hiddenTargets);
+      showLiveTargets(animation.liveHiddenTargets);
       draws = draws.filter((item) => item.id !== animation.id);
     }, Math.max(...sprites.map((sprite) => sprite.delayMs)) + cardMoveDurationMs + 120);
     timers.push(timer);
@@ -254,7 +254,7 @@
     }
     timers.length = 0;
     for (const draw of draws) {
-      showTargets(draw.hiddenTargets);
+      showLiveTargets(draw.liveHiddenTargets);
     }
     draws = [];
   }
@@ -271,7 +271,7 @@
   function removeDraws(ids: ReadonlySet<number>) {
     const removed = draws.filter((item) => ids.has(item.id));
     for (const animation of removed) {
-      showTargets(animation.hiddenTargets);
+      showLiveTargets(animation.liveHiddenTargets);
     }
     draws = draws.filter((item) => !ids.has(item.id));
   }
@@ -280,13 +280,13 @@
     const deckElement = deckTopElement(playerIndex);
     const handElement = handAnchor(playerIndex);
     if (!deckElement || !handElement) {
-      return { sprites: [], hiddenTargets: [] };
+      return { sprites: [], liveHiddenTargets: [] };
     }
 
     const deckRect = deckElement.getBoundingClientRect();
     const handRect = handElement.getBoundingClientRect();
     if (deckRect.width <= 0 || deckRect.height <= 0 || handRect.width <= 0 || handRect.height <= 0) {
-      return { sprites: [], hiddenTargets: [] };
+      return { sprites: [], liveHiddenTargets: [] };
     }
 
     const handSlots = handCardSlots(handElement, playerIndex);
@@ -296,7 +296,7 @@
     const spriteWidth = deckRect.width;
     const spriteHeight = spriteWidth * cardHeightToWidthRatio;
     const resetHandBeforeDraw = hasHandToDeckReset(playerIndex, animationEvents);
-    const hiddenTargets: HTMLElement[] = resetHandBeforeDraw ? [...handSlots] : [];
+    const liveHiddenTargets: HTMLElement[] = resetHandBeforeDraw ? [...handSlots] : [];
 
     const sprites = playerEvents.map((event, index) => {
       const params = event.params as Record<string, unknown> | undefined;
@@ -305,7 +305,7 @@
         ? handSlotForSerial(handSlots, serial) ?? handSlots[index]
         : handSlots[firstTargetIndex + index];
       if (targetElement && !resetHandBeforeDraw) {
-        hiddenTargets.push(targetElement);
+        liveHiddenTargets.push(targetElement);
       }
       const targetRect = targetElement?.getBoundingClientRect() ?? fallbackHandTarget(handRect, index, playerEvents.length);
       const targetCenter = centerOf(targetRect);
@@ -330,7 +330,7 @@
         targetElement,
       };
     });
-    return { sprites, hiddenTargets };
+    return { sprites, liveHiddenTargets };
   }
 
   function hasHandToDeckReset(playerIndex: number, animationEvents: ActionTimelineEvent[]): boolean {
@@ -343,20 +343,20 @@
     });
   }
 
-  function hideTargets(targets: HTMLElement[]) {
-    const hiddenTargets: HiddenDrawTarget[] = [];
+  function hideLiveTargets(targets: HTMLElement[]) {
+    const liveHiddenClaims: LiveHiddenDrawTarget[] = [];
     for (const target of targets) {
-      hiddenTargets.push(hideElementForAnimation({
+      liveHiddenClaims.push(hideElementForAnimation({
         element: target,
         scopeKey,
         role: 'destination',
         fallbackAttribute: 'data-draw-animation-hidden',
       }));
     }
-    return hiddenTargets;
+    return liveHiddenClaims;
   }
 
-  function showTargets(targets: HiddenDrawTarget[]) {
+  function showLiveTargets(targets: LiveHiddenDrawTarget[]) {
     for (const target of targets) {
       releaseElementVisibilityClaim(target);
     }
