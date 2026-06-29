@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
-  import { resolveAnimationAnchorElements } from '../animations/animationAnchors';
+  import { resolveExactAnimationAnchorElement } from '../animations/animationAnchors';
   import type { PulseAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import type { ActionTimelineEvent } from '../game/types';
 
@@ -158,8 +158,7 @@
   }
 
   function slotElementForMotion(motion: PulseAnimationMotion): HTMLElement | null {
-    const element = resolveAnimationAnchorElements(motion.anchor, { identity: motion.identity }).at(0)
-      ?? resolveAnimationAnchorElements(motion.anchor).at(0);
+    const element = resolveExactAnimationAnchorElement(motion.anchor, { identity: motion.identity });
     return element instanceof HTMLElement ? element : null;
   }
 

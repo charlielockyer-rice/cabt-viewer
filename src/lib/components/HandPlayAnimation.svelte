@@ -5,7 +5,7 @@
     releaseElementVisibilityClaim,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
-  import { resolveAnimationAnchorElements } from '../animations/animationAnchors';
+  import { resolveExactAnimationAnchorElement } from '../animations/animationAnchors';
   import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
@@ -335,16 +335,15 @@
   }
 
   function targetElementForMotion(motion: CardMoveAnimationMotion): HTMLElement | null {
-    const exact = resolveAnimationAnchorElements(motion.targetAnchor, { identity: motion.identity }).at(0)
-      ?? resolveAnimationAnchorElements(motion.targetAnchor).at(0);
+    const exact = resolveExactAnimationAnchorElement(motion.targetAnchor, { identity: motion.identity });
     if (exact) {
       return targetVisualElementForAnchor(exact, motion.targetAnchor.kind);
     }
     if (motion.targetAnchor.kind === 'discard-card') {
-      const fallback = resolveAnimationAnchorElements({
+      const fallback = resolveExactAnimationAnchorElement({
         kind: 'discard-pile',
         playerIndex: motion.targetAnchor.playerIndex,
-      }).at(0);
+      });
       return fallback ? targetVisualElementForAnchor(fallback, 'discard-pile') : null;
     }
     return null;

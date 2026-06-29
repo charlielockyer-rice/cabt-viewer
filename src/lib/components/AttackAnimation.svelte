@@ -6,7 +6,7 @@
     releaseElementVisibilityClaim,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
-  import { resolveAnimationAnchorElements } from '../animations/animationAnchors';
+  import { resolveExactAnimationAnchorElement } from '../animations/animationAnchors';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -446,8 +446,7 @@
   }
 
   function slotElementForAnchor(anchor: PulseAnimationMotion['anchor'], identity?: PulseAnimationMotion['identity']): HTMLElement | null {
-    const element = resolveAnimationAnchorElements(anchor, { identity }).at(0)
-      ?? resolveAnimationAnchorElements(anchor).at(0);
+    const element = resolveExactAnimationAnchorElement(anchor, { identity });
     return element instanceof HTMLElement ? element : null;
   }
 
