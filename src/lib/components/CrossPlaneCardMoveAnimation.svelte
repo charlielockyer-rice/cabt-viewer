@@ -2,10 +2,10 @@
   import { onDestroy, tick } from 'svelte';
   import { afterTwoAnimationFrames } from '../animations/animationFrames';
   import {
-    strictVisualElementForMotionAnchor,
-    centerOf,
-    isConcealedHandTarget,
-  } from '../animations/viewportCardMotion';
+    crossPlaneSpriteForMotion,
+    crossPlaneSpriteId,
+    type CrossPlaneSprite,
+  } from '../animations/crossPlaneCardMoveSprites';
   import { replayAnimationScopeExitSettleMs, replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
   import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
@@ -14,29 +14,12 @@
     type CardMoveAnimationMotion,
     type ReplayAnimationPhasePlan,
   } from '../animations/replayAnimationPlan';
-  import type { CardView } from '../game/types';
   import CardTile from './CardTile.svelte';
 
   type Props = {
     animationPlan?: ReplayAnimationPhasePlan;
     scopeKey?: string | number;
     replayMode?: boolean;
-  };
-
-  type CrossPlaneSprite = {
-    id: string;
-    card: CardView;
-    left: number;
-    top: number;
-    width: number;
-    height: number;
-    moveX: number;
-    moveY: number;
-    targetScale: number;
-    delayMs: number;
-    durationMs: number;
-    faceDown: boolean;
-    opponentSide: boolean;
   };
 
   let {
@@ -73,7 +56,7 @@
 
   async function startMotions(motions: CardMoveAnimationMotion[]) {
     const nextGeneration = ++generation;
-    const sprites = motions.flatMap((motion) => spriteForMotion(motion, nextGeneration));
+    const sprites = motions.flatMap((motion) => crossPlaneSpriteForMotion(motion, nextGeneration));
     if (!sprites.length) {
       return;
     }
@@ -84,7 +67,7 @@
     }
 
     for (const motion of motions) {
-      const sprite = activeSprites.find((item) => item.id === spriteId(motion, nextGeneration));
+      const sprite = activeSprites.find((item) => item.id === crossPlaneSpriteId(motion, nextGeneration));
       if (!sprite) {
         continue;
       }
@@ -100,57 +83,6 @@
       }, removeMs);
       timers.push(finishTimer);
     }
-  }
-
-  function spriteForMotion(motion: CardMoveAnimationMotion, currentGeneration: number): CrossPlaneSprite[] {
-    if (motion.spriteVisual.kind !== 'card' || !motion.spriteVisual.card) {
-      return [];
-    }
-    const sourceElement = sourceElementForMotion(motion);
-    const targetElement = targetElementForMotion(motion);
-    const sourceRect = sourceElement ? sourceRectForElement(sourceElement) : undefined;
-    const targetRect = targetElement?.getBoundingClientRect();
-    if (!sourceRect || !targetRect || sourceRect.width <= 0 || sourceRect.height <= 0 || targetRect.width <= 0 || targetRect.height <= 0) {
-      return [];
-    }
-    const sourceCenter = centerOf(sourceRect);
-    const targetCenter = centerOf(targetRect);
-    return [{
-      id: spriteId(motion, currentGeneration),
-      card: motion.spriteVisual.card,
-      left: sourceRect.left,
-      top: sourceRect.top,
-      width: sourceRect.width,
-      height: sourceRect.height,
-      moveX: targetCenter.x - sourceCenter.x,
-      moveY: targetCenter.y - sourceCenter.y,
-      targetScale: targetRect.width / sourceRect.width,
-      delayMs: motion.startMs,
-      durationMs: motion.durationMs,
-      faceDown: isConcealedHandTarget(targetElement),
-      opponentSide: isOpponentSide(sourceElement) || isOpponentSide(targetElement),
-    }];
-  }
-
-  function spriteId(motion: CardMoveAnimationMotion, currentGeneration: number): string {
-    return `${currentGeneration}:${motion.id}`;
-  }
-
-  function sourceRectForElement(source: HTMLElement): DOMRect {
-    const ownerCard = source.closest('.board-slot')?.querySelector('.card-tile');
-    return (ownerCard instanceof HTMLElement ? ownerCard : source).getBoundingClientRect();
-  }
-
-  function sourceElementForMotion(motion: CardMoveAnimationMotion): HTMLElement | undefined {
-    return strictVisualElementForMotionAnchor(motion.sourceAnchor, motion.identity);
-  }
-
-  function targetElementForMotion(motion: CardMoveAnimationMotion): HTMLElement | undefined {
-    return strictVisualElementForMotionAnchor(motion.targetAnchor, motion.identity);
-  }
-
-  function isOpponentSide(element: HTMLElement): boolean {
-    return !!element.closest('.player-panel.top, .top-active-slot, .bench-row.opponent');
   }
 
   function removeSpriteAfterPrepaint(spriteIdToRemove: string, currentGeneration: number) {
