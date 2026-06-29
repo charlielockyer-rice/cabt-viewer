@@ -14,6 +14,7 @@
   import {
     cardHeightToWidthRatio,
     centerOf,
+    deckTopElement,
     fallbackHandTarget,
     handAnchor,
     handCardSlots,
@@ -69,6 +70,30 @@
     disableLocalDestinationClaims?: boolean;
   };
 
+  type RevealStepAction = {
+    motion: RevealSessionAnimationMotion;
+    step: RevealSessionStep;
+  };
+
+  type RevealStartAction = {
+    id: string;
+    playerIndex: number;
+    card: CardView;
+    serial?: number;
+    startMs: number;
+    toHand: boolean;
+  };
+
+  type RevealCardAction = {
+    id: string;
+    playerIndex: number;
+    serial: number;
+    startMs: number;
+    targetAnchor?: AnimationAnchorRef;
+    serialTarget?: number;
+    cardIdTarget?: number;
+  };
+
   type RevealCardAnchor = Extract<AnimationAnchorRef, { kind: 'reveal-card' }>;
   type HiddenRevealTarget = ElementVisibilityClaim;
   let {
@@ -114,25 +139,27 @@
       }
       if (planChanged || scopeChanged) {
         clearReveals();
-        const planEvents = revealSessionPlanEvents(currentPlanMotions);
-        const revealEvents = planEvents.filter(isDeckRevealEvent);
-        const attachEvents = planEvents.filter(isPlannedRevealAttachEvent);
-        const takeEvents = planEvents.filter(isRevealTakeEvent);
-        const returnEvents = planEvents.filter(isRevealReturnEvent);
+        const planSteps = revealSessionPlanSteps(currentPlanMotions);
+        const revealActions = revealStartActionsForSteps(planSteps);
+        const attachActions = revealCardActionsForSteps(planSteps, 'attach');
+        const takeActions = revealCardActionsForSteps(planSteps, 'take').filter((action) =>
+          !revealActions.some((revealAction) => revealAction.id === action.id),
+        );
+        const returnActions = revealCardActionsForSteps(planSteps, 'return');
         const plannedHideOptions: DestinationHideOptions = { disableLocalDestinationClaims: true };
-        if (revealEvents.length) {
-          startReveal(revealEvents, planEvents, plannedHideOptions);
+        if (revealActions.length) {
+          startReveal(revealActions, plannedHideOptions);
         } else {
           seedHeldRevealSprites(currentPlanMotions);
         }
-        if (attachEvents.length) {
-          attachRevealedCards(attachEvents, planEvents, plannedHideOptions);
+        if (attachActions.length) {
+          attachRevealedCards(attachActions, plannedHideOptions);
         }
-        if (takeEvents.length) {
-          takeRevealedCards(takeEvents, planEvents, plannedHideOptions);
+        if (takeActions.length) {
+          takeRevealedCards(takeActions, plannedHideOptions);
         }
-        if (returnEvents.length) {
-          returnRevealedCards(returnEvents, planEvents);
+        if (returnActions.length) {
+          returnRevealedCards(returnActions);
         }
       }
       return;
@@ -157,26 +184,34 @@
     }
 
     const animationEvents = actionAnimationBatchEvents(currentEvents, seenEventIds);
-    const revealEvents = animationEvents.filter((event) => isDeckRevealEvent(event) && shouldAnimateEvent(event));
-    const attachEvents = animationEvents.filter((event) => isRevealAttachEvent(event) && shouldAnimateEvent(event));
-    const takeEvents = animationEvents.filter((event) => isRevealTakeEvent(event) && shouldAnimateEvent(event));
-    const returnEvents = animationEvents.filter((event) => isRevealReturnEvent(event) && shouldAnimateEvent(event));
+    const revealActions = animationEvents
+      .filter((event) => isDeckRevealEvent(event) && shouldAnimateEvent(event))
+      .flatMap((event) => revealStartActionForEvent(event, animationEvents) ?? []);
+    const attachActions = animationEvents
+      .filter((event) => isRevealAttachEvent(event) && shouldAnimateEvent(event))
+      .flatMap((event) => revealCardActionForEvent(event, animationEvents) ?? []);
+    const takeActions = animationEvents
+      .filter((event) => isRevealTakeEvent(event) && shouldAnimateEvent(event))
+      .flatMap((event) => revealCardActionForEvent(event, animationEvents) ?? []);
+    const returnActions = animationEvents
+      .filter((event) => isRevealReturnEvent(event) && shouldAnimateEvent(event))
+      .flatMap((event) => revealCardActionForEvent(event, animationEvents) ?? []);
 
     for (const event of currentEvents) {
       seenEventIds.add(event.id);
     }
 
-    if (revealEvents.length) {
-      startReveal(revealEvents, animationEvents);
+    if (revealActions.length) {
+      startReveal(revealActions);
     }
-    if (attachEvents.length) {
-      attachRevealedCards(attachEvents, animationEvents);
+    if (attachActions.length) {
+      attachRevealedCards(attachActions);
     }
-    if (takeEvents.length) {
-      takeRevealedCards(takeEvents, animationEvents);
+    if (takeActions.length) {
+      takeRevealedCards(takeActions);
     }
-    if (returnEvents.length) {
-      returnRevealedCards(returnEvents, animationEvents);
+    if (returnActions.length) {
+      returnRevealedCards(returnActions);
     }
   });
 
@@ -193,73 +228,54 @@
       .join('|');
   }
 
-  function revealSessionPlanEvents(motions: RevealSessionAnimationMotion[]): ActionTimelineEvent[] {
-    let nextPlanEventId = -1;
+  function revealSessionPlanSteps(motions: RevealSessionAnimationMotion[]): RevealStepAction[] {
     return motions.flatMap((motion) =>
-      motion.steps.flatMap((step) => {
-        const event = revealSessionStepEvent(motion, step, nextPlanEventId);
-        nextPlanEventId -= 1;
-        return event ? [event] : [];
-      }),
+      motion.steps.map((step) => ({ motion, step })),
     );
   }
 
-  function revealSessionStepEvent(
-    motion: RevealSessionAnimationMotion,
-    step: RevealSessionStep,
-    id: number,
-  ): ActionTimelineEvent | undefined {
-    const card = step.spriteVisual?.kind === 'card' ? step.spriteVisual.card : undefined;
-    const cardId = step.identity?.cardId ?? card?.id;
-    const serial = step.identity?.serial ?? card?.serial;
-    const params = {
-      cardId,
-      serial,
-      cardName: step.identity?.name ?? card?.name,
-      planStartMs: step.startMs,
-    };
+  function revealStartActionsForSteps(stepActions: RevealStepAction[]): RevealStartAction[] {
+    return stepActions.flatMap(({ motion, step }) => {
+      if (step.kind !== 'reveal' && !(step.kind === 'take' && step.sourceAnchor?.kind === 'deck-top')) {
+        return [];
+      }
+      const anchor = revealCardAnchorsForStep(step).at(0);
+      const card = cardViewForRevealStep(motion, step, anchor);
+      if (!card) {
+        return [];
+      }
+      return [{
+        id: step.id,
+        playerIndex: motion.playerIndex,
+        card,
+        serial: step.identity?.serial ?? card.serial,
+        startMs: motion.startMs + step.startMs,
+        toHand: step.kind === 'take',
+      }];
+    });
+  }
 
-    if (step.kind === 'reveal') {
-      return {
-        id,
+  function revealCardActionsForSteps(
+    stepActions: RevealStepAction[],
+    kind: RevealSessionStep['kind'],
+  ): RevealCardAction[] {
+    return stepActions.flatMap(({ motion, step }) => {
+      if (step.kind !== kind) {
+        return [];
+      }
+      const serial = step.identity?.serial
+        ?? (step.spriteVisual?.kind === 'card' ? step.spriteVisual.card?.serial : undefined);
+      if (serial === undefined || !Number.isFinite(serial)) {
+        return [];
+      }
+      return [{
+        id: step.id,
         playerIndex: motion.playerIndex,
-        kind: 'MoveCard',
-        message: 'Reveal card',
-        params: { ...params, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.LOOKING },
-      };
-    }
-    if (step.kind === 'take') {
-      return {
-        id,
-        playerIndex: motion.playerIndex,
-        kind: 'MoveCard',
-        message: 'Take revealed card',
-        params: {
-          ...params,
-          fromArea: step.sourceAnchor?.kind === 'deck-top' ? CabtAreaType.DECK : CabtAreaType.LOOKING,
-          toArea: CabtAreaType.HAND,
-        },
-      };
-    }
-    if (step.kind === 'return') {
-      return {
-        id,
-        playerIndex: motion.playerIndex,
-        kind: 'MoveCard',
-        message: 'Return revealed card',
-        params: { ...params, fromArea: CabtAreaType.LOOKING, toArea: CabtAreaType.DECK },
-      };
-    }
-    if (step.kind === 'attach') {
-      return {
-        id,
-        playerIndex: motion.playerIndex,
-        kind: 'Attach',
-        message: 'Attach revealed card',
-        params: { ...params, targetAnchor: step.targetAnchor },
-      };
-    }
-    return undefined;
+        serial,
+        startMs: motion.startMs + step.startMs,
+        targetAnchor: step.targetAnchor,
+      }];
+    });
   }
 
   function seedHeldRevealSprites(motions: RevealSessionAnimationMotion[]) {
@@ -364,7 +380,7 @@
   function cardViewForRevealStep(
     motion: RevealSessionAnimationMotion,
     step: RevealSessionStep,
-    anchor: RevealCardAnchor,
+    anchor?: RevealCardAnchor,
   ): CardView | undefined {
     const spriteCard = step.spriteVisual?.kind === 'card' ? step.spriteVisual.card : undefined;
     const cardId = step.identity?.cardId ?? spriteCard?.id;
@@ -373,7 +389,7 @@
     }
     return {
       ...cabtCardToView(Number(cardId)),
-      serial: step.identity?.serial ?? spriteCard?.serial ?? anchor.serial,
+      serial: step.identity?.serial ?? spriteCard?.serial ?? anchor?.serial,
       playerIndex: motion.playerIndex,
     };
   }
@@ -401,11 +417,6 @@
       && reveals.some((reveal) => reveal.sprites.some((sprite) => sprite.serial === serial));
   }
 
-  function isPlannedRevealAttachEvent(event: ActionTimelineEvent): boolean {
-    const serial = Number((event.params as Record<string, unknown> | undefined)?.serial);
-    return event.kind === 'Attach' && Number.isFinite(serial);
-  }
-
   function isRevealReturnEvent(event: ActionTimelineEvent): boolean {
     const params = event.params as Record<string, unknown> | undefined;
     return event.kind === 'MoveCard'
@@ -422,23 +433,65 @@
       && Number.isFinite(Number(params?.serial));
   }
 
-  function startReveal(
-    revealEvents: ActionTimelineEvent[],
+  function revealStartActionForEvent(
+    event: ActionTimelineEvent,
     animationEvents: ActionTimelineEvent[],
+  ): RevealStartAction | undefined {
+    const params = event.params as Record<string, unknown> | undefined;
+    const cardId = Number(params?.cardId);
+    if (event.playerIndex === undefined || !Number.isFinite(cardId)) {
+      return undefined;
+    }
+    const serial = Number(params?.serial);
+    return {
+      id: String(event.id),
+      playerIndex: event.playerIndex,
+      card: {
+        ...cabtCardToView(cardId),
+        serial: Number.isFinite(serial) ? serial : undefined,
+        playerIndex: event.playerIndex,
+      },
+      serial: Number.isFinite(serial) ? serial : undefined,
+      startMs: actionAnimationStartMs(animationEvents, event),
+      toHand: Number(params?.toArea) === CabtAreaType.HAND,
+    };
+  }
+
+  function revealCardActionForEvent(
+    event: ActionTimelineEvent,
+    animationEvents: ActionTimelineEvent[],
+  ): RevealCardAction | undefined {
+    const params = event.params as Record<string, unknown> | undefined;
+    const serial = Number(params?.serial);
+    if (event.playerIndex === undefined || !Number.isFinite(serial)) {
+      return undefined;
+    }
+    const serialTarget = Number(params?.serialTarget);
+    const cardIdTarget = Number(params?.cardIdTarget);
+    return {
+      id: String(event.id),
+      playerIndex: event.playerIndex,
+      serial,
+      startMs: actionAnimationStartMs(animationEvents, event),
+      targetAnchor: params?.targetAnchor as AnimationAnchorRef | undefined,
+      serialTarget: Number.isFinite(serialTarget) ? serialTarget : undefined,
+      cardIdTarget: Number.isFinite(cardIdTarget) ? cardIdTarget : undefined,
+    };
+  }
+
+  function startReveal(
+    revealActions: RevealStartAction[],
     hideOptions: DestinationHideOptions = {},
   ) {
-    const eventsByPlayer = new Map<number, ActionTimelineEvent[]>();
-    for (const event of revealEvents) {
-      if (event.playerIndex === undefined) {
-        continue;
-      }
-      const playerEvents = eventsByPlayer.get(event.playerIndex) ?? [];
-      playerEvents.push(event);
-      eventsByPlayer.set(event.playerIndex, playerEvents);
+    const actionsByPlayer = new Map<number, RevealStartAction[]>();
+    for (const action of revealActions) {
+      const playerActions = actionsByPlayer.get(action.playerIndex) ?? [];
+      playerActions.push(action);
+      actionsByPlayer.set(action.playerIndex, playerActions);
     }
 
-    const sprites = [...eventsByPlayer.entries()].flatMap(([playerIndex, playerEvents]) =>
-      spritesForPlayer(playerIndex, playerEvents, animationEvents),
+    const sprites = [...actionsByPlayer.entries()].flatMap(([playerIndex, playerActions]) =>
+      spritesForPlayer(playerIndex, playerActions),
     );
     if (!sprites.length) {
       return;
@@ -477,16 +530,13 @@
   }
 
   function attachRevealedCards(
-    attachEvents: ActionTimelineEvent[],
-    animationEvents: ActionTimelineEvent[],
+    attachActions: RevealCardAction[],
     hideOptions: DestinationHideOptions = {},
   ) {
-    for (const event of attachEvents) {
-      const params = event.params as Record<string, unknown> | undefined;
-      const serial = Number(params?.serial);
-      const sprite = revealSprite(serial);
-      const target = boardSlotByPokemonIdentity(Number(params?.serialTarget), Number(params?.cardIdTarget), event.playerIndex)
-        ?? boardSlotForRevealTargetAnchor(params?.targetAnchor);
+    for (const action of attachActions) {
+      const sprite = revealSprite(action.serial);
+      const target = boardSlotByPokemonIdentity(action.serialTarget, action.cardIdTarget, action.playerIndex)
+        ?? boardSlotForRevealTargetAnchor(action.targetAnchor);
       const targetRect = visualTargetForAnimation(target)?.getBoundingClientRect();
       if (!sprite || !targetRect || targetRect.width <= 0 || targetRect.height <= 0) {
         continue;
@@ -494,9 +544,9 @@
 
       const sourceCenter = spriteCenter(sprite);
       const targetCenter = centerOf(targetRect);
-      const delayMs = animationStartMs(animationEvents, event);
-      markAttachTarget(target, serial, delayMs, hideOptions);
-      updateSprites((item) => item.serial === serial
+      const delayMs = action.startMs;
+      markAttachTarget(target, action.serial, delayMs, hideOptions);
+      updateSprites((item) => item.serial === action.serial
         ? {
             ...item,
             mode: 'attaching',
@@ -507,33 +557,30 @@
           }
         : item);
       const timer = setTimeout(() => {
-        removeSprites((item) => item.serial === serial);
+        removeSprites((item) => item.serial === action.serial);
       }, delayMs + actionAnimationTiming.handMoveMs + 80);
       timers.push(timer);
     }
   }
 
   function takeRevealedCards(
-    takeEvents: ActionTimelineEvent[],
-    animationEvents: ActionTimelineEvent[],
+    takeActions: RevealCardAction[],
     hideOptions: DestinationHideOptions = {},
   ) {
-    for (const event of takeEvents) {
-      const params = event.params as Record<string, unknown> | undefined;
-      const serial = Number(params?.serial);
-      const sprite = revealSprite(serial);
-      if (event.playerIndex === undefined || !sprite) {
+    for (const action of takeActions) {
+      const sprite = revealSprite(action.serial);
+      if (!sprite) {
         continue;
       }
-      const target = handTargetForPlayer(event.playerIndex, serial, 0, 1);
+      const target = handTargetForPlayer(action.playerIndex, action.serial, 0, 1);
       if (!target) {
         continue;
       }
       const takeSource = normalizedSpriteForTake(sprite);
       const sourceCenter = spriteCenter(takeSource);
-      const delayMs = animationStartMs(animationEvents, event);
+      const delayMs = action.startMs;
       const hiddenTakeTargets = target.element ? hideTargets([target.element], hideOptions) : [];
-      updateSprites((item) => item.serial === serial
+      updateSprites((item) => item.serial === action.serial
         ? {
             ...normalizedSpriteForTake(item),
             mode: 'taking',
@@ -547,45 +594,38 @@
         if (target.element) {
           showTargets(hiddenTakeTargets);
         }
-        removeSpritesAfterPrepaint((item) => item.serial === serial);
+        removeSpritesAfterPrepaint((item) => item.serial === action.serial);
       }, delayMs + actionAnimationTiming.handMoveMs + handoffSettleMs);
       timers.push(timer);
     }
   }
 
-  function returnRevealedCards(returnEvents: ActionTimelineEvent[], animationEvents: ActionTimelineEvent[]) {
-    const eventsByPlayer = new Map<number, ActionTimelineEvent[]>();
-    for (const event of returnEvents) {
-      if (event.playerIndex === undefined) {
-        continue;
-      }
-      const playerEvents = eventsByPlayer.get(event.playerIndex) ?? [];
-      playerEvents.push(event);
-      eventsByPlayer.set(event.playerIndex, playerEvents);
+  function returnRevealedCards(returnActions: RevealCardAction[]) {
+    const actionsByPlayer = new Map<number, RevealCardAction[]>();
+    for (const action of returnActions) {
+      const playerActions = actionsByPlayer.get(action.playerIndex) ?? [];
+      playerActions.push(action);
+      actionsByPlayer.set(action.playerIndex, playerActions);
     }
 
-    for (const [playerIndex, playerEvents] of eventsByPlayer.entries()) {
+    for (const [playerIndex, playerActions] of actionsByPlayer.entries()) {
       const deckRect = deckTopElement(playerIndex)?.getBoundingClientRect();
       if (!deckRect || deckRect.width <= 0 || deckRect.height <= 0) {
         continue;
       }
       const returningSerials = new Set(
-        playerEvents
-          .map((event) => eventSerial(event))
-          .filter((serial): serial is number => Number.isFinite(serial)),
+        playerActions.map((action) => action.serial),
       );
       moveSelectedSpritesToReveal(playerIndex, returningSerials);
       const deckCenter = centerOf(deckRect);
-      for (const event of playerEvents) {
-        const params = event.params as Record<string, unknown> | undefined;
-        const serial = Number(params?.serial);
-        const sprite = revealSprite(serial);
+      for (const action of playerActions) {
+        const sprite = revealSprite(action.serial);
         if (!sprite) {
           continue;
         }
         const sourceCenter = spriteCenter(sprite);
-        const delayMs = animationStartMs(animationEvents, event);
-        updateSprites((item) => item.serial === serial
+        const delayMs = action.startMs;
+        updateSprites((item) => item.serial === action.serial
           ? {
               ...item,
               mode: 'returning',
@@ -596,7 +636,7 @@
             }
           : item);
         const timer = setTimeout(() => {
-          removeSprites((item) => item.serial === serial);
+          removeSprites((item) => item.serial === action.serial);
         }, delayMs + actionAnimationTiming.deckRevealReturnMs + 80);
         timers.push(timer);
       }
@@ -774,39 +814,30 @@
 
   function spritesForPlayer(
     playerIndex: number,
-    playerEvents: ActionTimelineEvent[],
-    animationEvents: ActionTimelineEvent[],
+    playerActions: RevealStartAction[],
   ): RevealSprite[] {
     const deckRect = deckTopElement(playerIndex)?.getBoundingClientRect();
     if (!deckRect || deckRect.width <= 0 || deckRect.height <= 0) {
       return [];
     }
 
-    const layout = revealLayout(playerEvents.length);
+    const layout = revealLayout(playerActions.length);
     const deckCenter = centerOf(deckRect);
-    return playerEvents.map((event, index) => {
-      const params = event.params as Record<string, unknown> | undefined;
-      const cardId = Number(params?.cardId);
-      const serial = Number(params?.serial);
-      const toArea = Number(params?.toArea);
+    return playerActions.map((action, index) => {
       const target = layout.target(index);
-      const takeTarget = toArea === CabtAreaType.HAND
-        ? handTargetForPlayer(playerIndex, serial, index, playerEvents.length)
+      const takeTarget = action.toHand
+        ? handTargetForPlayer(playerIndex, action.serial ?? Number.NaN, index, playerActions.length)
         : undefined;
       const destination = takeTarget?.center ?? target;
-      const mode: RevealMode = toArea === CabtAreaType.HAND ? 'searching' : 'revealing';
+      const mode: RevealMode = action.toHand ? 'searching' : 'revealing';
       return {
-        id: `${event.id}-${Number.isFinite(serial) ? serial : index}`,
-        card: {
-          ...cabtCardToView(cardId),
-          serial: Number.isFinite(serial) ? serial : undefined,
-          playerIndex,
-        },
-        serial: Number.isFinite(serial) ? serial : undefined,
+        id: `${action.id}-${action.serial ?? index}`,
+        card: action.card,
+        serial: action.serial,
         targetElement: takeTarget?.element,
         order: index + 1,
         mode,
-        delayMs: animationStartMs(animationEvents, event),
+        delayMs: action.startMs,
         left: deckCenter.x - layout.cardWidth / 2,
         top: deckCenter.y - layout.cardHeight / 2,
         width: layout.cardWidth,
@@ -905,18 +936,6 @@
     return reveals.flatMap((reveal) => reveal.sprites).find((sprite) => sprite.serial === serial);
   }
 
-  function eventSerial(event: ActionTimelineEvent): number | undefined {
-    const params = event.params as Record<string, unknown> | undefined;
-    const serial = Number(params?.serial);
-    return Number.isFinite(serial) ? serial : undefined;
-  }
-
-  function deckTopElement(playerIndex: number): HTMLElement | null {
-    const anchor = document.querySelector(`[data-card-anchor="player:${playerIndex}:deck"]`);
-    const pile = anchor?.closest('.deck-pile') as HTMLElement | null;
-    return pile?.querySelector('.deck-card-face') ?? pile;
-  }
-
   function handTargetForPlayer(
     playerIndex: number,
     serial: number,
@@ -978,11 +997,6 @@
 
   function motionDurationMs(durationMs: number): number {
     return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 1 : durationMs;
-  }
-
-  function animationStartMs(animationEvents: ActionTimelineEvent[], event: ActionTimelineEvent): number {
-    const planStartMs = Number((event.params as Record<string, unknown> | undefined)?.planStartMs);
-    return Number.isFinite(planStartMs) ? planStartMs : actionAnimationStartMs(animationEvents, event);
   }
 
   function spriteCenter(sprite: RevealSprite): { x: number; y: number } {
