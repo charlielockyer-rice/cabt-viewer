@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onDestroy, onMount, tick } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
+  import { createPrefersReducedMotion } from '../animations/prefersReducedMotion.svelte';
   import { replayAnimationVisibility, type AnimationVisibilityToken } from '../animations/animationVisibility';
   import { releaseAnimationVisibilityScope } from '../animations/animationVisibilityClaims';
   import { replayAnimationClaimTiming, replayAnimationScopeExitSettleMs } from '../animations/replayAnimationHandoff';
@@ -29,20 +30,8 @@
   }[] = [];
   const staleScopeReleaseTimers: ReturnType<typeof setTimeout>[] = [];
   let refreshGeneration = 0;
-  let reduceMotion = $state(false);
-
-  onMount(() => {
-    if (typeof window.matchMedia !== 'function') {
-      return;
-    }
-    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const updateMotionPreference = () => {
-      reduceMotion = media.matches;
-    };
-    updateMotionPreference();
-    media.addEventListener('change', updateMotionPreference);
-    return () => media.removeEventListener('change', updateMotionPreference);
-  });
+  const prefersReducedMotion = createPrefersReducedMotion();
+  let reduceMotion = $derived(prefersReducedMotion.current);
 
   onDestroy(() => {
     releasePlanTokens();

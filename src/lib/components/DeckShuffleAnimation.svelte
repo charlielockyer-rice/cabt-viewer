@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { actionAnimationBatchEvents, actionAnimationStartMs } from '../cabt/actionAnimationSchedule';
   import { cardBackCssVar } from '../game/cardAssets';
+  import { createPrefersReducedMotion } from '../animations/prefersReducedMotion.svelte';
   import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
   import { replayAnimationPlanHasPhase, type ReplayAnimationPhasePlan, type ShuffleAnimationMotion } from '../animations/replayAnimationPlan';
   import type { ActionTimelineEvent } from '../game/types';
@@ -46,21 +47,9 @@
   let shuffles = $state<ShuffleAnimation[]>([]);
   const runState = new ReplayAnimationRunState();
   let nextAnimationId = 1;
-  let reduceMotion = $state(false);
+  const prefersReducedMotion = createPrefersReducedMotion();
+  let reduceMotion = $derived(prefersReducedMotion.current);
   const timers: ReturnType<typeof setTimeout>[] = [];
-
-  onMount(() => {
-    if (typeof window.matchMedia !== 'function') {
-      return;
-    }
-    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const updateMotionPreference = () => {
-      reduceMotion = media.matches;
-    };
-    updateMotionPreference();
-    media.addEventListener('change', updateMotionPreference);
-    return () => media.removeEventListener('change', updateMotionPreference);
-  });
 
   onDestroy(() => {
     clearShuffles();

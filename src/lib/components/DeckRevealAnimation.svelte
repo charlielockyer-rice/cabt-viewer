@@ -10,6 +10,7 @@
     type AnimationAnchorRef,
   } from '../animations/animationAnchors';
   import { afterTwoAnimationFrames } from '../animations/animationFrames';
+  import { createPrefersReducedMotion } from '../animations/prefersReducedMotion.svelte';
   import { replayAnimationScopeExitSettleMs, replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
   import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
   import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
@@ -115,6 +116,8 @@
   let reveals = $state<RevealAnimation[]>([]);
   const runState = new ReplayAnimationRunState();
   let nextAnimationId = 1;
+  const prefersReducedMotion = createPrefersReducedMotion();
+  let reduceMotion = $derived(prefersReducedMotion.current);
   const activeAttachElementCounts = new Map<HTMLElement, number>();
   let activeAttachClaims: ElementVisibilityClaim[] = [];
   let hiddenTargets: HiddenRevealTarget[] = [];
@@ -1047,7 +1050,7 @@
   }
 
   function motionDurationMs(durationMs: number): number {
-    return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 1 : durationMs;
+    return reduceMotion ? 1 : durationMs;
   }
 
   function spriteCenter(sprite: RevealSprite): { x: number; y: number } {

@@ -1,11 +1,12 @@
 <script lang="ts">
   import { cardBackCssVar, cardFaceImageUrl } from '../game/cardAssets';
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy } from 'svelte';
   import {
     hideElementForAnimation,
     releaseElementVisibilityClaim,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
+  import { createPrefersReducedMotion } from '../animations/prefersReducedMotion.svelte';
   import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
   import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
   import { replayAnimationScopeExitSettleMs, replayAnimationSpriteGroupRemovalMs } from '../animations/replayAnimationHandoff';
@@ -89,23 +90,11 @@
   const cardMoveDurationMs = 360;
   const handOutroSettleMs = 180;
   const runState = new ReplayAnimationRunState();
-  let reduceMotion = $state(false);
+  const prefersReducedMotion = createPrefersReducedMotion();
+  let reduceMotion = $derived(prefersReducedMotion.current);
   let nextAnimationId = 1;
   let resets = $state<ResetAnimation[]>([]);
   let hiddenSources: HiddenResetSource[] = [];
-
-  onMount(() => {
-    if (typeof window.matchMedia !== 'function') {
-      return;
-    }
-    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const updateMotionPreference = () => {
-      reduceMotion = media.matches;
-    };
-    updateMotionPreference();
-    media.addEventListener('change', updateMotionPreference);
-    return () => media.removeEventListener('change', updateMotionPreference);
-  });
 
   onDestroy(() => {
     clearResets({ restoreSources: true });

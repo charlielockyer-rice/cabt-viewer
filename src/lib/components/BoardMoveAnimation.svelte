@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount, tick } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import CardTile from './CardTile.svelte';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { resolveExactAnimationAnchorElement, type AnimationAnchorRef } from '../animations/animationAnchors';
@@ -9,6 +9,7 @@
     releaseElementVisibilityClaim,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
+  import { createPrefersReducedMotion } from '../animations/prefersReducedMotion.svelte';
   import { replayAnimationScopeExitSettleMs, replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
   import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
   import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
@@ -82,23 +83,11 @@
   const handoffTimers: ReturnType<typeof setTimeout>[] = [];
   const handoffFrameIds: number[] = [];
   const runState = new ReplayAnimationRunState();
-  let reduceMotion = $state(false);
+  const prefersReducedMotion = createPrefersReducedMotion();
+  let reduceMotion = $derived(prefersReducedMotion.current);
   let sprites = $state<BoardMoveSprite[]>([]);
   let animationGeneration = 0;
   const hiddenElements = new Map<HTMLElement, HiddenBoardMoveElement[]>();
-
-  onMount(() => {
-    if (typeof window.matchMedia !== 'function') {
-      return;
-    }
-    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const updateMotionPreference = () => {
-      reduceMotion = media.matches;
-    };
-    updateMotionPreference();
-    media.addEventListener('change', updateMotionPreference);
-    return () => media.removeEventListener('change', updateMotionPreference);
-  });
 
   onDestroy(() => {
     clearBoardMoves();

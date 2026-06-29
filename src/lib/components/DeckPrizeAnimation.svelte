@@ -1,6 +1,6 @@
 <script lang="ts">
   import { cardBackCssVar, cardFaceImageUrl } from '../game/cardAssets';
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy } from 'svelte';
   import {
     hideElementForAnimation,
     releaseElementVisibilityClaim,
@@ -11,6 +11,7 @@
     releaseAnimationElementEffectClaim,
     type AnimationElementEffectClaim,
   } from '../animations/animationElementEffects';
+  import { createPrefersReducedMotion } from '../animations/prefersReducedMotion.svelte';
   import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
   import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
   import { replayAnimationScopeExitSettleMs, replayAnimationSpriteGroupRemovalMs } from '../animations/replayAnimationHandoff';
@@ -104,25 +105,13 @@
   const cardHandoffMs = cardMoveDurationMs + 24;
   const directTakeDurationMs = 520;
   const runState = new ReplayAnimationRunState();
-  let reduceMotion = $state(false);
+  const prefersReducedMotion = createPrefersReducedMotion();
+  let reduceMotion = $derived(prefersReducedMotion.current);
   let nextAnimationId = 1;
   let anchorElement = $state<HTMLElement>();
   let prizeTakes = $state<PrizeTakeAnimation[]>([]);
   let hiddenTargets: HiddenPrizeTarget[] = [];
   let activeTargets: ActivePrizeTargetEffect[] = [];
-
-  onMount(() => {
-    if (typeof window.matchMedia !== 'function') {
-      return;
-    }
-    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const updateMotionPreference = () => {
-      reduceMotion = media.matches;
-    };
-    updateMotionPreference();
-    media.addEventListener('change', updateMotionPreference);
-    return () => media.removeEventListener('change', updateMotionPreference);
-  });
 
   onDestroy(() => {
     clearAnimations();

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { resolveExactAnimationAnchorElement } from '../animations/animationAnchors';
   import {
     claimAnimationElementEffect,
@@ -7,6 +7,7 @@
     releaseAnimationElementEffectClaims,
     type AnimationElementEffectClaim,
   } from '../animations/animationElementEffects';
+  import { createPrefersReducedMotion } from '../animations/prefersReducedMotion.svelte';
   import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { replayAnimationPlanHasPhase, type PulseAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
@@ -38,24 +39,12 @@
 
   const timers: ReturnType<typeof setTimeout>[] = [];
   const runState = new ReplayAnimationRunState();
-  let reduceMotion = $state(false);
+  const prefersReducedMotion = createPrefersReducedMotion();
+  let reduceMotion = $derived(prefersReducedMotion.current);
   let damageSprites = $state<DamageSprite[]>([]);
   let animationGeneration = 0;
   const activeAttackAnnouncements = new Set<AnimationElementEffectClaim>();
   const activeAttackLunges = new Set<AnimationElementEffectClaim>();
-
-  onMount(() => {
-    if (typeof window.matchMedia !== 'function') {
-      return;
-    }
-    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const updateMotionPreference = () => {
-      reduceMotion = media.matches;
-    };
-    updateMotionPreference();
-    media.addEventListener('change', updateMotionPreference);
-    return () => media.removeEventListener('change', updateMotionPreference);
-  });
 
   onDestroy(() => {
     clearAttackAnimations();

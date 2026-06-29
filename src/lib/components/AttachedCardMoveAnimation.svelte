@@ -12,6 +12,7 @@
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
   import type { AnimationVisibilityRole } from '../animations/animationVisibility';
+  import { createPrefersReducedMotion } from '../animations/prefersReducedMotion.svelte';
   import { replayAnimationScopeExitSettleMs, replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
   import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
   import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
@@ -80,20 +81,12 @@
   let motionLayer = $state<HTMLElement>();
   const runState = new ReplayAnimationRunState();
   const liveAttachedMoveHandoffHoldMs = 90;
-  let reduceMotion = $state(false);
+  const prefersReducedMotion = createPrefersReducedMotion();
+  let reduceMotion = $derived(prefersReducedMotion.current);
   let activeSprites: ActiveAttachedMoveSprite[] = [];
   let nextSpriteInstanceId = 1;
 
   onMount(() => {
-    if (typeof window.matchMedia !== 'function') {
-      return;
-    }
-    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const updateMotionPreference = () => {
-      reduceMotion = media.matches;
-    };
-    updateMotionPreference();
-    media.addEventListener('change', updateMotionPreference);
     snapshotTimer = setInterval(() => {
       const nextRects = snapshotAttachedRects();
       if (nextRects.size) {
@@ -101,7 +94,6 @@
       }
     }, 100);
     return () => {
-      media.removeEventListener('change', updateMotionPreference);
       if (snapshotTimer) {
         clearInterval(snapshotTimer);
       }
