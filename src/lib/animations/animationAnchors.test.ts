@@ -93,18 +93,17 @@ describe('animation anchors', () => {
     );
   });
 
-  it('builds identity fallback selectors while preserving the anchor-key selector', () => {
+  it('builds identity selectors without falling back to anchor-only matches', () => {
     const anchor = { kind: 'hand-card' as const, playerIndex: 0, handIndex: 1 };
 
     expect(animationAnchorCandidateSelectors(anchor, { kind: 'card', cardId: 44, name: 'Rare Candy' })).toEqual([
       '[data-animation-anchor-key="player:0:hand-card:index:1"][data-animation-card-id="44"][data-animation-card-name="Rare Candy"]',
       '[data-animation-anchor-key="player:0:hand-card:index:1"][data-animation-card-id="44"]',
       '[data-animation-anchor-key="player:0:hand-card:index:1"][data-animation-card-name="Rare Candy"]',
-      '[data-animation-anchor-key="player:0:hand-card:index:1"]',
     ]);
   });
 
-  it('resolves legacy key-only DOM when identity attributes are unavailable', () => {
+  it('does not resolve identity-bearing anchors against key-only DOM', () => {
     const anchor = { kind: 'hand-card' as const, playerIndex: 0, handIndex: 1 };
     const element = new TestElement({
       animationAnchor: 'hand-card',
@@ -115,7 +114,7 @@ describe('animation anchors', () => {
     expect(resolveAnimationAnchorElements(anchor, {
       root,
       identity: { kind: 'card', cardId: 44, name: 'Rare Candy' },
-    })).toEqual([element]);
+    })).toEqual([]);
   });
 
   it('uses serial identity when the current DOM exposes it', () => {
@@ -155,7 +154,7 @@ describe('animation anchors', () => {
     expect(resolveExactAnimationAnchorElement(anchor, { root })).toBe(matching);
   });
 
-  it('infers identity serials from legacy anchor keys', () => {
+  it('infers identity serials from semantic anchor keys', () => {
     const element = new TestElement({
       animationAnchor: 'attached-energy',
       animationAnchorKey: 'player:1:attached-energy:bench:3:serial:91',

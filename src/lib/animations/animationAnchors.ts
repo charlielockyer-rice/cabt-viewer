@@ -288,7 +288,6 @@ export function animationAnchorCandidateSelectors(anchor: AnimationAnchorRef, id
   return Array.from(new Set([
     [selector, ...identitySelectors].join(''),
     ...identitySelectors.map((identitySelector) => `${selector}${identitySelector}`),
-    selector,
   ]));
 }
 
