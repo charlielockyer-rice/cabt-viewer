@@ -1,4 +1,5 @@
 import { isAttachedCardArea, isAttachedCardMoveDestination } from './actionAnimationPhases';
+import { replayEventMoveAreas } from './replayEventAreas';
 import { CabtAreaType } from './types';
 import type { ActionTimelineEvent } from '../game/types';
 
@@ -49,8 +50,16 @@ export function classifyAnimationCoverage(
   const notes: string[] = [];
 
   if (kind === 'MoveCard' || kind === 'MoveCardReverse') {
-    const fromArea = Number(params?.fromArea);
-    const toArea = Number(params?.toArea);
+    const moveAreas = replayEventMoveAreas(event);
+    if (moveAreas === undefined) {
+      return {
+        key: kind,
+        level: 'unsupported',
+        label: 'Move event is missing source or destination area',
+        notes: ['MoveCard animation classification requires finite fromArea and toArea params.'],
+      };
+    }
+    const { fromArea, toArea } = moveAreas;
     const key = `${kind}:${areaName(fromArea)}->${areaName(toArea)}`;
 
     if (kind === 'MoveCardReverse') {

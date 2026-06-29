@@ -9,6 +9,7 @@ import {
   plural,
 } from './replayAnimationPhases';
 import {
+  isMoveCardKind,
   isReplayMoveBetween,
   replayEventMoveAreas,
 } from './replayEventAreas';
@@ -21,6 +22,8 @@ export type ReplayActionGroup = {
   events: ActionTimelineEvent[];
   turn: number;
 };
+
+export { isMoveCardKind } from './replayEventAreas';
 
 export function replayActionGroups(events: ActionTimelineEvent[], turn: number): ReplayActionGroup[] {
   const groups: ReplayActionGroup[] = [];
@@ -124,10 +127,6 @@ export function persistentActionLabel(label: string, events: ActionTimelineEvent
   }
 
   return `${actor} ${joinClauses(clauses)}.`;
-}
-
-export function isMoveCardKind(kind: string | undefined): boolean {
-  return kind === 'MoveCard' || kind === 'MoveCardReverse';
 }
 
 function startsReplayGroup(event: ActionTimelineEvent, current: ReplayActionGroup): boolean {

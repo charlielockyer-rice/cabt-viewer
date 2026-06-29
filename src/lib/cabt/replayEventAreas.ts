@@ -1,4 +1,3 @@
-import { isMoveCardKind } from './replayActionGroups';
 import { finiteNumber } from './replayEventParams';
 import type { ActionTimelineEvent } from '../game/types';
 
@@ -10,6 +9,10 @@ export type ReplayEventMoveAreas = {
 export function replayEventSerial(event: ActionTimelineEvent): number | undefined {
   const params = event.params as Record<string, unknown> | undefined;
   return finiteNumber(params?.serial);
+}
+
+export function isMoveCardKind(kind: string | undefined): boolean {
+  return kind === 'MoveCard' || kind === 'MoveCardReverse';
 }
 
 export function replayEventMoveAreas(event: ActionTimelineEvent): ReplayEventMoveAreas | undefined {

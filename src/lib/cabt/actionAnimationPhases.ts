@@ -1,4 +1,5 @@
 import { CabtAreaType } from './types';
+import { replayEventMoveAreas } from './replayEventAreas';
 import type { ActionTimelineEvent } from '../game/types';
 
 export const actionAnimationTiming = {
@@ -332,9 +333,6 @@ export function actionAnimationPhaseForKey(key: string): ActionAnimationPhase {
 }
 
 export function actionAnimationPhaseKey(event: ActionTimelineEvent): string | null {
-  const params = event.params as Record<string, unknown> | undefined;
-  const fromArea = Number(params?.fromArea);
-  const toArea = Number(params?.toArea);
   const playerKey = event.playerIndex ?? 'unknown';
 
   if (event.kind === 'Play' || event.kind === 'Attach' || event.kind === 'Evolve' || event.kind === 'Devolve') {
@@ -364,7 +362,9 @@ export function actionAnimationPhaseKey(event: ActionTimelineEvent): string | nu
   if (event.kind === 'HpChange' || event.kind === 'HPChange') {
     return `Damage:${playerKey}`;
   }
-  if (isMoveCardEventKind(event.kind)) {
+  const moveAreas = replayEventMoveAreas(event);
+  if (moveAreas !== undefined) {
+    const { fromArea, toArea } = moveAreas;
     if (isBoardPositionMove(fromArea, toArea)) {
       return `BoardMove:${playerKey}`;
     }
@@ -465,10 +465,6 @@ export function isSpecialConditionEvent(kind: string | undefined): boolean {
     || kind === 'Asleep'
     || kind === 'Paralyzed'
     || kind === 'Confused';
-}
-
-export function isMoveCardEventKind(kind: string | undefined): boolean {
-  return kind === 'MoveCard' || kind === 'MoveCardReverse';
 }
 
 export function isKnockOutMove(fromArea: number, toArea: number): boolean {

@@ -51,6 +51,16 @@ describe('classifyAnimationCoverage', () => {
     expect(coverage.label).toBe('Revealed card take to hand');
   });
 
+  it('marks move events without finite areas as unsupported', () => {
+    const coverage = classifyAnimationCoverage(event('MoveCard', {
+      cardId: 3,
+      serial: 10,
+    }));
+
+    expect(coverage.level).toBe('unsupported');
+    expect(coverage.label).toBe('Move event is missing source or destination area');
+  });
+
   it('distinguishes attack knockouts from checkup knockouts', () => {
     const knockout = event('MoveCard', {
       fromArea: CabtAreaType.ACTIVE,
