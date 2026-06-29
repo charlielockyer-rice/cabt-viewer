@@ -7,6 +7,7 @@
     type AnimationAnchorRef,
     type AnimationIdentity,
   } from '../animations/animationAnchors';
+  import { strictAnimationVisualElementForAnchor } from '../animations/animationAnchorVisuals';
   import {
     hideElementForAnimation,
     releaseElementVisibilityClaim,
@@ -360,7 +361,7 @@
     if (anchor.kind !== 'attached-energy' && anchor.kind !== 'attached-tool') {
       return null;
     }
-    const element = mode === 'planned' ? strictElementForAnchor(anchor, identity) : elementForAnchor(anchor);
+    const element = mode === 'planned' ? strictElementForAnchor(anchor, identity) : liveElementForAnchorWithSerialFallback(anchor);
     if (!element) {
       if (mode === 'planned') {
         return null;
@@ -457,7 +458,10 @@
     mode: 'planned' | 'live' = 'live',
     identity?: AnimationIdentity,
   ): HTMLElement | null {
-    const element = mode === 'planned' ? strictElementForAnchor(anchor, identity) : elementForAnchor(anchor);
+    if (mode === 'planned') {
+      return strictAnimationVisualElementForAnchor(anchor, identity) ?? null;
+    }
+    const element = liveElementForAnchorWithSerialFallback(anchor);
     if (!element) {
       return null;
     }
@@ -471,7 +475,7 @@
     return resolveStrictAnimationAnchorElement(anchor, { identity });
   }
 
-  function elementForAnchor(anchor: AnimationAnchorRef): HTMLElement | null {
+  function liveElementForAnchorWithSerialFallback(anchor: AnimationAnchorRef): HTMLElement | null {
     const exact = resolveExactAnimationAnchorElement(anchor);
     if (exact) {
       return exact;
