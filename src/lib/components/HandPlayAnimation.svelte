@@ -339,13 +339,6 @@
     if (exact) {
       return targetVisualElementForAnchor(exact, motion.targetAnchor.kind);
     }
-    if (motion.targetAnchor.kind === 'discard-card') {
-      const fallback = resolveExactAnimationAnchorElement({
-        kind: 'discard-pile',
-        playerIndex: motion.targetAnchor.playerIndex,
-      });
-      return fallback ? targetVisualElementForAnchor(fallback, 'discard-pile') : null;
-    }
     return null;
   }
 

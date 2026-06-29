@@ -191,7 +191,7 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
           baseView: view,
           actionTimeline: group.events,
           hasAnimationPhases: shouldBuildGroupedStepAnimationPhases(views[index - 1], group),
-          resolvingFinalizers: resolvingFinalizerCardsForGroup(group),
+          resolvingFinalizers: resolvingFinalizerCardsForGroup(group, view),
           resolving: resolvingPlayedCards,
         });
         resolvingPlayedCards = resolvingContext.nextResolving;
@@ -3527,13 +3527,17 @@ function resolvingPlayedCardFromPlayEvent(event: ActionTimelineEvent): Resolving
   return { playerIndex: event.playerIndex, card };
 }
 
-function resolvingFinalizerCardsForGroup(group: ReplayActionGroup): ResolvingPlayedCard[] {
+function resolvingFinalizerCardsForGroup(group: ReplayActionGroup, view: GameView): ResolvingPlayedCard[] {
   const playEvent = resolvingTrainerPlayEvent(group);
   const playerIndex = playEvent?.playerIndex;
   if (!playEvent || playerIndex === undefined) {
     return [];
   }
-  if (!startGroupHasTerminalResolvingEffect(group) && !isCompleteDeckSearchEffect(group.events, playerIndex)) {
+  if (
+    !startGroupHasTerminalResolvingEffect(group)
+    && !isCompleteDeckSearchEffect(group.events, playerIndex)
+    && !viewHasEventCardInDiscard(view, playEvent)
+  ) {
     return [];
   }
   return resolvingPlayedCardsForEvents([playEvent]);
