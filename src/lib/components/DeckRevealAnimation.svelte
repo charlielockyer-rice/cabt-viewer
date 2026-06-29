@@ -350,7 +350,7 @@
     }
 
     const sprites = [...actionsByPlayer.entries()].flatMap(([playerIndex, playerActions]) =>
-      spritesForPlayer(playerIndex, playerActions),
+      spritesForPlayer(playerIndex, playerActions, visibilityMode),
     );
     if (!sprites.length) {
       return;
@@ -639,11 +639,21 @@
   }
 
   function plannedHandTargetForAction(action: RevealCardAction): RevealTakeTarget | undefined {
-    const targetAnchor = action.targetAnchor;
+    return plannedHandTargetForAnchor(action.targetAnchor, action.identity);
+  }
+
+  function plannedHandTargetForStartAction(action: RevealStartAction): RevealTakeTarget | undefined {
+    return plannedHandTargetForAnchor(action.targetAnchor, action.identity);
+  }
+
+  function plannedHandTargetForAnchor(
+    targetAnchor: RevealCardAction['targetAnchor'],
+    identity: RevealCardAction['identity'],
+  ): RevealTakeTarget | undefined {
     if (!targetAnchor || targetAnchor.kind !== 'hand-card') {
       return undefined;
     }
-    const targetElement = resolveStrictAnimationAnchorElement(targetAnchor, { identity: action.identity });
+    const targetElement = resolveStrictAnimationAnchorElement(targetAnchor, { identity });
     const targetRect = handCardVisualRect(targetElement ?? undefined);
     if (!targetElement || !targetRect) {
       return undefined;
@@ -754,6 +764,7 @@
   function spritesForPlayer(
     playerIndex: number,
     playerActions: RevealStartAction[],
+    visibilityMode: DestinationVisibilityMode,
   ): RevealSprite[] {
     const deckRect = deckTopElement(playerIndex)?.getBoundingClientRect();
     if (!deckRect || deckRect.width <= 0 || deckRect.height <= 0) {
@@ -762,14 +773,19 @@
 
     const layout = revealLayout(playerActions.length);
     const deckCenter = centerOf(deckRect);
-    return playerActions.map((action, index) => {
+    return playerActions.flatMap((action, index) => {
       const target = layout.target(index);
       const takeTarget = action.toHand
-        ? handTargetForPlayer(playerIndex, action.serial ?? Number.NaN, index, playerActions.length)
+        ? visibilityMode === 'planned'
+          ? plannedHandTargetForStartAction(action)
+          : handTargetForPlayer(playerIndex, action.serial ?? Number.NaN, index, playerActions.length)
         : undefined;
+      if (action.toHand && visibilityMode === 'planned' && !takeTarget) {
+        return [];
+      }
       const destination = takeTarget?.center ?? target;
       const mode: RevealMode = action.toHand ? 'searching' : 'revealing';
-      return {
+      return [{
         id: `${action.id}-${action.serial ?? index}`,
         card: action.card,
         serial: action.serial,
@@ -794,7 +810,7 @@
         exitScale: 1,
         rotation: target.rotation,
         removeMs: action.removeMs,
-      };
+      }];
     });
   }
 

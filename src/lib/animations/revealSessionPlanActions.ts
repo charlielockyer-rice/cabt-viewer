@@ -20,6 +20,8 @@ export type RevealStartAction = {
   playerIndex: number;
   card: CardView;
   serial?: number;
+  identity?: AnimationIdentity;
+  targetAnchor?: RevealSessionStep['targetAnchor'];
   startMs: number;
   toHand: boolean;
   removeMs?: number;
@@ -78,6 +80,8 @@ export function revealStartActionsForSteps(
       playerIndex: motion.playerIndex,
       card,
       serial: step.identity?.serial ?? card.serial,
+      identity: step.identity,
+      targetAnchor: step.targetAnchor,
       startMs: motion.startMs + step.startMs,
       toHand: step.kind === 'take',
       removeMs: removalMsForStep(motion, step, planDurationMs),

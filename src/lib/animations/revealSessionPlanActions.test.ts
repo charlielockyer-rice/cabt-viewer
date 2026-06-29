@@ -67,6 +67,35 @@ describe('reveal session plan actions', () => {
     ]);
   });
 
+  it('keeps direct deck-search take target anchors on planned start actions', () => {
+    const motion = revealSessionMotion({
+      steps: [
+        {
+          id: 'search-take-66',
+          kind: 'take',
+          sourceAnchor: { kind: 'deck-top', playerIndex: 0 },
+          targetAnchor: { kind: 'hand-card', playerIndex: 0, handIndex: 2, serial: 11 },
+          identity: { kind: 'card', cardId: 66, serial: 11 },
+          spriteVisual: { kind: 'card', card: { id: 66, serial: 11, name: 'Lillie' } },
+          startMs: 40,
+          durationMs: 300,
+        },
+      ],
+    });
+
+    expect(revealStartActionsForSteps(revealSessionPlanSteps([motion]), 1000)).toMatchObject([
+      {
+        id: 'search-take-66',
+        playerIndex: 0,
+        serial: 11,
+        identity: { kind: 'card', cardId: 66, serial: 11 },
+        targetAnchor: { kind: 'hand-card', playerIndex: 0, handIndex: 2, serial: 11 },
+        startMs: 140,
+        toHand: true,
+      },
+    ]);
+  });
+
   it('dedupes planned held cards by reveal anchor', () => {
     const motion = revealSessionMotion({
       steps: [

@@ -164,6 +164,22 @@ describe('animation anchors', () => {
     })).toEqual([matching]);
   });
 
+  it('strict resolution normalizes identity kind to the destination anchor role', () => {
+    const anchor = { kind: 'discard-card' as const, playerIndex: 0, serial: 10 };
+    const matching = new TestElement({
+      animationAnchor: 'discard-card',
+      animationAnchorKey: 'player:0:discard-card:serial:10',
+      animationCardSerial: '10',
+      animationCardId: '44',
+    });
+    const root = queryRoot([matching]);
+
+    expect(resolveStrictAnimationAnchorElement(anchor, {
+      root,
+      identity: { kind: 'energy', serial: 10, cardId: 44 },
+    })).toBe(matching);
+  });
+
   it('strict resolution ignores identity for surface anchors that do not carry card identity', () => {
     const anchor = { kind: 'deck-top' as const, playerIndex: 0 };
     const deck = new TestElement({

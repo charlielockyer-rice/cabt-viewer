@@ -337,7 +337,7 @@ export function resolveStrictAnimationAnchorElements(
   if (!resolvedRoot) {
     return [];
   }
-  const strictIdentity = anchorCarriesCardIdentity(anchor) ? identity : undefined;
+  const strictIdentity = strictAnimationIdentityForAnchor(anchor, identity);
   const selector = animationAnchorSelector(anchor, strictIdentity);
   return Array.from(resolvedRoot.querySelectorAll(selector)).filter((element): element is HTMLElement =>
     element instanceof HTMLElement && strictAnimationIdentityMatchesElement(element, strictIdentity));
@@ -478,6 +478,17 @@ function strictAnimationIdentityMatchesElement(element: HTMLElement, identity: A
     return false;
   }
   return true;
+}
+
+function strictAnimationIdentityForAnchor(
+  anchor: AnimationAnchorRef,
+  identity: AnimationIdentity | undefined,
+): AnimationIdentity | undefined {
+  if (!anchorCarriesCardIdentity(anchor) || !identity) {
+    return undefined;
+  }
+  const anchorKind = animationIdentityKindForAnchor(anchor.kind);
+  return anchorKind ? { ...identity, kind: anchorKind } : identity;
 }
 
 function anchorCarriesCardIdentity(anchor: AnimationAnchorRef): boolean {
