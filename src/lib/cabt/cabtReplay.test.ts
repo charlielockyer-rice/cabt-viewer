@@ -2048,10 +2048,10 @@ describe('cabtReplayToSnapshot', () => {
       'Shuffle',
     ]);
     expect(step.animationPhases?.[0].view.players[0].bench[0].pokemon?.serial).toBe(6);
-    expect(step.animationPhases?.[0].view.players[0].bench[0].pokemon?.animationHidden).toBe(true);
+    expect(step.animationPhases?.[0].view.players[0].bench[0].pokemon).not.toHaveProperty('animationHidden');
     expect(step.animationPhases?.[0].view.players[0].deckCount).toBe(49);
     expect(step.animationPhases?.[1].view.players[0].bench[0].pokemon?.serial).toBe(6);
-    expect(step.animationPhases?.[1].view.players[0].bench[0].pokemon?.animationHidden).toBeUndefined();
+    expect(step.animationPhases?.[1].view.players[0].bench[0].pokemon).not.toHaveProperty('animationHidden');
   });
 
   it('coalesces multiple deck-to-bench placements from one resolving card effect', () => {
@@ -2478,7 +2478,7 @@ describe('cabtReplayToSnapshot', () => {
     ]);
     expect(step.animationPhases?.[2].view.players[1].hand.map((card) => card.serial)).toEqual([]);
     expect(step.animationPhases?.[3].view.players[1].hand.map((card) => card.serial)).toEqual([117]);
-    expect(step.animationPhases?.[3].view.players[1].hand[0].animationHidden).toBe(true);
+    expect(step.animationPhases?.[3].view.players[1].hand[0]).not.toHaveProperty('animationHidden');
     expect(step.animationPhases?.map((phase) => phase.view.players[1].playZone.map((card) => card.serial))).toEqual([
       [99],
       [99],

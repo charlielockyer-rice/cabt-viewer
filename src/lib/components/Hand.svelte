@@ -122,7 +122,6 @@
       data-animation-card-serial={card.serial ?? undefined}
       data-animation-card-id={card.id ?? undefined}
       data-card-serial={card.serial ?? undefined}
-      data-reveal-animation-hidden={card.animationHidden ? 'true' : undefined}
       animate:flip={{ duration: 180 }}
     >
       <div

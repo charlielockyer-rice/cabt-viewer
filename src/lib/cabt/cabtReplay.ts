@@ -1389,12 +1389,6 @@ function groupedStepAnimationPhases(
     let phaseView = phase.usesSourceView
       ? animationSourceViewForPhase(phaseStartView, currentView, phase)
       : projectedViewForEvents(phaseStartView, currentView, phase.events);
-    if (phase.key.startsWith('DeckBoardPlace:')) {
-      phaseView = gameViewWithAnimationHiddenBoardCards(phaseView, phase.events);
-    }
-    if (phase.key.startsWith('DeckRevealTake:')) {
-      phaseView = gameViewWithAnimationHiddenHandCards(phaseView, phase.events);
-    }
     phases.push({
       key: phase.key,
       label: animationPhaseLabel(phase),
@@ -1819,78 +1813,6 @@ function projectedViewForEvents(
     applyReplayEvent(view, currentView, event, options);
   }
   return view;
-}
-
-function gameViewWithAnimationHiddenBoardCards(view: GameView, events: ActionTimelineEvent[]): GameView {
-  const moveEvents = events.filter((event) => {
-    const params = event.params as Record<string, unknown> | undefined;
-    const toArea = Number(params?.toArea);
-    return isMoveCardKind(event.kind)
-      && (toArea === CabtAreaType.ACTIVE || toArea === CabtAreaType.BENCH);
-  });
-  if (!moveEvents.length) {
-    return view;
-  }
-
-  return {
-    ...view,
-    players: view.players.map((player, playerIndex) => {
-      const playerEvents = moveEvents.filter((event) => event.playerIndex === playerIndex);
-      if (!playerEvents.length) {
-        return player;
-      }
-      return {
-        ...player,
-        active: pokemonSlotWithHiddenAnimationCard(player.active, playerEvents),
-        bench: player.bench.map((slot) => pokemonSlotWithHiddenAnimationCard(slot, playerEvents)),
-      };
-    }),
-  };
-}
-
-function gameViewWithAnimationHiddenHandCards(view: GameView, events: ActionTimelineEvent[]): GameView {
-  const moveEvents = events.filter((event) => {
-    const params = event.params as Record<string, unknown> | undefined;
-    return isMoveCardKind(event.kind)
-      && Number(params?.fromArea) === CabtAreaType.LOOKING
-      && Number(params?.toArea) === CabtAreaType.HAND;
-  });
-  if (!moveEvents.length) {
-    return view;
-  }
-
-  return {
-    ...view,
-    players: view.players.map((player, playerIndex) => {
-      const playerEvents = moveEvents.filter((event) => event.playerIndex === playerIndex);
-      if (!playerEvents.length) {
-        return player;
-      }
-      return {
-        ...player,
-        hand: player.hand.map((card) => eventMatchesAnyCard(card, playerEvents)
-          ? { ...card, animationHidden: true }
-          : card),
-      };
-    }),
-  };
-}
-
-function pokemonSlotWithHiddenAnimationCard(slot: PokemonSlotView, events: ActionTimelineEvent[]): PokemonSlotView {
-  if (!slot.pokemon || !events.some((event) => eventCardMatches(slot.pokemon!, event))) {
-    return slot;
-  }
-  return {
-    ...slot,
-    pokemon: {
-      ...slot.pokemon,
-      animationHidden: true,
-    },
-  };
-}
-
-function eventMatchesAnyCard(card: CardView, events: ActionTimelineEvent[]): boolean {
-  return events.some((event) => eventCardMatches(card, event));
 }
 
 type ResolvingPlayedCard = {
