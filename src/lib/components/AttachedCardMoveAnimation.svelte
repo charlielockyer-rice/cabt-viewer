@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import {
+    animationAnchorForElement,
     resolveAnimationAnchorElements,
+    serializeAnimationAnchor,
     type AnimationAnchorRef,
     type AnimationIdentity,
   } from '../animations/animationAnchors';
@@ -46,6 +48,8 @@
     durationMs: number;
     hiddenElement?: HTMLElement;
     destinationCardElement?: HTMLElement;
+    sourceClaimAnchor?: AnimationAnchorRef;
+    destinationClaimAnchor?: AnimationAnchorRef;
   };
 
   type ActiveAttachedMoveSprite = AttachedMoveSprite & {
@@ -202,10 +206,22 @@
       activeSprites = [...activeSprites, activeSprite];
       const startTimer = setTimeout(() => {
         if (activeSprite.hiddenElement) {
-          hideActiveElement(activeSprite, activeSprite.hiddenElement, 'source', 'data-attached-move-animation-hidden');
+          hideActiveElement(
+            activeSprite,
+            activeSprite.hiddenElement,
+            'source',
+            'data-attached-move-animation-hidden',
+            activeSprite.sourceClaimAnchor,
+          );
         }
         if (activeSprite.destinationCardElement) {
-          hideActiveElement(activeSprite, activeSprite.destinationCardElement, 'destination', 'data-attached-move-destination-card-hidden');
+          hideActiveElement(
+            activeSprite,
+            activeSprite.destinationCardElement,
+            'destination',
+            'data-attached-move-destination-card-hidden',
+            activeSprite.destinationClaimAnchor,
+          );
         }
       }, sprite.delayMs);
       const cleanupTimer = setTimeout(() => {
@@ -244,6 +260,8 @@
       identity: motion.identity,
       delayMs: motion.startMs,
       durationMs: motion.durationMs,
+      sourceClaimAnchor: motion.sourceAnchor,
+      destinationClaimAnchor: motion.targetAnchor,
     });
   }
 
@@ -274,6 +292,8 @@
     identity?: AnimationIdentity;
     delayMs: number;
     durationMs: number;
+    sourceClaimAnchor?: AnimationAnchorRef;
+    destinationClaimAnchor?: AnimationAnchorRef;
   }): AttachedMoveSprite[] {
     const source = input.source;
     const target = input.target;
@@ -324,6 +344,8 @@
       durationMs: input.durationMs,
       hiddenElement: source.hiddenElement,
       destinationCardElement: destinationCardElementFor(target, serial, cardId),
+      sourceClaimAnchor: input.sourceClaimAnchor,
+      destinationClaimAnchor: input.destinationClaimAnchor,
     }];
   }
 
@@ -487,13 +509,60 @@
     activeSprites = [];
   }
 
-  function hideActiveElement(sprite: ActiveAttachedMoveSprite, element: HTMLElement, role: AnimationVisibilityRole, fallbackAttribute: string) {
+  function hideActiveElement(
+    sprite: ActiveAttachedMoveSprite,
+    element: HTMLElement,
+    role: AnimationVisibilityRole,
+    fallbackAttribute: string,
+    plannedAnchor?: AnimationAnchorRef,
+  ) {
+    if (centralClaimOwns(element, role, plannedAnchor)) {
+      return;
+    }
     sprite.visibilityClaims.push(hideElementForAnimation({
       element,
       scopeKey,
       role,
       fallbackAttribute,
     }));
+  }
+
+  function centralClaimOwns(element: HTMLElement, role: AnimationVisibilityRole, plannedAnchor?: AnimationAnchorRef): boolean {
+    const anchoredElement = animationAnchorForElement(element);
+    const anchorKeys = new Set<string>();
+    if (plannedAnchor) {
+      anchorKeys.add(serializeAnimationAnchor(plannedAnchor));
+    }
+    if (anchoredElement) {
+      anchorKeys.add(serializeAnimationAnchor(anchoredElement.anchor));
+    }
+    if (!anchorKeys.size) {
+      return false;
+    }
+    return !!animationPlan?.visibilityClaims.some((claim) =>
+      claim.role === role
+      && anchorKeys.has(serializeAnimationAnchor(claim.anchor))
+      && animationIdentityMatchesClaim(anchoredElement?.identity, claim.identity),
+    );
+  }
+
+  function animationIdentityMatchesClaim(
+    elementIdentity: AnimationIdentity | undefined,
+    claimIdentity: AnimationIdentity | undefined,
+  ): boolean {
+    if (!elementIdentity || !claimIdentity) {
+      return true;
+    }
+    if (elementIdentity.serial !== undefined && claimIdentity.serial !== undefined) {
+      return elementIdentity.serial === claimIdentity.serial;
+    }
+    if (elementIdentity.cardId !== undefined && claimIdentity.cardId !== undefined) {
+      return elementIdentity.cardId === claimIdentity.cardId;
+    }
+    if (elementIdentity.name && claimIdentity.name) {
+      return elementIdentity.name === claimIdentity.name;
+    }
+    return true;
   }
 
   function releaseActiveSprite(sprite: ActiveAttachedMoveSprite) {

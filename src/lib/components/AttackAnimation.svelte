@@ -111,7 +111,7 @@
 
     startAttackAnnouncements(animationEvents);
     startDamageAnimations(animationEvents);
-    if (!plannedKnockOutMotionActive(animationPlan)) {
+    if (!replayMode && !plannedKnockOutMotionActive(animationPlan)) {
       startKnockOutAnimations(animationEvents);
     }
   });

@@ -3670,6 +3670,24 @@ describe('cabtReplayToSnapshot', () => {
         },
       },
     ]);
+    expect(step.animationPhases?.[1].animationPlan?.visibilityClaims).toMatchObject([
+      {
+        anchor: { kind: 'discard-card', playerIndex: 0, serial: 56 },
+        identity: { kind: 'card', serial: 56, cardId: 3 },
+        role: 'destination',
+      },
+      {
+        anchor: { kind: 'discard-card', playerIndex: 0, serial: 27 },
+        identity: { kind: 'card', serial: 27, cardId: 1235 },
+        role: 'destination',
+      },
+      {
+        anchor: { kind: 'discard-card', playerIndex: 0, serial: 44 },
+        identity: { kind: 'card', serial: 44, cardId: 955 },
+        role: 'destination',
+      },
+    ]);
+    expect(step.animationPhases?.[1].animationPlan?.visibilityClaims).toHaveLength(3);
     expect(step.animationPhases?.[3].animationPlan?.motions).toMatchObject([
       {
         kind: 'card-move',
@@ -3686,6 +3704,19 @@ describe('cabtReplayToSnapshot', () => {
         },
       },
     ]);
+    expect(step.animationPhases?.[3].animationPlan?.visibilityClaims).toMatchObject([
+      {
+        anchor: { kind: 'board-slot', playerIndex: 1, slot: 'active', slotIndex: 0 },
+        identity: { kind: 'pokemon', serial: 64, cardId: 721 },
+        role: 'source',
+      },
+      {
+        anchor: { kind: 'discard-pile', playerIndex: 1 },
+        identity: { kind: 'pokemon', serial: 64, cardId: 721 },
+        role: 'destination',
+      },
+    ]);
+    expect(step.animationPhases?.[3].animationPlan?.visibilityClaims).toHaveLength(2);
     expect(step.animationPhases?.[3].view.players[1].discard.map((card) => card.serial)).toEqual([]);
     expect(snapshot.views[step.stateIndex].players[1].active.empty).toBe(true);
     expect(snapshot.views[step.stateIndex].players[1].discard.map((card) => card.serial)).toEqual([64, 96]);

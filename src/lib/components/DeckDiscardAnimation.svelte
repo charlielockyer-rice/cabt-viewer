@@ -86,7 +86,7 @@
     const scopeChanged = initialized && currentScopeKey !== lastScopeKey;
     lastScopeKey = currentScopeKey;
 
-    if (planOwnsDeckDiscard(currentPlan)) {
+    if (replayMode || planOwnsDeckDiscard(currentPlan)) {
       if (discards.length) {
         clearDiscards();
       }
