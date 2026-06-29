@@ -8,6 +8,8 @@
 ## Replay Animation Invariants
 
 - Fully migrate replay animations to phase plans. Once a replay animation is plan-owned, remove the old replay event branch instead of keeping a parallel fallback; live/non-replay event animation can remain as a separate path when the interactive viewer still needs it.
+- Planned replay motions must resolve exact semantic anchors. If a motion supplies a serial/card/name identity, do not retry against the broad anchor without that identity; broad retries can grab the wrong DOM element and cause alternating flicker.
+- Visibility and handoff should be owned by the phase plan. If a planned motion cannot find its source or destination, fix the plan's anchor/phase view instead of adding a component-local fallback selector.
 - Replay animations must be replayable. If a user scrubs away from a step and returns, the same phase should animate again. Use per-scope de-duping only to suppress duplicate work during the current render/phase, and clear it when the replay scope changes.
 - Prefer phase-scoped action timelines for phase-owned animations. A replay step can contain several logical phases, and using the whole step timeline from a component that should animate one phase can cause skipped source states or duplicate animation.
 - Guard replay phase timers against stale callbacks. A timer created for one step/phase must not advance a later step after the user scrubs.
@@ -30,6 +32,7 @@
 ## Resolving Trainer Effects
 
 - A played Trainer that has follow-up phases should stay in the play zone until every effect phase has resolved. Do not let it appear in discard during intermediate deck search, bench placement, attach, switch, draw, shuffle, or damage phases.
+- Resolving Trainer cleanup must be tied to the specific played card that owns the effect. Do not use a broad event-kind list such as "any Switch/Draw/Shuffle means the current resolving card is done"; unrelated later actions can then discard or hide the wrong play-zone card.
 - Cards like Buddy-Buddy Poffin should read as one resolving effect: the Trainer is played, deck cards move to the board, the deck shuffles if needed, and only then does the Trainer move to discard. The Trainer should not flicker between play zone and discard while the benched Pokemon land.
 - Search/reveal effects should make the chosen card visually clear. Keep selected cards distinct and stable while unselected revealed cards return or shuffle back, instead of splitting reveal and selection into unrelated-looking replay steps.
 - When a selected reveal card later moves to hand, normalize from the selected card's current visual center at the start of the take phase. Avoid timer-based geometry rewrites at the end of the reveal phase; they create the small growth/shrink stutters that look like flicker.
