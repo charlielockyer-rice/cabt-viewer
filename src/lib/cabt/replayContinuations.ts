@@ -2,11 +2,12 @@ import {
   isAttachedCardArea,
   isBoardPositionMove,
 } from './actionAnimationPhases';
-import { isMoveCardKind, type ReplayActionGroup } from './replayActionGroups';
+import { type ReplayActionGroup } from './replayActionGroups';
 import { cabtEvolutionTriggeredDrawSkill, isCabtResolvingTrainerCard } from './replayCardData';
 import { eventCardMatches } from './replayCardIdentity';
 import { deckRevealContinuationFrom } from './replayDeckRevealContinuations';
 import {
+  isMoveCardKind,
   isReplayMoveBetween,
   isReplayMoveFromToAny,
   replayEventMoveAreas,

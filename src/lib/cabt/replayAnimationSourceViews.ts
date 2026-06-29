@@ -3,10 +3,9 @@ import {
 } from './actionAnimationPhases';
 import { assertUnhandledActionAnimationPhaseKind } from './replayAnimationExhaustive';
 import { handDestinationAnchorForEvent } from './replayAnimationAnchors';
-import { isMoveCardKind } from './replayActionGroups';
 import { isCabtStadiumCard } from './replayCardData';
 import { sameKnownCard } from './replayCardIdentity';
-import { replayEventMoveAreas } from './replayEventAreas';
+import { isMoveCardKind, replayEventMoveAreas } from './replayEventAreas';
 import { finiteNumber } from './replayEventParams';
 import type { AnimationEventPhase } from './replayAnimationPhases';
 import {
