@@ -103,18 +103,33 @@ export type ReplayAnimationPhasePlan = {
 
 export type ReplayAnimationPhaseKind =
   | 'Ability'
+  | 'Attach'
   | 'Attack'
+  | 'BoardMove'
+  | 'BoardToDeck'
   | 'Change'
   | 'Coin'
   | 'Condition'
   | 'Damage'
+  | 'DeckBoardPlace'
   | 'DeckDiscard'
+  | 'DeckPrizePlace'
+  | 'DeckReveal'
+  | 'DeckRevealReturn'
+  | 'DeckRevealTake'
+  | 'DeckSearchReveal'
   | 'Devolve'
+  | 'DiscardRecover'
   | 'Draw'
+  | 'Evolve'
+  | 'HandMove'
   | 'HandToDeck'
+  | 'KnockOut'
   | 'MoveAttached'
+  | 'Play'
   | 'PrizeTake'
-  | 'Shuffle';
+  | 'Shuffle'
+  | 'StadiumMove';
 
 export type ReplayAnimationMotionTiming = {
   id: string;

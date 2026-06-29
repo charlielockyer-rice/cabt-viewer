@@ -1,5 +1,22 @@
+import { replayAnimationSpriteGroupRemovalMs } from './replayAnimationHandoff';
+import type { AnimationHandoffPolicy } from './replayAnimationPlan';
+
 export type ReplayAnimationListItem = {
   id: string | number;
+};
+
+type ReplayAnimationTimedMotion = {
+  startMs: number;
+  durationMs: number;
+  handoffPolicy: AnimationHandoffPolicy;
+};
+
+export type ReplayAnimationGroupRemovalOptions<T extends ReplayAnimationListItem> = {
+  item: T;
+  motions: ReplayAnimationTimedMotion[];
+  phaseDurationMs?: number;
+  timers: ReturnType<typeof setTimeout>[];
+  removeIds(ids: ReadonlySet<T['id']>): void;
 };
 
 export type ReplayAnimationScopeClearOptions<T extends ReplayAnimationListItem> = {
@@ -30,6 +47,28 @@ export function scheduleReplayAnimationScopeClear<T extends ReplayAnimationListI
     removeIds(ids);
     afterRemove?.();
   }, delayMs);
+  timers.push(timer);
+  return true;
+}
+
+export function scheduleReplayAnimationGroupRemoval<T extends ReplayAnimationListItem>({
+  item,
+  motions,
+  phaseDurationMs,
+  timers,
+  removeIds,
+}: ReplayAnimationGroupRemovalOptions<T>): boolean {
+  const removalMs = replayAnimationSpriteGroupRemovalMs(motions, phaseDurationMs);
+  if (removalMs === undefined) {
+    return false;
+  }
+  const timer = setTimeout(() => {
+    const timerIndex = timers.indexOf(timer);
+    if (timerIndex >= 0) {
+      timers.splice(timerIndex, 1);
+    }
+    removeIds(new Set([item.id]));
+  }, removalMs);
   timers.push(timer);
   return true;
 }

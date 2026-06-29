@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { scheduleReplayAnimationScopeClear } from './replayAnimationSpriteLifecycle';
+import { scheduleReplayAnimationGroupRemoval, scheduleReplayAnimationScopeClear } from './replayAnimationSpriteLifecycle';
 
 describe('scheduleReplayAnimationScopeClear', () => {
   it('removes only the ids captured when the clear was scheduled', () => {
@@ -63,6 +63,64 @@ describe('scheduleReplayAnimationScopeClear', () => {
     expect(staleTimerRan).toBe(false);
 
     vi.advanceTimersByTime(30);
+    expect(timers).toHaveLength(0);
+    vi.useRealTimers();
+  });
+});
+
+describe('scheduleReplayAnimationGroupRemoval', () => {
+  it('removes the animation id when the planned motion group is ready for cleanup', () => {
+    vi.useFakeTimers();
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const removed: number[] = [];
+
+    expect(scheduleReplayAnimationGroupRemoval({
+      item: { id: 4 },
+      motions: [{
+        startMs: 10,
+        durationMs: 30,
+        handoffPolicy: {
+          hideSourceUntil: 'none',
+          hideDestinationUntil: 'arrival',
+          removeSprite: 'arrival',
+        },
+      }],
+      timers,
+      removeIds(ids) {
+        removed.push(...ids);
+      },
+    })).toBe(true);
+
+    vi.advanceTimersByTime(63);
+    expect(removed).toEqual([]);
+
+    vi.advanceTimersByTime(1);
+    expect(removed).toEqual([4]);
+    expect(timers).toHaveLength(0);
+    vi.useRealTimers();
+  });
+
+  it('does not schedule group removal for scope-exit sprites', () => {
+    vi.useFakeTimers();
+    const timers: ReturnType<typeof setTimeout>[] = [];
+
+    expect(scheduleReplayAnimationGroupRemoval({
+      item: { id: 'held' },
+      motions: [{
+        startMs: 0,
+        durationMs: 30,
+        handoffPolicy: {
+          hideSourceUntil: 'scope-exit',
+          hideDestinationUntil: 'none',
+          removeSprite: 'scope-exit',
+        },
+      }],
+      timers,
+      removeIds() {
+        throw new Error('scope-exit sprites should not use timed group removal');
+      },
+    })).toBe(false);
+
     expect(timers).toHaveLength(0);
     vi.useRealTimers();
   });

@@ -8,8 +8,8 @@
   } from '../animations/animationVisibilityClaims';
   import { resolveExactAnimationAnchorElement } from '../animations/animationAnchors';
   import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
-  import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
-  import { replayAnimationScopeExitSettleMs, replayAnimationSpriteGroupRemovalMs } from '../animations/replayAnimationHandoff';
+  import { scheduleReplayAnimationGroupRemoval, scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
+  import { replayAnimationScopeExitSettleMs } from '../animations/replayAnimationHandoff';
   import { replayAnimationMotionsKey, replayAnimationPlanHasPhase, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { actionAnimationBatchEvents, actionAnimationStartMs } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
@@ -199,17 +199,13 @@
     };
 
     discards = [...discards, animation];
-    const removalMs = replayAnimationSpriteGroupRemovalMs(motions, animationPlan?.durationMs);
-    if (removalMs !== undefined) {
-      const timer = setTimeout(() => {
-        removeDiscards(new Set([animation.id]));
-        const timerIndex = timers.indexOf(timer);
-        if (timerIndex >= 0) {
-          timers.splice(timerIndex, 1);
-        }
-      }, removalMs);
-      timers.push(timer);
-    }
+    scheduleReplayAnimationGroupRemoval({
+      item: animation,
+      motions,
+      phaseDurationMs: animationPlan?.durationMs,
+      timers,
+      removeIds: removeDiscards,
+    });
   }
 
   function plannedSpriteForMotion(

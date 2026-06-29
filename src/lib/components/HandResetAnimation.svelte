@@ -7,8 +7,8 @@
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
   import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
-  import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
-  import { replayAnimationScopeExitSettleMs, replayAnimationSpriteGroupRemovalMs } from '../animations/replayAnimationHandoff';
+  import { scheduleReplayAnimationGroupRemoval, scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
+  import { replayAnimationScopeExitSettleMs } from '../animations/replayAnimationHandoff';
   import { replayAnimationMotionsKey, replayAnimationPlanHasPhase, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import {
     animationElementForMotionAnchor,
@@ -161,13 +161,13 @@
       sprites: plannedSprites,
     };
     resets = [...resets, animation];
-    const removalMs = replayAnimationSpriteGroupRemovalMs(motions, animationPlan?.durationMs);
-    if (removalMs !== undefined) {
-      const timer = setTimeout(() => {
-        removeResets(new Set([animation.id]));
-      }, removalMs);
-      timers.push(timer);
-    }
+    scheduleReplayAnimationGroupRemoval({
+      item: animation,
+      motions,
+      phaseDurationMs: animationPlan?.durationMs,
+      timers,
+      removeIds: removeResets,
+    });
     return true;
   }
 

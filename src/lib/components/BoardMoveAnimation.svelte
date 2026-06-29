@@ -12,7 +12,12 @@
   } from '../animations/animationVisibilityClaims';
   import { replayAnimationScopeExitSettleMs, replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
   import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
-  import { replayAnimationPhasePlanKey, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
+  import {
+    replayAnimationPhasePlanKey,
+    replayAnimationPlanHasPhase,
+    type CardMoveAnimationMotion,
+    type ReplayAnimationPhasePlan,
+  } from '../animations/replayAnimationPlan';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
   import { elementRectInPlane } from '../dom/planeGeometry';
@@ -132,7 +137,25 @@
       motion.kind === 'card-move'
       && motion.coordinateSpace === 'board'
       && motion.sourceAnchor.kind !== 'attached-energy'
-      && motion.sourceAnchor.kind !== 'attached-tool');
+      && motion.sourceAnchor.kind !== 'attached-tool'
+      && boardMoveOwnsPlannedMotion(plan, motion));
+  }
+
+  function boardMoveOwnsPlannedMotion(plan: ReplayAnimationPhasePlan | undefined, motion: CardMoveAnimationMotion): boolean {
+    const playerIndex = playerIndexForMotion(motion);
+    return replayAnimationPlanHasPhase(plan, 'BoardMove', playerIndex)
+      || replayAnimationPlanHasPhase(plan, 'BoardToDeck', playerIndex)
+      || replayAnimationPlanHasPhase(plan, 'DeckBoardPlace', playerIndex)
+      || replayAnimationPlanHasPhase(plan, 'DeckPrizePlace', playerIndex)
+      || replayAnimationPlanHasPhase(plan, 'StadiumMove', playerIndex)
+      || replayAnimationPlanHasPhase(plan, 'DiscardRecover', playerIndex)
+      || replayAnimationPlanHasPhase(plan, 'KnockOut', playerIndex);
+  }
+
+  function playerIndexForMotion(motion: CardMoveAnimationMotion): number | undefined {
+    return 'playerIndex' in motion.sourceAnchor && motion.sourceAnchor.playerIndex !== undefined
+      ? motion.sourceAnchor.playerIndex
+      : 'playerIndex' in motion.targetAnchor ? motion.targetAnchor.playerIndex : undefined;
   }
 
   function startPlannedBoardMoves(motions: CardMoveAnimationMotion[]) {
