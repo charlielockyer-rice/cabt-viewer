@@ -6,7 +6,7 @@
     releaseElementVisibilityClaim,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
-  import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
+  import { replayAnimationPlanHasPhase, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import {
     animationElementForMotionAnchor,
     cardHeightToWidthRatio,
@@ -197,7 +197,7 @@
       && motion.coordinateSpace === 'viewport'
       && motion.sourceAnchor.kind === 'prize-card'
       && motion.targetAnchor.kind === 'hand-card'
-      && plan?.key.startsWith(`PrizeTake:${motion.sourceAnchor.playerIndex}`),
+      && replayAnimationPlanHasPhase(plan, 'PrizeTake', motion.sourceAnchor.playerIndex),
     );
   }
 

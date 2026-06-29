@@ -7,7 +7,7 @@
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
   import { resolveExactAnimationAnchorElement } from '../animations/animationAnchors';
-  import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
+  import { replayAnimationPlanHasPhase, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { actionAnimationBatchEvents, actionAnimationStartMs } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -147,7 +147,7 @@
       && motion.sourceAnchor.kind === 'deck-top'
       && motion.sourceAnchor.playerIndex === playerIndex
       && (motion.targetAnchor.kind === 'discard-card' || motion.targetAnchor.kind === 'discard-pile')
-      && plan?.key.startsWith(`DeckDiscard:${playerIndex}`),
+      && replayAnimationPlanHasPhase(plan, 'DeckDiscard', playerIndex),
     );
   }
 

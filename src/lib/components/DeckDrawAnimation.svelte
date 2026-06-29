@@ -6,7 +6,7 @@
     releaseElementVisibilityClaim,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
-  import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
+  import { replayAnimationPlanHasPhase, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import {
     animationElementForMotionAnchor,
     cardHeightToWidthRatio,
@@ -169,7 +169,7 @@
       && motion.coordinateSpace === 'viewport'
       && motion.sourceAnchor.kind === 'deck-top'
       && motion.targetAnchor.kind === 'hand-card'
-      && plan?.key.startsWith(`Draw:${motion.sourceAnchor.playerIndex}`),
+      && replayAnimationPlanHasPhase(plan, 'Draw', motion.sourceAnchor.playerIndex),
     );
   }
 

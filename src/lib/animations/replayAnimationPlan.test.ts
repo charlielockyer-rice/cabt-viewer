@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createReplayAnimationPhasePlan,
+  replayAnimationPlanHasPhase,
   replayAnimationMotionSpanMs,
   replayAnimationMotionTimings,
   replayAnimationPhasePlanDurationMs,
@@ -45,6 +46,14 @@ describe('replay animation phase plans', () => {
       cardMoveMotion('second', 90, 520),
       cardMoveMotion('third', 700, 120),
     ])).toBe(820);
+  });
+
+  it('matches animation phase keys through the shared routing helper', () => {
+    expect(replayAnimationPlanHasPhase({ key: 'Draw:0' }, 'Draw', 0)).toBe(true);
+    expect(replayAnimationPlanHasPhase({ key: 'Draw:0' }, 'Draw')).toBe(true);
+    expect(replayAnimationPlanHasPhase({ key: 'Draw:0' }, 'Draw', 1)).toBe(false);
+    expect(replayAnimationPlanHasPhase({ key: 'Draw:0' }, 'Shuffle', 0)).toBe(false);
+    expect(replayAnimationPlanHasPhase(undefined, 'Draw', 0)).toBe(false);
   });
 
   it('rejects a phase duration that cannot contain its explicit motions', () => {

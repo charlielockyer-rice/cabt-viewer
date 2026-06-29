@@ -11,7 +11,7 @@
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
   import { replayAnimationPhaseGapMs } from '../game/replay';
-  import type { PulseAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
+  import { replayAnimationPlanHasPhase, type PulseAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import type { ActionTimelineEvent, CardView } from '../game/types';
 
   type Props = {
@@ -142,8 +142,8 @@
       && motion.spriteVisual.kind === 'pulse'
       && (motion.spriteVisual.tone === 'attack' || motion.spriteVisual.tone === 'damage')
       && (
-        plan?.key.startsWith(`Attack:${motion.anchor.playerIndex}`)
-        || plan?.key.startsWith(`Damage:${motion.anchor.playerIndex}`)
+        replayAnimationPlanHasPhase(plan, 'Attack', motion.anchor.playerIndex)
+        || replayAnimationPlanHasPhase(plan, 'Damage', motion.anchor.playerIndex)
       ),
     );
   }

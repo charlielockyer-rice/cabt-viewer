@@ -6,7 +6,7 @@
     releaseElementVisibilityClaim,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
-  import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
+  import { replayAnimationPlanHasPhase, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import {
     animationElementForMotionAnchor,
     centerOf,
@@ -185,7 +185,7 @@
       && motion.coordinateSpace === 'viewport'
       && motion.sourceAnchor.kind === 'hand-card'
       && motion.targetAnchor.kind === 'deck-top'
-      && plan?.key.startsWith(`HandToDeck:${motion.sourceAnchor.playerIndex}`),
+      && replayAnimationPlanHasPhase(plan, 'HandToDeck', motion.sourceAnchor.playerIndex),
     );
   }
 

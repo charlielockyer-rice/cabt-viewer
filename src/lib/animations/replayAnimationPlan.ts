@@ -101,6 +101,16 @@ export type ReplayAnimationPhasePlan = {
   visibilityClaims: AnimationVisibilityClaim[];
 };
 
+export type ReplayAnimationPhaseKind =
+  | 'Ability'
+  | 'Attack'
+  | 'Damage'
+  | 'DeckDiscard'
+  | 'Draw'
+  | 'HandToDeck'
+  | 'PrizeTake'
+  | 'Shuffle';
+
 export type ReplayAnimationMotionTiming = {
   id: string;
   startMs: number;
@@ -138,6 +148,18 @@ export function createReplayAnimationPhasePlan(input: {
     motions,
     visibilityClaims,
   };
+}
+
+export function replayAnimationPlanHasPhase(
+  plan: Pick<ReplayAnimationPhasePlan, 'key'> | undefined,
+  kind: ReplayAnimationPhaseKind,
+  playerIndex?: number,
+): boolean {
+  if (!plan) {
+    return false;
+  }
+  const [planKind, planPlayer] = plan.key.split(':');
+  return planKind === kind && (playerIndex === undefined || planPlayer === String(playerIndex));
 }
 
 export function replayAnimationMotionTiming(motion: AnimationMotion): ReplayAnimationMotionTiming {

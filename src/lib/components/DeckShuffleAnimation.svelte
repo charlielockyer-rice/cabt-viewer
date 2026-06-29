@@ -2,7 +2,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { actionAnimationBatchEvents, actionAnimationStartMs } from '../cabt/actionAnimationSchedule';
   import { cardBackCssVar } from '../game/cardAssets';
-  import type { ReplayAnimationPhasePlan, ShuffleAnimationMotion } from '../animations/replayAnimationPlan';
+  import { replayAnimationPlanHasPhase, type ReplayAnimationPhasePlan, type ShuffleAnimationMotion } from '../animations/replayAnimationPlan';
   import type { ActionTimelineEvent } from '../game/types';
 
   type Props = {
@@ -133,7 +133,7 @@
       motion.kind === 'shuffle'
       && motion.anchor.kind === 'deck-top'
       && motion.anchor.playerIndex === playerIndex
-      && plan?.key.startsWith(`Shuffle:${playerIndex}`),
+      && replayAnimationPlanHasPhase(plan, 'Shuffle', playerIndex),
     );
   }
 

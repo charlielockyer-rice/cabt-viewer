@@ -2,7 +2,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { resolveExactAnimationAnchorElement } from '../animations/animationAnchors';
-  import type { PulseAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
+  import { replayAnimationPlanHasPhase, type PulseAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import type { ActionTimelineEvent } from '../game/types';
 
   type Props = {
@@ -100,7 +100,7 @@
       && motion.anchor.kind === 'board-slot'
       && motion.spriteVisual.kind === 'pulse'
       && motion.spriteVisual.tone === 'ability'
-      && plan?.key.startsWith(`Ability:${motion.anchor.playerIndex}`),
+      && replayAnimationPlanHasPhase(plan, 'Ability', motion.anchor.playerIndex),
     );
   }
 
