@@ -118,7 +118,6 @@
       animationPlan,
     });
     if (replay.handled) {
-      previousCardRects = snapshotHandCardRects();
       return;
     }
 
@@ -138,7 +137,9 @@
     if (playEvents.length) {
       startPlay(playEvents, animationEvents);
     }
-    previousCardRects = snapshotHandCardRects();
+    if (!replayMode) {
+      previousCardRects = snapshotHandCardRects();
+    }
   });
 
   function handPlayPlanMotions(plan: ReplayAnimationPhasePlan | undefined): CardMoveAnimationMotion[] {
@@ -239,7 +240,10 @@
       return [];
     }
 
-    const sourceRect = sourceRectForHand(handElement, serial);
+    const sourceRect = sourceRectForMotion(motion);
+    if (!sourceRect) {
+      return [];
+    }
     const visualTarget = visualTargetForAnimation(target);
     const targetRect = visualTarget.getBoundingClientRect();
     if (sourceRect.width <= 0 || sourceRect.height <= 0 || targetRect.width <= 0 || targetRect.height <= 0) {
@@ -675,6 +679,18 @@
 
   function handAnchor(playerIndex: number): HTMLElement | null {
     return document.querySelector(`[data-card-anchor="player:${playerIndex}:hand"]`);
+  }
+
+  function sourceRectForMotion(motion: CardMoveAnimationMotion): DOMRect | undefined {
+    const source = resolveStrictAnimationAnchorElement(motion.sourceAnchor, { identity: motion.identity });
+    if (!source) {
+      return undefined;
+    }
+    const visual = source.querySelector('.card-tile');
+    const rect = visual instanceof HTMLElement
+      ? visual.getBoundingClientRect()
+      : source.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 ? rect : undefined;
   }
 
   function sourceRectForHand(handElement: HTMLElement, serial: number): DOMRect {
