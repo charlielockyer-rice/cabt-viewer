@@ -6,6 +6,7 @@
     step: ReplayStep;
     displayLabel?: string;
     stepIndex: number;
+    animationPhaseIndex?: number;
     copiedForkPoint?: boolean;
     isPlaying?: boolean;
     setStep: (index: number) => void;
@@ -24,6 +25,7 @@
     step,
     displayLabel,
     stepIndex,
+    animationPhaseIndex = 0,
     copiedForkPoint = false,
     isPlaying = false,
     setStep,
@@ -41,6 +43,7 @@
   let maxStateIndex = $derived(Math.max(0, replay.stateCount - 1));
   let actionValue = $derived(step.actionIndex === null ? 'Initial' : `${step.actionIndex + 1} / ${replay.actionCount}`);
   let stateValue = $derived(`${step.stateIndex} / ${maxStateIndex}`);
+  let animationPhase = $derived(step.animationPhases?.[animationPhaseIndex]);
   let timelineLabel = $derived(displayLabel || step.label);
   let payloadPreview = $derived(formatPayload(step.payload));
   let createdLabel = $derived(Number.isFinite(replay.created) ? new Date(replay.created).toLocaleString() : '');
@@ -65,7 +68,15 @@
 
 <button class="replay-back-button" aria-label="Back to replay list" onclick={backToReplayHome}>Back</button>
 
-<section class="replay-dock" aria-label="Replay timeline">
+<section
+  class="replay-dock"
+  aria-label="Replay timeline"
+  data-replay-step-index={stepIndex}
+  data-replay-animation-phase-index={animationPhaseIndex}
+  data-replay-animation-phase-count={step.animationPhases?.length ?? 0}
+  data-replay-animation-phase-kind={animationPhase?.kind ?? ''}
+  data-replay-animation-plan={animationPhase?.animationPlan ? 'true' : 'false'}
+>
   <div class="replay-caption" title={timelineLabel}>
     <span>{timelineLabel}</span>
   </div>

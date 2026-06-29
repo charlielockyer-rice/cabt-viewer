@@ -1287,6 +1287,7 @@
           step={replayStore.currentStep}
           displayLabel={replayStore.currentDisplayLabel}
           stepIndex={replayStore.stepIndex}
+          animationPhaseIndex={replayStore.animationPhaseIndex}
           copiedForkPoint={replayStore.copiedForkPoint}
           isPlaying={replayStore.isPlaying}
           setStep={(index) => replayStore.setStep(index)}
@@ -1357,6 +1358,21 @@
             playableIndexes={setupPrompt?.playerIndex === topPlayer.index ? setupPlayableIndexes : []}
             placedIndexes={setupPrompt?.playerIndex === topPlayer.index ? setupPlacedIndexes : []}
             concealed
+            onSelect={selectHandCard}
+            onDrag={onHandDrag}
+            onDragEnd={clearDragState}
+          />
+        </PlayerPanel>
+
+        <PlayerPanel side="bottom">
+          <Hand
+            player={bottomPlayer}
+            selectedHand={selectedHand}
+            disabled={!isSelfControlled(bottomPlayer.index) || (!canAct(bottomPlayer.index) && setupPrompt?.playerIndex !== bottomPlayer.index)}
+            dimDisabled={!replayMode}
+            playableIndexes={setupPrompt?.playerIndex === bottomPlayer.index ? setupPlayableIndexes : []}
+            placedIndexes={setupPrompt?.playerIndex === bottomPlayer.index ? setupPlacedIndexes : []}
+            concealed={!replayMode && !isSelfControlled(bottomPlayer.index)}
             onSelect={selectHandCard}
             onDrag={onHandDrag}
             onDragEnd={clearDragState}
@@ -1470,21 +1486,6 @@
           animationPlan={replayAnimationPlan}
           {replayMode}
         />
-
-        <PlayerPanel side="bottom">
-          <Hand
-            player={bottomPlayer}
-            selectedHand={selectedHand}
-            disabled={!isSelfControlled(bottomPlayer.index) || (!canAct(bottomPlayer.index) && setupPrompt?.playerIndex !== bottomPlayer.index)}
-            dimDisabled={!replayMode}
-            playableIndexes={setupPrompt?.playerIndex === bottomPlayer.index ? setupPlayableIndexes : []}
-            placedIndexes={setupPrompt?.playerIndex === bottomPlayer.index ? setupPlacedIndexes : []}
-            concealed={!replayMode && !isSelfControlled(bottomPlayer.index)}
-            onSelect={selectHandCard}
-            onDrag={onHandDrag}
-            onDragEnd={clearDragState}
-          />
-        </PlayerPanel>
 
         {#if focusedSlot}
           <ActiveFocus

@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { tick } from 'svelte';
 import { createReplayPhasePlanRunner } from './replayPhasePlanRunner.svelte';
 import type { AnimationMotion, ReplayAnimationPhaseKind, ReplayAnimationPhasePlan } from './replayAnimationPlan';
 import type { ActionTimelineEvent, GameView } from '../game/types';
 
 describe('createReplayPhasePlanRunner', () => {
-  it('starts planned motions once per scope and plan key', () => {
+  it('starts planned motions once per scope and plan key', async () => {
     const started: string[][] = [];
     const runner = createReplayPhasePlanRunner({
       reduceMotion: () => false,
@@ -18,12 +19,13 @@ describe('createReplayPhasePlanRunner', () => {
 
     expect(runner.update({ events: [event], scopeKey: 'step-a', replayMode: true, animationPlan: plan }).handled).toBe(true);
     expect(runner.update({ events: [event], scopeKey: 'step-a', replayMode: true, animationPlan: plan }).handled).toBe(true);
+    await flushPlannedStart();
 
     expect(started).toEqual([['draw-a']]);
     expect(runner.seenEventIds.has(event.id)).toBe(true);
   });
 
-  it('settles on scope change and clears on same-scope plan change', () => {
+  it('settles on scope change and clears on same-scope plan change', async () => {
     const lifecycle: string[] = [];
     const runner = createReplayPhasePlanRunner({
       reduceMotion: () => false,
@@ -34,10 +36,28 @@ describe('createReplayPhasePlanRunner', () => {
     });
 
     runner.update({ scopeKey: 'step-a', replayMode: true, animationPlan: phasePlan('Draw:0', 'Draw', [motion('draw-a')]) });
+    await flushPlannedStart();
     runner.update({ scopeKey: 'step-a', replayMode: true, animationPlan: phasePlan('Draw:0', 'Draw', [motion('draw-b')]) });
+    await flushPlannedStart();
     runner.update({ scopeKey: 'step-b', replayMode: true, animationPlan: phasePlan('Draw:0', 'Draw', [motion('draw-b')]) });
+    await flushPlannedStart();
 
     expect(lifecycle).toEqual(['start:draw-a', 'plan', 'start:draw-b', 'scope', 'start:draw-b']);
+  });
+
+  it('does not start stale planned motions after scope changes before render', async () => {
+    const started: string[] = [];
+    const runner = createReplayPhasePlanRunner({
+      reduceMotion: () => false,
+      selectMotions: (plan) => plan?.motions ?? [],
+      startPlanned: (motions) => started.push(...motions.map((motion) => motion.id)),
+    });
+
+    runner.update({ scopeKey: 'step-a', replayMode: true, animationPlan: phasePlan('Draw:0', 'Draw', [motion('draw-a')]) });
+    runner.update({ scopeKey: 'step-b', replayMode: true, animationPlan: phasePlan('Draw:0', 'Draw', [motion('draw-b')]) });
+    await flushPlannedStart();
+
+    expect(started).toEqual(['draw-b']);
   });
 
   it('can limit lifecycle hooks to replay mode', () => {
@@ -133,6 +153,11 @@ function phasePlan(
     motions,
     visibilityClaims: [],
   };
+}
+
+async function flushPlannedStart() {
+  await tick();
+  await Promise.resolve();
 }
 
 function motion(id: string): AnimationMotion {

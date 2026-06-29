@@ -165,6 +165,7 @@
                   data-animation-zone="discard"
                   data-animation-card-serial={entry.card.serial ?? undefined}
                   data-animation-card-id={entry.card.id ?? undefined}
+                  data-animation-card-name={entry.card.name ?? undefined}
                 >
                   <CardTile card={entry.card} compact />
                 </span>
@@ -194,6 +195,7 @@
           data-animation-zone="play-zone"
           data-animation-card-serial={resolvingCard(topPlayer)?.serial ?? undefined}
           data-animation-card-id={resolvingCard(topPlayer)?.id ?? undefined}
+          data-animation-card-name={resolvingCard(topPlayer)?.name ?? undefined}
           title={`${topPlayer.name} played card`}
         >
           <CardTile card={resolvingCard(topPlayer)} compact />
@@ -242,6 +244,7 @@
           data-animation-zone="play-zone"
           data-animation-card-serial={resolvingCard(bottomPlayer)?.serial ?? undefined}
           data-animation-card-id={resolvingCard(bottomPlayer)?.id ?? undefined}
+          data-animation-card-name={resolvingCard(bottomPlayer)?.name ?? undefined}
           title={`${bottomPlayer.name} played card`}
         >
           <CardTile card={resolvingCard(bottomPlayer)} compact />
@@ -302,6 +305,7 @@
                   data-animation-zone="discard"
                   data-animation-card-serial={entry.card.serial ?? undefined}
                   data-animation-card-id={entry.card.id ?? undefined}
+                  data-animation-card-name={entry.card.name ?? undefined}
                 >
                   <CardTile card={entry.card} compact />
                 </span>

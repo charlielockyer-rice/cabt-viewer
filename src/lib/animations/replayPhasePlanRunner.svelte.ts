@@ -1,3 +1,4 @@
+import { tick } from 'svelte';
 import { createPrefersReducedMotion } from './prefersReducedMotion.svelte';
 import { ReplayAnimationRunState, type ReplayAnimationRunChange } from './replayAnimationRunState';
 import {
@@ -37,6 +38,7 @@ export function createReplayPhasePlanRunner<Motion extends AnimationMotion>(
   const prefersReducedMotion = options.reduceMotion ? undefined : createPrefersReducedMotion();
   const motionPlanKey = options.planKey ?? selectedMotionPlanKey;
   const reduceMotion = () => options.reduceMotion?.() ?? Boolean(prefersReducedMotion?.current);
+  let currentRunKey = '';
 
   function update(input: {
     events?: readonly ActionTimelineEvent[];
@@ -49,6 +51,8 @@ export function createReplayPhasePlanRunner<Motion extends AnimationMotion>(
     const planKey = motionPlanKey(motions, input.animationPlan);
     const run = runState.update(input.scopeKey ?? '', planKey);
     const currentReduceMotion = reduceMotion();
+    const runKey = `${String(input.scopeKey ?? '')}\u0000${planKey}\u0000${Boolean(input.replayMode)}\u0000${currentReduceMotion}`;
+    currentRunKey = runKey;
     const context: ReplayPhasePlanRunnerContext<Motion> = {
       motions,
       plan: input.animationPlan,
@@ -65,7 +69,7 @@ export function createReplayPhasePlanRunner<Motion extends AnimationMotion>(
 
     if (input.replayMode && motions.length) {
       if (run.shouldStartPlan && !currentReduceMotion) {
-        options.startPlanned?.(motions, context);
+        schedulePlannedStart(runKey, motions, context);
       }
       runState.markEventsSeen(events);
       return result(context, true);
@@ -105,6 +109,18 @@ export function createReplayPhasePlanRunner<Motion extends AnimationMotion>(
       return reduceMotion();
     },
   };
+
+  async function schedulePlannedStart(
+    runKey: string,
+    motions: Motion[],
+    context: ReplayPhasePlanRunnerContext<Motion>,
+  ) {
+    await tick();
+    if (currentRunKey !== runKey) {
+      return;
+    }
+    options.startPlanned?.(motions, context);
+  }
 }
 
 function selectedMotionPlanKey<Motion extends AnimationMotion>(

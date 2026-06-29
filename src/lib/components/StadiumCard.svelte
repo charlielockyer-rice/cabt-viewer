@@ -27,6 +27,7 @@
   data-animation-zone="stadium"
   data-animation-card-serial={card.serial ?? undefined}
   data-animation-card-id={card.id ?? undefined}
+  data-animation-card-name={card.name ?? undefined}
   title={card.fullName}
   onclick={() => showZone(owner.index, 'stadium', `${owner.name} stadium`)}
 >

@@ -180,6 +180,29 @@ describe('animation anchors', () => {
     })).toBe(matching);
   });
 
+  it('strictly resolves named hand card anchors when DOM exposes complete identity', () => {
+    const anchor = { kind: 'hand-card' as const, playerIndex: 0, handIndex: 4, serial: 48 };
+    const matching = new TestElement({
+      animationAnchor: 'hand-card',
+      animationAnchorKey: 'player:0:hand-card:index:4:serial:48',
+      animationCardSerial: '48',
+      animationCardId: '3',
+      animationCardName: 'Basic Water Energy',
+    });
+    const missingName = new TestElement({
+      animationAnchor: 'hand-card',
+      animationAnchorKey: 'player:0:hand-card:index:4:serial:48',
+      animationCardSerial: '48',
+      animationCardId: '3',
+    });
+    const root = queryRoot([missingName, matching]);
+
+    expect(resolveStrictAnimationAnchorElement(anchor, {
+      root,
+      identity: { kind: 'card', serial: 48, cardId: 3, name: 'Basic Water Energy' },
+    })).toBe(matching);
+  });
+
   it('strict resolution ignores identity for surface anchors that do not carry card identity', () => {
     const anchor = { kind: 'deck-top' as const, playerIndex: 0 };
     const deck = new TestElement({

@@ -21,6 +21,7 @@
     animationSlotIndex?: number;
     animationCardSerial?: number;
     animationCardId?: number;
+    animationCardName?: string;
     onclick?: (event: MouseEvent) => void;
     ondragstart?: (event: DragEvent) => void;
     ondragend?: (event: DragEvent) => void;
@@ -45,6 +46,7 @@
     animationSlotIndex,
     animationCardSerial,
     animationCardId,
+    animationCardName,
     onclick,
     ondragstart,
     ondragend,
@@ -109,6 +111,7 @@
     data-animation-slot-index={animationSlotIndex}
     data-animation-card-serial={animationCardSerial ?? card?.serial ?? undefined}
     data-animation-card-id={animationCardId ?? card?.id ?? undefined}
+    data-animation-card-name={animationCardName ?? card?.name ?? undefined}
     title={card?.fullName ?? label}
     {onclick}
     {ondragstart}
@@ -150,6 +153,7 @@
     data-animation-slot-index={animationSlotIndex}
     data-animation-card-serial={animationCardSerial ?? card?.serial ?? undefined}
     data-animation-card-id={animationCardId ?? card?.id ?? undefined}
+    data-animation-card-name={animationCardName ?? card?.name ?? undefined}
     title={card?.fullName ?? label}
   >
     {#if showImage}

@@ -121,6 +121,7 @@
       data-animation-hand-index={index}
       data-animation-card-serial={card.serial ?? undefined}
       data-animation-card-id={card.id ?? undefined}
+      data-animation-card-name={card.name ?? undefined}
       data-card-serial={card.serial ?? undefined}
       animate:flip={{ duration: 180 }}
     >

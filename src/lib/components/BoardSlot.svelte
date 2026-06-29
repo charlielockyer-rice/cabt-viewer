@@ -148,6 +148,7 @@
             data-animation-slot-index={slot.index}
             data-animation-card-serial={energy.serial ?? undefined}
             data-animation-card-id={energy.id ?? undefined}
+            data-animation-card-name={energy.name ?? undefined}
             data-energy-serial={energy.serial ?? undefined}
             class:pending-energy={hasPendingAttach(energy)}
             style={energyStackStyle(energyIndex)}
@@ -168,6 +169,7 @@
         data-animation-slot-index={slot.index}
         data-animation-card-serial={toolPreview?.serial ?? undefined}
         data-animation-card-id={toolPreview?.id ?? undefined}
+        data-animation-card-name={toolPreview?.name ?? undefined}
         data-tool-serial={toolPreview?.serial ?? undefined}
         title={toolNames}
       >
