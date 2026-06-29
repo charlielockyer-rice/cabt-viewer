@@ -6,7 +6,9 @@
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
   import { resolveExactAnimationAnchorElement } from '../animations/animationAnchors';
-  import { replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
+  import { replayAnimationScopeExitSettleMs, replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
+  import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
+  import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
   import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
@@ -81,11 +83,8 @@
   const evolveVisibleDurationMs = actionAnimationTiming.evolveMs + replayAnimationPhaseGapMs + 40;
   const cardHeightToWidthRatio = 88 / 63;
   let nextPlayId = 0;
-  let seenEventIds = new Set<number>();
-  let initialized = false;
+  const runState = new ReplayAnimationRunState();
   let reduceMotion = $state(false);
-  let lastScopeKey: string | number = '';
-  let lastPlanKey = '';
   let previousCardRects = new Map<number, RectSnapshot>();
   let activePlays = $state<ActivePlay[]>([]);
   const activeTargetCounts = new WeakMap<HTMLElement, number>();
@@ -115,66 +114,53 @@
     const currentPlan = animationPlan;
     const plannedMotions = handPlayPlanMotions(currentPlan);
     const planKey = currentPlanKey(currentPlan);
-    const scopeChanged = initialized && currentScopeKey !== lastScopeKey;
-    const planChanged = planKey !== lastPlanKey;
-    lastScopeKey = currentScopeKey;
-    lastPlanKey = planKey;
+    const run = runState.update(currentScopeKey, planKey);
 
-    if (replayMode && (scopeChanged || (plannedMotions.length && planChanged))) {
+    if (replayMode && run.scopeChanged) {
+      settlePlays();
+    } else if (replayMode && plannedMotions.length && run.planChanged) {
       clearPlays();
     }
 
     if (plannedMotions.length) {
-      initialized = true;
-      if (!reduceMotion && (scopeChanged || planChanged)) {
+      if (!reduceMotion && run.shouldStartPlan) {
         startPlannedPlay(plannedMotions);
       }
-      markEventsSeen(currentEvents);
+      runState.markEventsSeen(currentEvents);
       previousCardRects = snapshotHandCardRects();
       return;
     }
 
-    if (!initialized) {
-      markEventsSeen(currentEvents);
-      initialized = true;
+    if (run.firstRun) {
+      runState.markEventsSeen(currentEvents);
       previousCardRects = snapshotHandCardRects();
       return;
-    }
-
-    if (replayMode && scopeChanged) {
-      clearPlays();
     }
 
     if (replayMode) {
-      markEventsSeen(currentEvents);
+      runState.markEventsSeen(currentEvents);
       previousCardRects = snapshotHandCardRects();
       return;
     }
 
-    const animationEvents = actionAnimationBatchEvents(currentEvents, seenEventIds);
+    const animationEvents = actionAnimationBatchEvents(currentEvents, runState.seenEventIds);
     const playEvents = animationEvents.filter((event) => {
       if (!isHandPlayEvent(event)) {
         return false;
       }
-      if (seenEventIds.has(event.id)) {
+      if (runState.hasSeen(event)) {
         return false;
       }
       return true;
     });
 
-    markEventsSeen(currentEvents);
+    runState.markEventsSeen(currentEvents);
 
     if (playEvents.length) {
       startPlay(playEvents, animationEvents);
     }
     previousCardRects = snapshotHandCardRects();
   });
-
-  function markEventsSeen(currentEvents: ActionTimelineEvent[]) {
-    for (const event of currentEvents) {
-      seenEventIds.add(event.id);
-    }
-  }
 
   function currentPlanKey(plan: ReplayAnimationPhasePlan | undefined): string {
     return plan ? `${plan.key}:${plan.motions.map((motion) => motion.id).join(',')}` : '';
@@ -240,7 +226,7 @@
       if (cleanupDelayMs !== undefined) {
         const timer = setTimeout(() => {
           if (animation.kind === 'fixed') {
-            activePlays = activePlays.filter((play) => play.id !== animation.id);
+            removePlays(new Set([animation.id]));
           }
           deactivateTargets([animation.target]);
         }, cleanupDelayMs);
@@ -380,6 +366,24 @@
     activePlays = [];
     deactivateTargets(activeTargets);
     activeTargets = [];
+  }
+
+  function settlePlays() {
+    const playIds = new Set(activePlays.map((play) => play.id));
+    const targets = [...activeTargets];
+    scheduleReplayAnimationScopeClear({
+      items: targets.map((_target, index) => ({ id: index })),
+      timers,
+      delayMs: replayAnimationScopeExitSettleMs,
+      removeIds() {
+        removePlays(playIds);
+        deactivateTargets(targets);
+      },
+    });
+  }
+
+  function removePlays(ids: ReadonlySet<number>) {
+    activePlays = activePlays.filter((play) => !ids.has(play.id));
   }
 
   function targetAnimationForEvent(event: ActionTimelineEvent, animationEvents: ActionTimelineEvent[]): TargetAnimation[] {
