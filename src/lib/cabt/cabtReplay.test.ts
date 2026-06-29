@@ -326,8 +326,35 @@ describe('cabtReplayToSnapshot', () => {
 
     const step = snapshot.steps[1];
     expect(step.actionTimeline?.map((event) => event.kind)).toEqual(['Play']);
-    expect(step.animationPhases).toBeUndefined();
-    expect(step.displayView).toBeUndefined();
+    expect(step.animationPhases?.map((phase) => phase.key)).toEqual(['Play:0']);
+    expect(step.animationPhases?.[0].view.players[0].hand.map((card) => card.serial)).toEqual([62]);
+    expect(step.animationPhases?.[0].view.players[0].stadium.map((card) => card.serial)).toEqual([62]);
+    expect(step.animationPhases?.[0].animationPlan?.motions).toMatchObject([
+      {
+        kind: 'card-move',
+        coordinateSpace: 'viewport',
+        sourceAnchor: { kind: 'hand-card', playerIndex: 0, handIndex: 0, serial: 62 },
+        targetAnchor: { kind: 'stadium-card', playerIndex: 0, serial: 62 },
+        identity: { kind: 'stadium', serial: 62, cardId: 1264 },
+        handoffPolicy: {
+          hideSourceUntil: 'scope-exit',
+          hideDestinationUntil: 'arrival',
+          removeSprite: 'arrival',
+        },
+      },
+    ]);
+    expect(step.animationPhases?.[0].animationPlan?.visibilityClaims).toMatchObject([
+      {
+        anchor: { kind: 'hand-card', playerIndex: 0, handIndex: 0, serial: 62 },
+        identity: { kind: 'stadium', serial: 62, cardId: 1264 },
+        role: 'source',
+      },
+      {
+        anchor: { kind: 'stadium-card', playerIndex: 0, serial: 62 },
+        identity: { kind: 'stadium', serial: 62, cardId: 1264 },
+        role: 'destination',
+      },
+    ]);
     expect(snapshot.views[step.stateIndex].players[0].stadium.map((card) => card.serial)).toEqual([62]);
     expect(snapshot.views[step.stateIndex].players[0].playZone).toHaveLength(0);
     expect(snapshot.views[step.stateIndex].players[0].discard).toHaveLength(0);
@@ -899,7 +926,7 @@ describe('cabtReplayToSnapshot', () => {
     expect(step.stateIndex).toBe(3);
     expect(step.actionTimeline?.map((event) => event.kind)).toEqual(['Play', 'MoveCard']);
     expect(step.animationPhases?.map((phase) => phase.key)).toEqual(['Play:0', 'DeckSearchReveal:0']);
-    expect(step.animationPhases?.[0].view.players[0].hand.map((card) => card.serial)).toEqual([46]);
+    expect(step.animationPhases?.[0].view.players[0].hand.map((card) => card.serial)).toEqual([46, 14]);
     expect(step.animationPhases?.[0].view.players[0].playZone.map((card) => card.serial)).toEqual([14]);
     expect(step.animationPhases?.[0].view.players[0].discard).toHaveLength(0);
     expect(step.animationPhases?.[1].view.players[0].hand.map((card) => card.serial)).toEqual([46, 13]);
@@ -1962,9 +1989,38 @@ describe('cabtReplayToSnapshot', () => {
       }],
     });
 
-    expect(snapshot.steps[1].displayView).toBeUndefined();
-    expect(snapshot.views[snapshot.steps[1].stateIndex].players[0].discard).toHaveLength(0);
-    expect(snapshot.views[snapshot.steps[1].stateIndex].players[0].bench[0].pokemon?.serial).toBe(7);
+    const step = snapshot.steps[1];
+    expect(step.animationPhases?.map((phase) => phase.key)).toEqual(['Play:0']);
+    expect(step.animationPhases?.[0].view.players[0].hand.map((card) => card.serial)).toEqual([7]);
+    expect(step.animationPhases?.[0].view.players[0].bench[0].pokemon?.serial).toBe(7);
+    expect(step.animationPhases?.[0].animationPlan?.motions).toMatchObject([
+      {
+        kind: 'card-move',
+        coordinateSpace: 'viewport',
+        sourceAnchor: { kind: 'hand-card', playerIndex: 0, handIndex: 0, serial: 7 },
+        targetAnchor: { kind: 'pokemon-card', playerIndex: 0, slot: 'bench', slotIndex: 0, serial: 7 },
+        identity: { kind: 'pokemon', serial: 7, cardId: 722 },
+        handoffPolicy: {
+          hideSourceUntil: 'scope-exit',
+          hideDestinationUntil: 'arrival',
+          removeSprite: 'arrival',
+        },
+      },
+    ]);
+    expect(step.animationPhases?.[0].animationPlan?.visibilityClaims).toMatchObject([
+      {
+        anchor: { kind: 'hand-card', playerIndex: 0, handIndex: 0, serial: 7 },
+        identity: { kind: 'pokemon', serial: 7, cardId: 722 },
+        role: 'source',
+      },
+      {
+        anchor: { kind: 'pokemon-card', playerIndex: 0, slot: 'bench', slotIndex: 0, serial: 7 },
+        identity: { kind: 'pokemon', serial: 7, cardId: 722 },
+        role: 'destination',
+      },
+    ]);
+    expect(snapshot.views[step.stateIndex].players[0].discard).toHaveLength(0);
+    expect(snapshot.views[step.stateIndex].players[0].bench[0].pokemon?.serial).toBe(7);
   });
 
   it('keeps repeated hand-to-bench placements as distinct replay steps', () => {
@@ -2212,7 +2268,7 @@ describe('cabtReplayToSnapshot', () => {
       'Player 1 shuffled their deck.',
       'Player 1 drew 4 cards.',
     ]);
-    expect(step.animationPhases?.[0].view.players[0].hand.map((card) => card.serial)).toEqual([120, 101, 81, 109, 100]);
+    expect(step.animationPhases?.[0].view.players[0].hand.map((card) => card.serial)).toEqual([120, 83, 101, 81, 109, 100]);
     expect(step.animationPhases?.[1].view.players[0].hand.map((card) => card.serial)).toEqual([120, 101, 81, 109, 100]);
     expect(step.animationPhases?.[1].animationPlan?.motions).toMatchObject([
       {
@@ -2349,7 +2405,7 @@ describe('cabtReplayToSnapshot', () => {
       'Player 1 played Waitress.',
       'Player 1 revealed the top 3 cards of their deck.',
     ]);
-    expect(step.animationPhases?.[0].view.players[0].hand.map((card) => card.serial)).toEqual([31]);
+    expect(step.animationPhases?.[0].view.players[0].hand.map((card) => card.serial)).toEqual([26, 31]);
     expect(step.animationPhases?.[1].view.players[0].deckCount).toBe(43);
   });
 
@@ -4081,5 +4137,166 @@ describe('cabtReplayToSnapshot', () => {
     expect(step.animationPhases?.[0].view.players[0].bench[0].pokemon?.serial).toBe(81);
     expect(snapshot.views[step.stateIndex].players[0].active.pokemon?.serial).toBe(81);
     expect(snapshot.views[step.stateIndex].players[0].bench[0].pokemon?.serial).toBe(79);
+  });
+
+  it('plans a played trainer from hand into the resolving play zone', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 3,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 721, serial: 4, hp: 150, maxHp: 150 }],
+            bench: [],
+            benchMax: 5,
+            hand: [{ id: 1227, serial: 83 }],
+            deckCount: 50,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 50,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'Play', playerIndex: 0, cardId: 1227, serial: 83 },
+        ],
+        current: {
+          turn: 3,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 721, serial: 4, hp: 150, maxHp: 150 }],
+            bench: [],
+            benchMax: 5,
+            hand: [],
+            deckCount: 50,
+            discard: [{ id: 1227, serial: 83 }],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 50,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    const step = snapshot.steps[1];
+    expect(step.animationPhases?.map((phase) => phase.key)).toEqual(['Play:0']);
+    expect(step.animationPhases?.[0].view.players[0].hand.map((card) => card.serial)).toEqual([83]);
+    expect(step.animationPhases?.[0].view.players[0].playZone.map((card) => card.serial)).toEqual([83]);
+    expect(step.animationPhases?.[0].animationPlan?.motions).toMatchObject([
+      {
+        kind: 'card-move',
+        coordinateSpace: 'viewport',
+        sourceAnchor: { kind: 'hand-card', playerIndex: 0, handIndex: 0, serial: 83 },
+        targetAnchor: { kind: 'play-zone-card', playerIndex: 0, serial: 83 },
+        identity: { kind: 'card', serial: 83, cardId: 1227 },
+        handoffPolicy: {
+          hideSourceUntil: 'scope-exit',
+          hideDestinationUntil: 'arrival',
+          removeSprite: 'arrival',
+        },
+      },
+    ]);
+    expect(step.animationPhases?.[0].animationPlan?.visibilityClaims).toMatchObject([
+      {
+        anchor: { kind: 'hand-card', playerIndex: 0, handIndex: 0, serial: 83 },
+        identity: { kind: 'card', serial: 83, cardId: 1227 },
+        role: 'source',
+      },
+      {
+        anchor: { kind: 'play-zone-card', playerIndex: 0, serial: 83 },
+        identity: { kind: 'card', serial: 83, cardId: 1227 },
+        role: 'destination',
+      },
+    ]);
+  });
+
+  it('plans a hand Pokemon moving to the bench without combining it with hand-to-deck', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 2,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 721, serial: 4, hp: 150, maxHp: 150 }],
+            bench: [],
+            benchMax: 5,
+            hand: [{ id: 722, serial: 6 }],
+            deckCount: 50,
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 50,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'MoveCard', playerIndex: 0, cardId: 722, serial: 6, fromArea: CabtAreaType.HAND, toArea: CabtAreaType.BENCH },
+        ],
+        current: {
+          turn: 2,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 721, serial: 4, hp: 150, maxHp: 150 }],
+            bench: [{ id: 722, serial: 6, hp: 90, maxHp: 90 }],
+            benchMax: 5,
+            hand: [],
+            deckCount: 50,
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 50,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    const step = snapshot.steps[1];
+    expect(step.animationPhases?.map((phase) => phase.key)).toEqual([`HandMove:0:${CabtAreaType.BENCH}`]);
+    expect(step.animationPhases?.[0].view.players[0].hand.map((card) => card.serial)).toEqual([6]);
+    expect(step.animationPhases?.[0].view.players[0].bench[0].pokemon?.serial).toBe(6);
+    expect(step.animationPhases?.[0].animationPlan?.motions).toMatchObject([
+      {
+        kind: 'card-move',
+        coordinateSpace: 'viewport',
+        sourceAnchor: { kind: 'hand-card', playerIndex: 0, handIndex: 0, serial: 6 },
+        targetAnchor: { kind: 'pokemon-card', playerIndex: 0, slot: 'bench', slotIndex: 0, serial: 6 },
+        identity: { kind: 'pokemon', serial: 6, cardId: 722 },
+      },
+    ]);
+    expect(step.animationPhases?.[0].animationPlan?.visibilityClaims).toMatchObject([
+      {
+        anchor: { kind: 'hand-card', playerIndex: 0, handIndex: 0, serial: 6 },
+        identity: { kind: 'pokemon', serial: 6, cardId: 722 },
+        role: 'source',
+      },
+      {
+        anchor: { kind: 'pokemon-card', playerIndex: 0, slot: 'bench', slotIndex: 0, serial: 6 },
+        identity: { kind: 'pokemon', serial: 6, cardId: 722 },
+        role: 'destination',
+      },
+    ]);
   });
 });

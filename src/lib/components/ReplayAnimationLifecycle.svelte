@@ -83,14 +83,20 @@
     lastScopeKey = currentScopeKey;
     lastPlan = currentPlan;
 
-    if (!reduceMotion && currentPlan?.visibilityClaims.length) {
-      for (const claim of currentPlan.visibilityClaims) {
+    if (currentPlan?.visibilityClaims.length) {
+      const claims = reduceMotion
+        ? currentPlan.visibilityClaims.filter((claim) => claim.role === 'source')
+        : currentPlan.visibilityClaims;
+      for (const claim of claims) {
         const token = replayAnimationVisibility.hide({
           ...claim,
           scopeKey: currentScopeKey,
         });
         const releaseMs = visibilityClaimReleaseMs(currentPlan, claim);
         planTokens = [...planTokens, token];
+        if (releaseMs === undefined) {
+          continue;
+        }
         const releaseTimer = setTimeout(() => {
           replayAnimationVisibility.release(token);
           planTokens = planTokens.filter((candidate) => candidate !== token);
@@ -118,12 +124,15 @@
     planTokens = [];
   }
 
-  function visibilityClaimReleaseMs(plan: ReplayAnimationPhasePlan, claim: AnimationVisibilityClaim): number {
+  function visibilityClaimReleaseMs(plan: ReplayAnimationPhasePlan, claim: AnimationVisibilityClaim): number | undefined {
     const motion = matchingMotionForClaim(plan, claim);
     if (!motion) {
       return Math.min(plan.durationMs, 240);
     }
     if (claim.role === 'source') {
+      if (motion.handoffPolicy.hideSourceUntil === 'scope-exit') {
+        return undefined;
+      }
       if (motion.handoffPolicy.hideSourceUntil === 'phase-end') {
         return plan.durationMs;
       }
@@ -136,7 +145,7 @@
       return motion.startMs + Math.round(motion.durationMs * 0.88);
     }
     if (motion.handoffPolicy.hideDestinationUntil === 'arrival') {
-      return motion.startMs + motion.durationMs;
+      return motion.startMs + motion.durationMs + 24;
     }
     return 0;
   }

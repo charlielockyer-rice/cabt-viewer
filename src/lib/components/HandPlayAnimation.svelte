@@ -5,6 +5,8 @@
     releaseElementVisibilityClaim,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
+  import { resolveAnimationAnchorElements } from '../animations/animationAnchors';
+  import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -17,6 +19,7 @@
     events?: ActionTimelineEvent[];
     scopeKey?: string | number;
     replayMode?: boolean;
+    animationPlan?: ReplayAnimationPhasePlan;
   };
 
   type RectSnapshot = Point & {
@@ -64,6 +67,7 @@
     events = [],
     scopeKey = '',
     replayMode = false,
+    animationPlan,
   }: Props = $props();
 
   const timers: ReturnType<typeof setTimeout>[] = [];
@@ -76,6 +80,7 @@
   let initialized = false;
   let reduceMotion = $state(false);
   let lastScopeKey: string | number = '';
+  let lastPlanKey = '';
   let previousCardRects = new Map<number, RectSnapshot>();
   let activePlays = $state<ActivePlay[]>([]);
   const activeTargetCounts = new WeakMap<HTMLElement, number>();
@@ -102,8 +107,26 @@
   $effect(() => {
     const currentEvents = events;
     const currentScopeKey = scopeKey;
+    const currentPlan = animationPlan;
+    const plannedMotions = handPlayPlanMotions(currentPlan);
+    const planKey = currentPlanKey(currentPlan);
     const scopeChanged = initialized && currentScopeKey !== lastScopeKey;
+    const planChanged = planKey !== lastPlanKey;
     lastScopeKey = currentScopeKey;
+    lastPlanKey = planKey;
+
+    if (replayMode && (scopeChanged || (plannedMotions.length && planChanged))) {
+      clearPlays();
+    }
+
+    if (plannedMotions.length) {
+      initialized = true;
+      if (!reduceMotion && (scopeChanged || planChanged)) {
+        startPlannedPlay(plannedMotions);
+      }
+      previousCardRects = snapshotHandCardRects();
+      return;
+    }
 
     if (!initialized) {
       for (const event of currentEvents) {
@@ -139,6 +162,19 @@
     previousCardRects = snapshotHandCardRects();
   });
 
+  function currentPlanKey(plan: ReplayAnimationPhasePlan | undefined): string {
+    return plan ? `${plan.key}:${plan.motions.map((motion) => motion.id).join(',')}` : '';
+  }
+
+  function handPlayPlanMotions(plan: ReplayAnimationPhasePlan | undefined): CardMoveAnimationMotion[] {
+    return (plan?.motions ?? []).filter((motion): motion is CardMoveAnimationMotion =>
+      motion.kind === 'card-move'
+      && motion.coordinateSpace === 'viewport'
+      && motion.sourceAnchor.kind === 'hand-card'
+      && motion.targetAnchor.kind !== 'deck-top'
+      && motion.targetAnchor.kind !== 'hand-card');
+  }
+
   function isHandPlayEvent(event: ActionTimelineEvent): boolean {
     const params = event.params as Record<string, unknown> | undefined;
     if (event.kind === 'Play' || event.kind === 'Attach' || event.kind === 'Evolve') {
@@ -160,6 +196,15 @@
     }
 
     const targetAnimations = playEvents.flatMap((event) => targetAnimationForEvent(event, animationEvents));
+    activateAnimations(targetAnimations);
+  }
+
+  function startPlannedPlay(motions: CardMoveAnimationMotion[]) {
+    const targetAnimations = motions.flatMap(targetAnimationForMotion);
+    activateAnimations(targetAnimations);
+  }
+
+  function activateAnimations(targetAnimations: TargetAnimation[]) {
     if (!targetAnimations.length) {
       return;
     }
@@ -188,6 +233,89 @@
       deactivateTargets(targetAnimations.map((animation) => animation.target));
     }, Math.max(...targetAnimations.map((animation) => animation.delayMs + animationTotalMs(animation))) + 120);
     timers.push(timer);
+  }
+
+  function targetAnimationForMotion(motion: CardMoveAnimationMotion): TargetAnimation[] {
+    if (motion.sourceAnchor.kind !== 'hand-card') {
+      return [];
+    }
+    const playerIndex = motion.sourceAnchor.playerIndex;
+    const serial = Number(motion.sourceAnchor.serial ?? motion.identity?.serial);
+    const handElement = handAnchor(playerIndex);
+    const target = targetElementForMotion(motion);
+    const planeElement = target?.closest('.game-board-plane') as HTMLElement | null;
+    if (!handElement || !target || !planeElement) {
+      return [];
+    }
+
+    const sourceRect = sourceRectForHand(handElement, serial);
+    const visualTarget = visualTargetForAnimation(target);
+    const targetRect = visualTarget.getBoundingClientRect();
+    if (sourceRect.width <= 0 || sourceRect.height <= 0 || targetRect.width <= 0 || targetRect.height <= 0) {
+      return [];
+    }
+
+    const sourceQuad = sourceQuadForHand(handElement, sourceRect);
+    const targetQuad = viewportQuad(visualTarget);
+    const startTransform = cssMatrix3dForQuad(sourceRect.width, sourceRect.height, sourceQuad);
+    const endTransform = cssMatrix3dForQuad(sourceRect.width, sourceRect.height, targetQuad);
+    if (!startTransform || !endTransform) {
+      return [];
+    }
+
+    const spriteCard = motion.spriteVisual.kind === 'card' && motion.spriteVisual.card
+      ? motion.spriteVisual.card
+      : undefined;
+    const metadataCard = motion.identity?.cardId !== undefined
+        ? cabtCardToView(motion.identity.cardId)
+        : undefined;
+    const label = spriteCard?.name ?? metadataCard?.name ?? motion.identity?.name ?? 'Card';
+    return [{
+      kind: 'fixed',
+      mode: 'play',
+      id: nextPlayId++,
+      target,
+      delayMs: motion.startMs,
+      width: sourceRect.width,
+      height: sourceRect.height,
+      startTransform,
+      endTransform,
+      imageUrl: cardFaceImageUrl(spriteCard ?? metadataCard) ?? '',
+      label,
+      setLabel: metadataCard ? [metadataCard.set, metadataCard.setNumber].filter(Boolean).join(' ') : '',
+      typeClass: metadataCard && (metadataCard.energyType !== undefined || metadataCard.superType === 'Energy' || metadataCard.name.includes('Energy'))
+        ? 'energy'
+        : metadataCard && (metadataCard.trainerType !== undefined || metadataCard.superType === 'Trainer')
+          ? 'trainer'
+          : 'pokemon',
+      hideContents: false,
+    }];
+  }
+
+  function targetElementForMotion(motion: CardMoveAnimationMotion): HTMLElement | null {
+    const exact = resolveAnimationAnchorElements(motion.targetAnchor, { identity: motion.identity }).at(0)
+      ?? resolveAnimationAnchorElements(motion.targetAnchor).at(0);
+    if (exact) {
+      return targetVisualElementForAnchor(exact, motion.targetAnchor.kind);
+    }
+    if (motion.targetAnchor.kind === 'discard-card') {
+      const fallback = resolveAnimationAnchorElements({
+        kind: 'discard-pile',
+        playerIndex: motion.targetAnchor.playerIndex,
+      }).at(0);
+      return fallback ? targetVisualElementForAnchor(fallback, 'discard-pile') : null;
+    }
+    return null;
+  }
+
+  function targetVisualElementForAnchor(element: HTMLElement, anchorKind: string): HTMLElement {
+    if (anchorKind === 'discard-pile') {
+      const topCard = element.querySelector('.discard-card-top .card-tile');
+      if (topCard instanceof HTMLElement) {
+        return topCard;
+      }
+    }
+    return element;
   }
 
   function clearPlays() {
