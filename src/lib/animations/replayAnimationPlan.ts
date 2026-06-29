@@ -127,7 +127,7 @@ export function createReplayAnimationPhasePlan(input: {
   visibilityClaims?: AnimationVisibilityClaim[];
 }): ReplayAnimationPhasePlan {
   const motions = input.motions ?? [];
-  const visibilityClaims = input.visibilityClaims ?? [];
+  const visibilityClaims = input.visibilityClaims ?? replayAnimationVisibilityClaimsForMotions(input.key, motions);
   assertFiniteNonNegative(input.durationMs, 'durationMs');
 
   for (const motion of motions) {
@@ -148,6 +148,58 @@ export function createReplayAnimationPhasePlan(input: {
     motions,
     visibilityClaims,
   };
+}
+
+export function replayAnimationVisibilityClaimsForMotions(
+  scopeKey: string,
+  motions: readonly AnimationMotion[],
+): AnimationVisibilityClaim[] {
+  const claims: AnimationVisibilityClaim[] = [];
+  for (const motion of motions) {
+    if (motion.kind === 'card-move') {
+      appendMotionVisibilityClaim(claims, {
+        scopeKey,
+        motionId: motion.id,
+        anchor: motion.sourceAnchor,
+        identity: motion.identity,
+        role: 'source',
+        policy: motion.handoffPolicy.hideSourceUntil,
+      });
+      appendMotionVisibilityClaim(claims, {
+        scopeKey,
+        motionId: motion.id,
+        anchor: motion.targetAnchor,
+        identity: motion.identity,
+        role: 'destination',
+        policy: motion.handoffPolicy.hideDestinationUntil,
+      });
+      continue;
+    }
+    if (motion.kind !== 'reveal-session') {
+      continue;
+    }
+    for (const step of motion.steps) {
+      appendMotionVisibilityClaim(claims, {
+        scopeKey,
+        motionId: motion.id,
+        stepId: step.id,
+        anchor: step.sourceAnchor,
+        identity: step.identity,
+        role: 'source',
+        policy: step.handoffPolicy?.hideSourceUntil,
+      });
+      appendMotionVisibilityClaim(claims, {
+        scopeKey,
+        motionId: motion.id,
+        stepId: step.id,
+        anchor: step.targetAnchor,
+        identity: step.identity,
+        role: 'destination',
+        policy: step.handoffPolicy?.hideDestinationUntil,
+      });
+    }
+  }
+  return claims;
 }
 
 export function replayAnimationPlanHasPhase(
@@ -222,6 +274,35 @@ function validateVisibilityClaims(
       throw new Error(`Replay animation phase "${phaseKey}" visibility claim references unknown step "${claim.stepId}".`);
     }
   }
+}
+
+function appendMotionVisibilityClaim(
+  claims: AnimationVisibilityClaim[],
+  input: {
+    scopeKey: string;
+    motionId: string;
+    stepId?: string;
+    anchor: AnimationAnchorRef | undefined;
+    identity: AnimationIdentity | undefined;
+    role: AnimationVisibilityClaim['role'];
+    policy: AnimationHandoffPolicy['hideSourceUntil'] | AnimationHandoffPolicy['hideDestinationUntil'] | undefined;
+  },
+) {
+  const { scopeKey, motionId, stepId, anchor, identity, role, policy } = input;
+  if (!anchor || !policy || policy === 'none') {
+    return;
+  }
+  if (role === 'source' && anchor.kind === 'deck-top') {
+    return;
+  }
+  claims.push({
+    scopeKey,
+    motionId,
+    ...(stepId ? { stepId } : {}),
+    anchor,
+    identity,
+    role,
+  });
 }
 
 function assertFiniteNonNegative(value: number, label: string): void {

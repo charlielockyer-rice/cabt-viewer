@@ -5,6 +5,7 @@ import {
   replayAnimationMotionSpanMs,
   replayAnimationMotionTimings,
   replayAnimationPhasePlanDurationMs,
+  replayAnimationVisibilityClaimsForMotions,
   type AnimationMotion,
 } from './replayAnimationPlan';
 import type { GameView } from '../game/types';
@@ -54,6 +55,118 @@ describe('replay animation phase plans', () => {
     expect(replayAnimationPlanHasPhase({ key: 'Draw:0' }, 'Draw', 1)).toBe(false);
     expect(replayAnimationPlanHasPhase({ key: 'Draw:0' }, 'Shuffle', 0)).toBe(false);
     expect(replayAnimationPlanHasPhase(undefined, 'Draw', 0)).toBe(false);
+  });
+
+  it('derives card-move visibility claims from handoff policies by default', () => {
+    const plan = createReplayAnimationPhasePlan({
+      key: 'Move:0',
+      view: gameView(),
+      durationMs: 360,
+      motions: [cardMoveMotion('move', 0, 360)],
+    });
+
+    expect(plan.visibilityClaims).toEqual([
+      {
+        scopeKey: 'Move:0',
+        motionId: 'move',
+        role: 'source',
+        anchor: {
+          kind: 'hand-card',
+          playerIndex: 0,
+          handIndex: 0,
+          serial: 101,
+        },
+        identity: undefined,
+      },
+      {
+        scopeKey: 'Move:0',
+        motionId: 'move',
+        role: 'destination',
+        anchor: { kind: 'discard-pile', playerIndex: 0 },
+        identity: undefined,
+      },
+    ]);
+  });
+
+  it('does not derive deck-top source claims or claims for none policies', () => {
+    expect(replayAnimationVisibilityClaimsForMotions('Draw:0', [
+      {
+        ...cardMoveMotion('draw', 0, 320),
+        sourceAnchor: { kind: 'deck-top', playerIndex: 0 },
+        handoffPolicy: {
+          hideSourceUntil: 'snapshot',
+          hideDestinationUntil: 'prepaint',
+          removeSprite: 'prepaint',
+          prepaintFrames: 2,
+        },
+      },
+      {
+        id: 'ability',
+        kind: 'pulse',
+        anchor: { kind: 'board-slot', playerIndex: 0, slot: 'active', slotIndex: 0 },
+        coordinateSpace: 'board',
+        startMs: 0,
+        durationMs: 300,
+        spriteVisual: { kind: 'pulse', tone: 'ability' },
+      },
+      {
+        id: 'shuffle',
+        kind: 'shuffle',
+        anchor: { kind: 'deck-top', playerIndex: 0 },
+        coordinateSpace: 'viewport',
+        startMs: 0,
+        durationMs: 300,
+      },
+    ])).toEqual([
+      {
+        scopeKey: 'Draw:0',
+        motionId: 'draw',
+        role: 'destination',
+        anchor: { kind: 'discard-pile', playerIndex: 0 },
+        identity: undefined,
+      },
+    ]);
+  });
+
+  it('derives source-only claims for hand-to-deck style card moves', () => {
+    expect(replayAnimationVisibilityClaimsForMotions('HandToDeck:0', [
+      {
+        ...cardMoveMotion('hand-to-deck', 0, 300),
+        targetAnchor: { kind: 'deck-top', playerIndex: 0 },
+        handoffPolicy: {
+          hideSourceUntil: 'scope-exit',
+          hideDestinationUntil: 'none',
+          removeSprite: 'phase-end',
+          prepaintFrames: 2,
+        },
+      },
+    ])).toEqual([
+      {
+        scopeKey: 'HandToDeck:0',
+        motionId: 'hand-to-deck',
+        role: 'source',
+        anchor: {
+          kind: 'hand-card',
+          playerIndex: 0,
+          handIndex: 0,
+          serial: 101,
+        },
+        identity: undefined,
+      },
+    ]);
+  });
+
+  it('derives reveal-session claims from step handoff policies', () => {
+    expect(replayAnimationVisibilityClaimsForMotions('DeckSearchReveal:0', [revealSessionMotion()])).toEqual([
+      {
+        scopeKey: 'DeckSearchReveal:0',
+        motionId: 'pokegear-session',
+        stepId: 'take-selected',
+        role: 'destination',
+        anchor: { kind: 'hand-slot', playerIndex: 0, handIndex: 3 },
+        identity: undefined,
+      },
+    ]);
   });
 
   it('rejects a phase duration that cannot contain its explicit motions', () => {

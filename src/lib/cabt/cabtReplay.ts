@@ -11,7 +11,6 @@ import {
   type AnimationMotion,
   type AnimationSpriteVisual,
   type RevealSessionStep,
-  type AnimationVisibilityClaim,
 } from '../animations/replayAnimationPlan';
 import { resolveCardImageUrl } from '../game/cardImages';
 import { SlotType, targetFor, type ActionTimelineEvent, type CardView, type GameView, type LogView, type PlayerView, type PokemonSlotView } from '../game/types';
@@ -1483,8 +1482,7 @@ function replayAnimationPlanForPhase(
   } = {},
 ) {
   const motions = options.motions ?? animationPhaseMotions(phase, view, stepEvents);
-  const visibilityClaims = animationMotionVisibilityClaims(phase.key, motions);
-  if (!visibilityClaims.length && !motions.length) {
+  if (!motions.length) {
     return undefined;
   }
   return createReplayAnimationPhasePlan({
@@ -1493,7 +1491,6 @@ function replayAnimationPlanForPhase(
     view,
     durationMs: options.durationMs ?? phase.durationMs,
     motions,
-    visibilityClaims,
   });
 }
 
@@ -2690,87 +2687,6 @@ function damageValueForEvent(event: ActionTimelineEvent): number {
   const params = event.params as Record<string, unknown> | undefined;
   const value = Number(params?.value);
   return Number.isFinite(value) ? Math.abs(Math.min(0, value)) : 0;
-}
-
-function animationMotionVisibilityClaims(
-  scopeKey: string,
-  motions: AnimationMotion[],
-): AnimationVisibilityClaim[] {
-  const claims: AnimationVisibilityClaim[] = [];
-  for (const motion of motions) {
-    if (motion.kind === 'card-move') {
-      appendMotionClaim(claims, {
-        scopeKey,
-        motionId: motion.id,
-        anchor: motion.sourceAnchor,
-        identity: motion.identity,
-        role: 'source',
-        policy: motion.handoffPolicy.hideSourceUntil,
-      });
-      appendMotionClaim(claims, {
-        scopeKey,
-        motionId: motion.id,
-        anchor: motion.targetAnchor,
-        identity: motion.identity,
-        role: 'destination',
-        policy: motion.handoffPolicy.hideDestinationUntil,
-      });
-      continue;
-    }
-    if (motion.kind !== 'reveal-session') {
-      continue;
-    }
-    for (const step of motion.steps) {
-      appendMotionClaim(claims, {
-        scopeKey,
-        motionId: motion.id,
-        stepId: step.id,
-        anchor: step.sourceAnchor,
-        identity: step.identity,
-        role: 'source',
-        policy: step.handoffPolicy?.hideSourceUntil,
-      });
-      appendMotionClaim(claims, {
-        scopeKey,
-        motionId: motion.id,
-        stepId: step.id,
-        anchor: step.targetAnchor,
-        identity: step.identity,
-        role: 'destination',
-        policy: step.handoffPolicy?.hideDestinationUntil,
-      });
-    }
-  }
-  return claims;
-}
-
-function appendMotionClaim(
-  claims: AnimationVisibilityClaim[],
-  input: {
-    scopeKey: string;
-    motionId: string;
-    stepId?: string;
-    anchor: AnimationAnchorRef | undefined;
-    identity: AnimationIdentity | undefined;
-    role: AnimationVisibilityClaim['role'];
-    policy: 'none' | 'snapshot' | 'phase-end' | 'scope-exit' | 'arrival' | 'prepaint' | undefined;
-  },
-) {
-  const { scopeKey, motionId, stepId, anchor, identity, role, policy } = input;
-  if (!anchor || !policy || policy === 'none') {
-    return;
-  }
-  if (role === 'source' && anchor.kind === 'deck-top') {
-    return;
-  }
-  claims.push({
-    scopeKey,
-    motionId,
-    ...(stepId ? { stepId } : {}),
-    anchor,
-    identity,
-    role,
-  });
 }
 
 function boardPokemonDestinationForEvent(
