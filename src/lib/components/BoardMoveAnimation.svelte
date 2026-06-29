@@ -1,9 +1,8 @@
 <script lang="ts">
   import { onDestroy, tick } from 'svelte';
   import CardTile from './CardTile.svelte';
-  import { actionAnimationPhaseKind, actionAnimationTimelinePhaseKeyForEvent } from '../cabt/actionAnimationPhases';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
-  import { isDeckBoardPlacementEvent, isLiveBoardMoveEvent } from '../cabt/replayBoardMoveEvents';
+  import { isLiveBoardMoveEvent, liveBoardMoveHandoffDelayMs, ownsLiveBoardMovePhase } from '../cabt/replayBoardMoveEvents';
   import { replayEventMoveAreas, replayEventSerial } from '../cabt/replayEventAreas';
   import { finiteNumber } from '../cabt/replayEventParams';
   import type { AnimationAnchorRef, AnimationIdentity } from '../animations/animationAnchors';
@@ -260,7 +259,10 @@
         delayMs,
         durationMs: actionAnimationTiming.boardMoveMs,
         key: `${instruction.event.id}-${instruction.key}`,
-      }, generation, liveBoardMoveHandoffDelayMs(animationEvents, instruction, delayMs));
+      }, generation, liveBoardMoveHandoffDelayMs(animationEvents, {
+        fromDeck: instruction.fromDeck,
+        delayMs,
+      }));
     }
   }
 
@@ -324,34 +326,6 @@
   function isOpponentAnchor(anchor: AnimationAnchorRef): boolean {
     const element = elementForAnchor(anchor);
     return !!element && isOpponentSide(element);
-  }
-
-  function liveBoardMoveHandoffDelayMs(
-    animationEvents: ActionTimelineEvent[],
-    instruction: BoardMoveInstruction,
-    delayMs: number,
-  ) {
-    if (!instruction.fromDeck) {
-      return actionAnimationTiming.boardMoveMs;
-    }
-    const latestDeckPlacementStartMs = Math.max(
-      0,
-      ...animationEvents
-        .filter(isDeckBoardPlacementEvent)
-        .map((event) => actionAnimationStartMs(animationEvents, event)),
-    );
-    return actionAnimationTiming.boardMoveMs
-      + Math.max(0, latestDeckPlacementStartMs - delayMs);
-  }
-
-  function ownsLiveBoardMovePhase(animationEvents: ActionTimelineEvent[], event: ActionTimelineEvent): boolean {
-    const key = actionAnimationTimelinePhaseKeyForEvent(animationEvents, event);
-    const kind = key ? actionAnimationPhaseKind(key) : null;
-    return kind === 'BoardMove'
-      || kind === 'BoardToDeck'
-      || kind === 'DeckBoardPlace'
-      || kind === 'StadiumMove'
-      || kind === 'KnockOut';
   }
 
   function liveMoveInstructionsForEvent(event: ActionTimelineEvent, moveEvents: ActionTimelineEvent[]): BoardMoveInstruction[] {

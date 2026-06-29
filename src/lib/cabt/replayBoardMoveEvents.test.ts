@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   isDeckBoardPlacementEvent,
   isLiveBoardMoveEvent,
+  liveBoardMoveHandoffDelayMs,
+  ownsLiveBoardMovePhase,
 } from './replayBoardMoveEvents';
+import { actionAnimationTiming } from './actionAnimationSchedule';
 import { CabtAreaType } from './types';
 import type { ActionTimelineEvent } from '../game/types';
 
@@ -42,13 +45,55 @@ describe('isDeckBoardPlacementEvent', () => {
   });
 });
 
+describe('ownsLiveBoardMovePhase', () => {
+  it('recognizes live board movement phase ownership', () => {
+    const moveEvent = event('MoveCard', {
+      fromArea: CabtAreaType.ACTIVE,
+      toArea: CabtAreaType.BENCH,
+    });
+    const handEvent = event('MoveCard', {
+      fromArea: CabtAreaType.HAND,
+      toArea: CabtAreaType.DECK,
+    });
+
+    expect(ownsLiveBoardMovePhase([moveEvent], moveEvent)).toBe(true);
+    expect(ownsLiveBoardMovePhase([handEvent], handEvent)).toBe(false);
+  });
+});
+
+describe('liveBoardMoveHandoffDelayMs', () => {
+  it('holds deck placements until the latest same-batch deck placement can finish', () => {
+    const first = event('MoveCard', {
+      fromArea: CabtAreaType.DECK,
+      toArea: CabtAreaType.ACTIVE,
+    }, 1);
+    const second = event('MoveCard', {
+      fromArea: CabtAreaType.DECK,
+      toArea: CabtAreaType.BENCH,
+    }, 2);
+
+    expect(liveBoardMoveHandoffDelayMs([first, second], {
+      fromDeck: true,
+      delayMs: 0,
+    })).toBe(actionAnimationTiming.boardMoveMs + actionAnimationTiming.handMoveStepMs);
+    expect(liveBoardMoveHandoffDelayMs([first, second], {
+      fromDeck: true,
+      delayMs: actionAnimationTiming.handMoveStepMs,
+    })).toBe(actionAnimationTiming.boardMoveMs);
+    expect(liveBoardMoveHandoffDelayMs([first, second], {
+      fromDeck: false,
+      delayMs: 0,
+    })).toBe(actionAnimationTiming.boardMoveMs);
+  });
+});
+
 function move(fromArea: CabtAreaType, toArea: CabtAreaType): ActionTimelineEvent {
   return event('MoveCard', { fromArea, toArea });
 }
 
-function event(kind: string, params: Record<string, unknown>): ActionTimelineEvent {
+function event(kind: string, params: Record<string, unknown>, id = 1): ActionTimelineEvent {
   return {
-    id: 1,
+    id,
     kind,
     playerIndex: 0,
     params,
