@@ -6,7 +6,12 @@
     releaseElementVisibilityClaim,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
-  import { resolveAnimationAnchorElements } from '../animations/animationAnchors';
+  import {
+    animationAnchorForElement,
+    resolveAnimationAnchorElements,
+    serializeAnimationAnchor,
+    type AnimationIdentity,
+  } from '../animations/animationAnchors';
   import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { actionAnimationBatchEvents, actionAnimationStartMs } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
@@ -66,6 +71,10 @@
   type ClearOptions = {
     restoreSources?: boolean;
     restoreConnectedSourcesAfterMs?: number;
+  };
+
+  type SourceHideOptions = {
+    skipCentralSourceClaims?: boolean;
   };
 
   let {
@@ -166,7 +175,7 @@
     }
 
     if (resetEvents.length) {
-      startReset(resetEvents, animationEvents);
+      startReset(resetEvents, animationEvents, { skipCentralSourceClaims: plannedMotions.length > 0 });
     }
   });
 
@@ -195,7 +204,7 @@
       id: nextAnimationId++,
       sprites: plannedSprites,
     };
-    const animationSources = hideSources(plannedSprites.map((sprite) => sprite.sourceElement));
+    const animationSources = hideSources(plannedSprites.map((sprite) => sprite.sourceElement), { skipCentralSourceClaims: true });
     resets = [...resets, animation];
     const timer = setTimeout(() => {
       if (!replayMode) {
@@ -207,7 +216,11 @@
     return true;
   }
 
-  function startReset(resetEvents: ActionTimelineEvent[], animationEvents: ActionTimelineEvent[]) {
+  function startReset(
+    resetEvents: ActionTimelineEvent[],
+    animationEvents: ActionTimelineEvent[],
+    hideOptions: SourceHideOptions = {},
+  ) {
     if (reduceMotion) {
       return;
     }
@@ -222,7 +235,7 @@
       id: nextAnimationId++,
       sprites,
     };
-    const animationSources = hideSources(sprites.map((sprite) => sprite.sourceElement));
+    const animationSources = hideSources(sprites.map((sprite) => sprite.sourceElement), hideOptions);
     resets = [...resets, animation];
     const timer = setTimeout(() => {
       if (!replayMode) {
@@ -453,9 +466,12 @@
     };
   }
 
-  function hideSources(sources: HTMLElement[]) {
+  function hideSources(sources: HTMLElement[], options: SourceHideOptions = {}) {
     const hidden: HiddenResetSource[] = [];
     for (const source of sources) {
+      if (shouldSkipLocalSourceClaim(source, options)) {
+        continue;
+      }
       hidden.push(hideElementForAnimation({
         element: source,
         scopeKey,
@@ -466,6 +482,42 @@
     }
     hiddenSources = [...hiddenSources, ...hidden];
     return hidden;
+  }
+
+  function shouldSkipLocalSourceClaim(element: HTMLElement, options: SourceHideOptions): boolean {
+    return !!options.skipCentralSourceClaims && centralSourceClaimOwns(element);
+  }
+
+  function centralSourceClaimOwns(element: HTMLElement): boolean {
+    const anchoredElement = animationAnchorForElement(element);
+    const anchorKey = anchoredElement ? serializeAnimationAnchor(anchoredElement.anchor) : undefined;
+    if (!anchorKey) {
+      return false;
+    }
+    return !!animationPlan?.visibilityClaims.some((claim) =>
+      claim.role === 'source'
+      && serializeAnimationAnchor(claim.anchor) === anchorKey
+      && animationIdentityMatchesClaim(anchoredElement.identity, claim.identity),
+    );
+  }
+
+  function animationIdentityMatchesClaim(
+    elementIdentity: AnimationIdentity | undefined,
+    claimIdentity: AnimationIdentity | undefined,
+  ): boolean {
+    if (!elementIdentity || !claimIdentity) {
+      return true;
+    }
+    if (elementIdentity.serial !== undefined && claimIdentity.serial !== undefined) {
+      return elementIdentity.serial === claimIdentity.serial;
+    }
+    if (elementIdentity.cardId !== undefined && claimIdentity.cardId !== undefined) {
+      return elementIdentity.cardId === claimIdentity.cardId;
+    }
+    if (elementIdentity.name && claimIdentity.name) {
+      return elementIdentity.name === claimIdentity.name;
+    }
+    return true;
   }
 
   function showSources(sources: HiddenResetSource[]) {

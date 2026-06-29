@@ -2416,6 +2416,9 @@ function animationPhaseVisibilityClaims(
       ...revealSessionVisibilityClaims(phase, view, stepEvents),
     ];
   }
+  if (phase.key.startsWith('HandToDeck:')) {
+    return handToDeckVisibilityClaims(phase, view);
+  }
   if (phase.key.startsWith('Play:') || phase.key.startsWith('HandMove:') || phase.key.startsWith('Evolve:')) {
     return handPlayDestinationVisibilityClaims(phase, view);
   }
@@ -2450,6 +2453,32 @@ function animationPhaseVisibilityClaims(
     ];
   }
   return [];
+}
+
+function handToDeckVisibilityClaims(phase: AnimationEventPhase, view: GameView): AnimationVisibilityClaim[] {
+  const claims: AnimationVisibilityClaim[] = [];
+  for (const motion of handToDeckCardMoveMotions(phase, view)) {
+    if (motion.kind !== 'card-move') {
+      continue;
+    }
+    if (motion.handoffPolicy.hideSourceUntil !== 'none') {
+      claims.push({
+        scopeKey: phase.key,
+        anchor: motion.sourceAnchor,
+        identity: motion.identity,
+        role: 'source',
+      });
+    }
+    if (motion.handoffPolicy.hideDestinationUntil !== 'none') {
+      claims.push({
+        scopeKey: phase.key,
+        anchor: motion.targetAnchor,
+        identity: motion.identity,
+        role: 'destination',
+      });
+    }
+  }
+  return claims;
 }
 
 function revealSessionVisibilityClaims(

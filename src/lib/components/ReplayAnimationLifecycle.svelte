@@ -19,6 +19,7 @@
 
   let lastScopeKey: string | undefined;
   let lastPlan: ReplayAnimationPhasePlan | undefined;
+  let lastReduceMotion = false;
   let planTokens: AnimationVisibilityToken[] = [];
   const planTokenReleaseTimers: ReturnType<typeof setTimeout>[] = [];
   const staleScopeReleaseTimers: ReturnType<typeof setTimeout>[] = [];
@@ -58,8 +59,10 @@
     const currentScopeKey = String(scopeKey);
     const currentPlan = animationPlan;
     const currentActive = active;
+    const motionPreferenceChanged = lastReduceMotion !== reduceMotion;
     const scopeChanged = lastScopeKey !== undefined && lastScopeKey !== currentScopeKey;
     const planChanged = lastPlan !== currentPlan;
+    lastReduceMotion = reduceMotion;
 
     if (!currentActive) {
       releasePlanTokens();
@@ -76,7 +79,7 @@
     if (scopeChanged && lastScopeKey) {
       releasePlanTokens();
       scheduleStaleScopeRelease(lastScopeKey);
-    } else if (planChanged) {
+    } else if (planChanged || motionPreferenceChanged) {
       releasePlanTokens();
     }
 

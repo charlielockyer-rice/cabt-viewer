@@ -6,7 +6,12 @@
     releaseElementVisibilityClaim,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
-  import { resolveAnimationAnchorElements } from '../animations/animationAnchors';
+  import {
+    animationAnchorForElement,
+    resolveAnimationAnchorElements,
+    serializeAnimationAnchor,
+    type AnimationIdentity,
+  } from '../animations/animationAnchors';
   import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { actionAnimationBatchEvents, actionAnimationStartMs } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
@@ -48,6 +53,10 @@
   type PlayerDrawSprites = {
     sprites: DrawSprite[];
     hiddenTargets: HTMLElement[];
+  };
+
+  type DestinationHideOptions = {
+    skipCentralDestinationClaims?: boolean;
   };
 
   type HiddenDrawTarget = ElementVisibilityClaim;
@@ -145,7 +154,7 @@
     }
 
     if (drawEvents.length) {
-      startDraw(drawEvents, animationEvents);
+      startDraw(drawEvents, animationEvents, { skipCentralDestinationClaims: plannedMotions.length > 0 });
     }
   });
 
@@ -183,7 +192,7 @@
     const timer = setTimeout(() => {
       showTargets(animation.hiddenTargets);
       draws = draws.filter((item) => item.id !== animation.id);
-    }, Math.max(...sprites.map((sprite) => sprite.delayMs + sprite.durationMs)) + 120);
+    }, Math.max(...sprites.map((sprite) => sprite.delayMs + Math.round(sprite.durationMs * 0.88))));
     timers.push(timer);
     return true;
   }
@@ -265,7 +274,11 @@
     return motion.spriteVisual.kind === 'card' && motion.spriteVisual.faceDown === true;
   }
 
-  function startDraw(drawEvents: ActionTimelineEvent[], animationEvents: ActionTimelineEvent[]) {
+  function startDraw(
+    drawEvents: ActionTimelineEvent[],
+    animationEvents: ActionTimelineEvent[],
+    hideOptions: DestinationHideOptions = {},
+  ) {
     if (reduceMotion) {
       return;
     }
@@ -288,7 +301,7 @@
     if (!sprites.length) {
       return;
     }
-    const hiddenTargets = hideTargets(targetElements);
+    const hiddenTargets = hideTargets(targetElements, hideOptions);
 
     const animation: DrawAnimation = {
       id: nextAnimationId++,
@@ -394,9 +407,12 @@
     });
   }
 
-  function hideTargets(targets: HTMLElement[]) {
+  function hideTargets(targets: HTMLElement[], options: DestinationHideOptions = {}) {
     const hiddenTargets: HiddenDrawTarget[] = [];
     for (const target of targets) {
+      if (shouldSkipLocalDestinationClaim(target, options)) {
+        continue;
+      }
       hiddenTargets.push(hideElementForAnimation({
         element: target,
         scopeKey,
@@ -405,6 +421,42 @@
       }));
     }
     return hiddenTargets;
+  }
+
+  function shouldSkipLocalDestinationClaim(element: HTMLElement, options: DestinationHideOptions): boolean {
+    return !!options.skipCentralDestinationClaims && centralDestinationClaimOwns(element);
+  }
+
+  function centralDestinationClaimOwns(element: HTMLElement): boolean {
+    const anchoredElement = animationAnchorForElement(element);
+    const anchorKey = anchoredElement ? serializeAnimationAnchor(anchoredElement.anchor) : undefined;
+    if (!anchorKey) {
+      return false;
+    }
+    return !!animationPlan?.visibilityClaims.some((claim) =>
+      claim.role === 'destination'
+      && serializeAnimationAnchor(claim.anchor) === anchorKey
+      && animationIdentityMatchesClaim(anchoredElement.identity, claim.identity),
+    );
+  }
+
+  function animationIdentityMatchesClaim(
+    elementIdentity: AnimationIdentity | undefined,
+    claimIdentity: AnimationIdentity | undefined,
+  ): boolean {
+    if (!elementIdentity || !claimIdentity) {
+      return true;
+    }
+    if (elementIdentity.serial !== undefined && claimIdentity.serial !== undefined) {
+      return elementIdentity.serial === claimIdentity.serial;
+    }
+    if (elementIdentity.cardId !== undefined && claimIdentity.cardId !== undefined) {
+      return elementIdentity.cardId === claimIdentity.cardId;
+    }
+    if (elementIdentity.name && claimIdentity.name) {
+      return elementIdentity.name === claimIdentity.name;
+    }
+    return true;
   }
 
   function showTargets(targets: HiddenDrawTarget[]) {
