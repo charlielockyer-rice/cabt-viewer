@@ -357,15 +357,27 @@
     }
     const element = mode === 'planned' ? exactElementForAnchor(anchor) : elementForAnchor(anchor);
     if (!element) {
+      if (mode === 'planned') {
+        return null;
+      }
       return anchor.serial !== undefined ? previousSourceForSerial(anchor.serial) : null;
     }
     const boardPlane = boardPlaneElement();
     if (!boardPlane) {
+      if (mode === 'planned') {
+        return null;
+      }
       return anchor.serial !== undefined ? previousSourceForSerial(anchor.serial) : null;
     }
     const ownerCard = ownerPokemonCardElement(element);
     const rect = ownerCard ? elementRectInPlane(ownerCard, boardPlane) : elementRectInPlane(element, boardPlane);
-    return rect ? { rect, hiddenElement: element } : anchor.serial !== undefined ? previousSourceForSerial(anchor.serial) : null;
+    if (rect) {
+      return { rect, hiddenElement: element };
+    }
+    if (mode === 'planned') {
+      return null;
+    }
+    return anchor.serial !== undefined ? previousSourceForSerial(anchor.serial) : null;
   }
 
   function sourceForEvent(event: ActionTimelineEvent): AttachedMoveSource | null {
