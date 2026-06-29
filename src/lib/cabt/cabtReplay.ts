@@ -3586,6 +3586,7 @@ function resolvingDiscardCardMoveMotion(
   return {
     id: `${phase.key}:resolving-discard:${entry.playerIndex}:${serial ?? cardId ?? 'unknown'}`,
     kind: 'card-move',
+    purpose: 'resolving-cleanup',
     identity: {
       kind: 'card',
       serial,

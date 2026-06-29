@@ -1,6 +1,11 @@
 import type { CardView, GameView } from '../game/types';
 import type { ActionAnimationPhaseKind } from '../cabt/actionAnimationPhases';
-import type { AnimationAnchorRef, AnimationIdentity } from './animationAnchors';
+import {
+  serializeAnimationAnchor,
+  serializeAnimationIdentity,
+  type AnimationAnchorRef,
+  type AnimationIdentity,
+} from './animationAnchors';
 import type { AnimationVisibilityClaim } from './animationVisibility';
 
 export type { AnimationAnchorRef, AnimationIdentity } from './animationAnchors';
@@ -26,6 +31,8 @@ export type AnimationHandoffPolicy = {
   prepaintFrames?: number;
 };
 
+export type CardMoveAnimationPurpose = 'resolving-cleanup';
+
 export type TimedAnimationMotionBase = {
   id: string;
   identity?: AnimationIdentity;
@@ -35,6 +42,7 @@ export type TimedAnimationMotionBase = {
 
 export type CardMoveAnimationMotion = TimedAnimationMotionBase & {
   kind: 'card-move';
+  purpose?: CardMoveAnimationPurpose;
   sourceAnchor: AnimationAnchorRef;
   targetAnchor: AnimationAnchorRef;
   coordinateSpace: AnimationCoordinateSpace;
@@ -102,6 +110,17 @@ export type ReplayAnimationPhasePlan = {
 
 export type ReplayAnimationPhaseKind = ActionAnimationPhaseKind;
 
+export function isResolvingCleanupCardMoveMotion(motion: CardMoveAnimationMotion): boolean {
+  return motion.purpose === 'resolving-cleanup'
+    && motion.coordinateSpace === 'board'
+    && motion.sourceAnchor.kind === 'play-zone-card'
+    && motion.targetAnchor.kind === 'discard-card'
+    && motion.identity?.kind === 'card'
+    && motion.identity.serial !== undefined
+    && motion.sourceAnchor.serial === motion.identity.serial
+    && motion.targetAnchor.serial === motion.identity.serial;
+}
+
 export function createReplayAnimationPhasePlan(input: {
   key: string;
   kind: ReplayAnimationPhaseKind;
@@ -118,6 +137,7 @@ export function createReplayAnimationPhasePlan(input: {
   for (const motion of motions) {
     validateMotionTiming(motion);
     validateMotionCoordinateSpace(input.key, motion);
+    validateMotionPurpose(input.key, motion);
   }
   validateVisibilityClaims(input.key, motions, visibilityClaims);
 
@@ -234,11 +254,72 @@ function playerIndexForAnchor(anchor: AnimationAnchorRef | undefined): number | 
   return anchor && 'playerIndex' in anchor ? anchor.playerIndex : undefined;
 }
 
-export function replayAnimationMotionKey(motion: Pick<AnimationMotion, 'id' | 'startMs' | 'durationMs'>): string {
-  return `${motion.id}:${motion.startMs}:${motion.durationMs}`;
+export function replayAnimationMotionKey(motion: AnimationMotion): string {
+  const base = [
+    motion.kind,
+    motion.id,
+    motion.startMs,
+    motion.durationMs,
+    serializeAnimationIdentity(motion.identity),
+  ];
+  if (motion.kind === 'card-move') {
+    return stableMotionKey([
+      ...base,
+      motion.purpose ?? '',
+      motion.coordinateSpace,
+      serializeAnimationAnchor(motion.sourceAnchor),
+      serializeAnimationAnchor(motion.targetAnchor),
+      spriteVisualKey(motion.spriteVisual),
+      handoffPolicyKey(motion.handoffPolicy),
+    ]);
+  }
+  if (motion.kind === 'reveal-session') {
+    return stableMotionKey([
+      ...base,
+      motion.playerIndex,
+      motion.coordinateSpace,
+      motion.revealCount ?? '',
+      handoffPolicyKey(motion.handoffPolicy),
+      motion.steps.map((step) => [
+        step.kind,
+        step.id,
+        step.startMs,
+        step.durationMs,
+        serializeAnimationIdentity(step.identity),
+        step.sourceAnchor ? serializeAnimationAnchor(step.sourceAnchor) : '',
+        step.targetAnchor ? serializeAnimationAnchor(step.targetAnchor) : '',
+        step.spriteVisual ? spriteVisualKey(step.spriteVisual) : '',
+        step.handoffPolicy ? handoffPolicyKey(step.handoffPolicy) : '',
+      ]),
+    ]);
+  }
+  if (motion.kind === 'pulse') {
+    return stableMotionKey([
+      ...base,
+      motion.coordinateSpace,
+      serializeAnimationAnchor(motion.anchor),
+      motion.sourceAnchor ? serializeAnimationAnchor(motion.sourceAnchor) : '',
+      spriteVisualKey(motion.spriteVisual),
+      motion.label ?? '',
+      motion.value ?? '',
+    ]);
+  }
+  if (motion.kind === 'shuffle') {
+    return stableMotionKey([
+      ...base,
+      motion.coordinateSpace,
+      serializeAnimationAnchor(motion.anchor),
+    ]);
+  }
+  return stableMotionKey([
+    ...base,
+    motion.coordinateSpace,
+    serializeAnimationAnchor(motion.anchor),
+    handoffPolicyKey(motion.handoffPolicy),
+  ]);
 }
 
-export function replayAnimationMotionsKey(motions: readonly Pick<AnimationMotion, 'id' | 'startMs' | 'durationMs'>[]): string {
+export function replayAnimationMotionsKey(motions: readonly AnimationMotion[]): string {
   return motions.map(replayAnimationMotionKey).join('|');
 }
 
@@ -267,6 +348,44 @@ function validateMotionCoordinateSpace(phaseKey: string, motion: AnimationMotion
       throw new Error(`Replay animation phase "${phaseKey}" cross-plane motion "${motion.id}" must cross between board and viewport anchors.`);
     }
   }
+}
+
+function validateMotionPurpose(phaseKey: string, motion: AnimationMotion): void {
+  if (motion.kind !== 'card-move' || motion.purpose === undefined) {
+    return;
+  }
+  if (motion.purpose === 'resolving-cleanup' && isResolvingCleanupCardMoveMotion(motion)) {
+    return;
+  }
+  throw new Error(`Replay animation phase "${phaseKey}" card move "${motion.id}" has invalid purpose "${motion.purpose}".`);
+}
+
+function stableMotionKey(parts: unknown[]): string {
+  return JSON.stringify(parts);
+}
+
+function handoffPolicyKey(policy: AnimationHandoffPolicy): string {
+  return stableMotionKey([
+    policy.hideSourceUntil,
+    policy.hideDestinationUntil,
+    policy.removeSprite,
+    policy.prepaintFrames ?? '',
+  ]);
+}
+
+function spriteVisualKey(visual: AnimationSpriteVisual): string {
+  if (visual.kind === 'pulse') {
+    return stableMotionKey([visual.kind, visual.tone]);
+  }
+  return stableMotionKey([
+    visual.kind,
+    visual.faceDown === true,
+    visual.card?.serial ?? '',
+    visual.card?.id ?? '',
+    visual.card?.name ?? '',
+    visual.card?.imageUrl ?? '',
+    visual.card?.cardImage ?? '',
+  ]);
 }
 
 function isBoardPlaneAnchor(anchor: AnimationAnchorRef): boolean {

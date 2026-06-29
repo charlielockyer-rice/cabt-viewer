@@ -13,6 +13,7 @@
   import { replayAnimationScopeExitSettleMs, replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
   import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import {
+    isResolvingCleanupCardMoveMotion,
     replayAnimationPhasePlanKey,
     replayAnimationPlanOwnsMotion,
     type CardMoveAnimationMotion,
@@ -141,7 +142,7 @@
   }
 
   function boardMoveOwnsPlannedMotion(plan: ReplayAnimationPhasePlan | undefined, motion: CardMoveAnimationMotion): boolean {
-    if (isResolvingCardCleanupMotion(motion)) {
+    if (isResolvingCleanupCardMoveMotion(motion)) {
       return true;
     }
     return replayAnimationPlanOwnsMotion(plan, motion, [
@@ -153,11 +154,6 @@
       'DiscardRecover',
       'KnockOut',
     ]);
-  }
-
-  function isResolvingCardCleanupMotion(motion: CardMoveAnimationMotion): boolean {
-    return motion.sourceAnchor.kind === 'play-zone-card'
-      && motion.targetAnchor.kind === 'discard-card';
   }
 
   function startPlannedBoardMoves(motions: CardMoveAnimationMotion[]) {

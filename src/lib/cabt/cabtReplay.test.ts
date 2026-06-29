@@ -1615,6 +1615,7 @@ describe('cabtReplayToSnapshot', () => {
       }),
       expect.objectContaining({
         kind: 'card-move',
+        purpose: 'resolving-cleanup',
         coordinateSpace: 'board',
         sourceAnchor: { kind: 'play-zone-card', playerIndex: 0, serial: 14 },
         targetAnchor: { kind: 'discard-card', playerIndex: 0, serial: 14 },
@@ -1851,6 +1852,7 @@ describe('cabtReplayToSnapshot', () => {
       },
       {
         kind: 'card-move',
+        purpose: 'resolving-cleanup',
         coordinateSpace: 'board',
         sourceAnchor: { kind: 'play-zone-card', playerIndex: 0, serial: 14 },
         targetAnchor: { kind: 'discard-card', playerIndex: 0, serial: 14 },
@@ -1972,6 +1974,7 @@ describe('cabtReplayToSnapshot', () => {
       },
       {
         kind: 'card-move',
+        purpose: 'resolving-cleanup',
         coordinateSpace: 'board',
         sourceAnchor: { kind: 'play-zone-card', playerIndex: 0, serial: 14 },
         targetAnchor: { kind: 'discard-card', playerIndex: 0, serial: 14 },
@@ -2345,6 +2348,7 @@ describe('cabtReplayToSnapshot', () => {
       },
       {
         kind: 'card-move',
+        purpose: 'resolving-cleanup',
         coordinateSpace: 'board',
         sourceAnchor: { kind: 'play-zone-card', playerIndex: 0, serial: 35 },
         targetAnchor: { kind: 'discard-card', playerIndex: 0, serial: 35 },
@@ -5267,6 +5271,7 @@ describe('cabtReplayToSnapshot', () => {
       }),
       expect.objectContaining({
         kind: 'card-move',
+        purpose: 'resolving-cleanup',
         coordinateSpace: 'board',
         sourceAnchor: { kind: 'play-zone-card', playerIndex: 0, serial: 83 },
         targetAnchor: { kind: 'discard-card', playerIndex: 0, serial: 83 },

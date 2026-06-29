@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createReplayAnimationPhasePlan,
+  replayAnimationPhasePlanKey,
   replayAnimationPlanHasAnyPhase,
   replayAnimationPlanHasPhase,
   replayAnimationPlanOwnsMotion,
@@ -257,6 +258,57 @@ describe('replay animation phase plans', () => {
         },
       ],
     })).toThrow('must cross between board and viewport anchors');
+  });
+
+  it('rejects resolving cleanup purpose on broad or mismatched card moves', () => {
+    expect(() => createReplayAnimationPhasePlan({
+      key: 'BadCleanup',
+      kind: 'BoardMove',
+      view: gameView(),
+      durationMs: 360,
+      motions: [
+        {
+          ...cardMoveMotion('bad-cleanup', 0, 360),
+          purpose: 'resolving-cleanup',
+          coordinateSpace: 'board',
+          sourceAnchor: { kind: 'play-zone-card', playerIndex: 0 },
+          targetAnchor: { kind: 'discard-card', playerIndex: 0 },
+          identity: { kind: 'card', cardId: 101 },
+        },
+      ],
+    })).toThrow('invalid purpose "resolving-cleanup"');
+  });
+
+  it('includes semantic motion fields in phase keys', () => {
+    const baseMotion = {
+      ...cardMoveMotion('cleanup', 0, 360),
+      purpose: 'resolving-cleanup' as const,
+      coordinateSpace: 'board' as const,
+      sourceAnchor: { kind: 'play-zone-card' as const, playerIndex: 0, serial: 101 },
+      targetAnchor: { kind: 'discard-card' as const, playerIndex: 0, serial: 101 },
+      identity: { kind: 'card' as const, serial: 101, cardId: 101 },
+    };
+    const first = createReplayAnimationPhasePlan({
+      key: 'Cleanup',
+      kind: 'BoardMove',
+      view: gameView(),
+      durationMs: 360,
+      motions: [baseMotion],
+    });
+    const second = createReplayAnimationPhasePlan({
+      key: 'Cleanup',
+      kind: 'BoardMove',
+      view: gameView(),
+      durationMs: 360,
+      motions: [{
+        ...baseMotion,
+        targetAnchor: { kind: 'discard-card' as const, playerIndex: 0, serial: 202 },
+        identity: { kind: 'card' as const, serial: 202, cardId: 101 },
+        sourceAnchor: { kind: 'play-zone-card' as const, playerIndex: 0, serial: 202 },
+      }],
+    });
+
+    expect(replayAnimationPhasePlanKey(first)).not.toBe(replayAnimationPhasePlanKey(second));
   });
 
   it('validates nested reveal session timing explicitly', () => {

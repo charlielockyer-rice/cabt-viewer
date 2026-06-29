@@ -7,22 +7,20 @@ import {
 } from './replayAnimationPlan';
 import type { ActionTimelineEvent } from '../game/types';
 
-type TimedMotion = Pick<AnimationMotion, 'id' | 'startMs' | 'durationMs'>;
-
-export type ReplayPhasePlanRunnerContext<Motion extends TimedMotion> = {
+export type ReplayPhasePlanRunnerContext<Motion extends AnimationMotion> = {
   motions: Motion[];
   plan?: ReplayAnimationPhasePlan;
   run: ReplayAnimationRunChange;
   reduceMotion: boolean;
 };
 
-export type ReplayPhasePlanRunnerResult<Motion extends TimedMotion> = ReplayPhasePlanRunnerContext<Motion> & {
+export type ReplayPhasePlanRunnerResult<Motion extends AnimationMotion> = ReplayPhasePlanRunnerContext<Motion> & {
   handled: boolean;
   seenEventIds: ReadonlySet<number>;
   markEventsSeen(events: readonly ActionTimelineEvent[]): void;
 };
 
-export type ReplayPhasePlanRunnerOptions<Motion extends TimedMotion> = {
+export type ReplayPhasePlanRunnerOptions<Motion extends AnimationMotion> = {
   selectMotions(plan: ReplayAnimationPhasePlan | undefined): Motion[];
   planKey?: (motions: readonly Motion[], plan: ReplayAnimationPhasePlan | undefined) => string;
   reduceMotion?: () => boolean;
@@ -32,7 +30,7 @@ export type ReplayPhasePlanRunnerOptions<Motion extends TimedMotion> = {
   startPlanned?: (motions: Motion[], context: ReplayPhasePlanRunnerContext<Motion>) => void;
 };
 
-export function createReplayPhasePlanRunner<Motion extends TimedMotion>(
+export function createReplayPhasePlanRunner<Motion extends AnimationMotion>(
   options: ReplayPhasePlanRunnerOptions<Motion>,
 ) {
   const runState = new ReplayAnimationRunState();
@@ -109,7 +107,7 @@ export function createReplayPhasePlanRunner<Motion extends TimedMotion>(
   };
 }
 
-function selectedMotionPlanKey<Motion extends TimedMotion>(
+function selectedMotionPlanKey<Motion extends AnimationMotion>(
   motions: readonly Motion[],
   plan: ReplayAnimationPhasePlan | undefined,
 ): string {
