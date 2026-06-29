@@ -68,6 +68,7 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
     const { frame, view, groups } = frameEntries[index];
     const continuation = cardEffectContinuation(frameEntries, index);
     if (continuation) {
+      const continuationFrame = frameEntries[continuation.endIndex].frame;
       const currentView = frameEntries[continuation.endIndex].view;
       const resolvingContext = resolvingContextForStep({
         baseView: currentView,
@@ -85,12 +86,7 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
         actionTimeline: continuation.group.events,
         displayView: groupedStepDisplayView(views[index - 1], currentView, [continuation.group], 0, resolvingContext),
         animationPhases: groupedStepAnimationPhases(views[index - 1], currentView, [continuation.group], 0, resolvingContext),
-        payload: {
-          events: continuation.group.events,
-          select: frameEntries[continuation.endIndex].frame.select,
-          selected: frameEntries[continuation.endIndex].frame.selected,
-          action: frameEntries[continuation.endIndex].frame.action,
-        },
+        payload: replayStepPayload(continuationFrame, continuation.group.events),
       }));
       index = continuation.endIndex;
       continue;
@@ -114,12 +110,7 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
           actionTimeline: group.events,
           displayView: groupedStepDisplayView(views[index - 1], view, groups, groupIndex, resolvingContext),
           animationPhases: groupedStepAnimationPhases(views[index - 1], view, groups, groupIndex, resolvingContext),
-          payload: {
-            events: group.events,
-            select: frame.select,
-            selected: frame.selected,
-            action: frame.action,
-          },
+          payload: replayStepPayload(frame, group.events),
         }));
       }
     } else {
@@ -137,11 +128,7 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
         label: cabtReplayStepLabel(frame, index),
         type: String(frame.select?.type ?? 'frame'),
         displayView: resolvingDisplayView(view, resolvingContext),
-        payload: {
-          select: frame.select,
-          selected: frame.selected,
-          action: frame.action,
-        },
+        payload: replayStepPayload(frame),
       }));
     }
   }
@@ -204,5 +191,14 @@ function replayStepForFrame({
     actionTimeline,
     displayView,
     animationPhases,
+  };
+}
+
+function replayStepPayload(frame: CabtVisualizeFrame, events?: ReplayStep['actionTimeline']): unknown {
+  return {
+    ...(events ? { events } : {}),
+    select: frame.select,
+    selected: frame.selected,
+    action: frame.action,
   };
 }
