@@ -194,6 +194,20 @@ describe('animation anchors', () => {
     })).toBe(deck);
   });
 
+  it('strict resolution ignores identity for face-down prize anchors', () => {
+    const anchor = { kind: 'prize-card' as const, playerIndex: 0, prizeIndex: 5 };
+    const prize = new TestElement({
+      animationAnchor: 'prize-card',
+      animationAnchorKey: 'player:0:prize-card:5',
+    });
+    const root = queryRoot([prize]);
+
+    expect(resolveStrictAnimationAnchorElement(anchor, {
+      root,
+      identity: { kind: 'card', serial: 48, cardId: 3 },
+    })).toBe(prize);
+  });
+
   it('resolves one exact serial-sensitive anchor element', () => {
     const anchor = { kind: 'attached-energy' as const, playerIndex: 1, slot: 'active' as const, slotIndex: 0, serial: 91 };
     const matching = new TestElement({

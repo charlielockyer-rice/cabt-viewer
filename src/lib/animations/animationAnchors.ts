@@ -499,7 +499,6 @@ function anchorCarriesCardIdentity(anchor: AnimationAnchorRef): boolean {
     || anchor.kind === 'pokemon-card'
     || anchor.kind === 'attached-energy'
     || anchor.kind === 'attached-tool'
-    || anchor.kind === 'prize-card'
     || anchor.kind === 'reveal-card';
 }
 

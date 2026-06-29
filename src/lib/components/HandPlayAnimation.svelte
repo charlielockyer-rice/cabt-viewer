@@ -336,11 +336,26 @@
 
   function strictPlannedHandSource(motion: CardMoveAnimationMotion): { element: HTMLElement; rect: DOMRect } | undefined {
     const element = strictAnimationVisualElementForAnchor(motion.sourceAnchor, motion.identity);
-    if (!element) {
+    if (element) {
+      const rect = visibleCardRectForAnchor(element);
+      return rect ? { element, rect } : undefined;
+    }
+    if (motion.sourceAnchor.kind !== 'hand-card') {
       return undefined;
     }
-    const rect = visibleCardRectForAnchor(element);
-    return rect ? { element, rect } : undefined;
+    const handElement = handAnchor(motion.sourceAnchor.playerIndex);
+    if (!handElement) {
+      return undefined;
+    }
+    const indexedSource = handElement.querySelector(`[data-animation-hand-index="${motion.sourceAnchor.handIndex}"]`);
+    if (indexedSource instanceof HTMLElement) {
+      const indexedRect = visibleCardRectForAnchor(indexedSource) ?? indexedSource.getBoundingClientRect();
+      if (indexedRect.width > 0 && indexedRect.height > 0) {
+        return { element: handElement, rect: indexedRect };
+      }
+    }
+    const serial = Number(motion.sourceAnchor.serial ?? motion.identity?.serial);
+    return { element: handElement, rect: sourceRectForHand(handElement, serial) };
   }
 
   function strictPlannedTarget(motion: CardMoveAnimationMotion): HTMLElement | null {
