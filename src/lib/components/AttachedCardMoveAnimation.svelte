@@ -145,8 +145,8 @@
     return startAttachedSprites(moveEvents.flatMap((event) => spriteForEvent(event, animationEvents)));
   }
 
-  function startPlannedAttachedSprites(motions: CardMoveAnimationMotion[]): boolean {
-    return startAttachedSprites(motions.flatMap(spriteForMotion), { clearExisting: false });
+  function startPlannedAttachedSprites(motions: CardMoveAnimationMotion[]) {
+    startAttachedSprites(motions.flatMap(spriteForMotion), { clearExisting: false });
   }
 
   function startLiveSnapshotTimer() {

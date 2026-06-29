@@ -2637,11 +2637,31 @@ function cardMoveMotion(input: {
     coordinateSpace,
     startMs: actionAnimationStartMs(input.phase.events, input.event),
     durationMs: input.durationMs ?? actionAnimationTiming.boardMoveMs,
-    spriteVisual: input.spriteVisual ?? {
-      kind: 'anchor-snapshot',
-      anchor: input.sourceAnchor,
-    },
+    spriteVisual: input.spriteVisual ?? cardMoveSpriteVisual(input),
     handoffPolicy,
+  };
+}
+
+function cardMoveSpriteVisual(input: {
+  event: ActionTimelineEvent;
+  sourceAnchor: AnimationAnchorRef;
+  identity: AnimationIdentity;
+}): AnimationSpriteVisual {
+  const cardId = input.identity.cardId;
+  if (cardId !== undefined) {
+    return {
+      kind: 'card',
+      card: cardToView({
+        id: cardId,
+        serial: input.identity.serial,
+        playerIndex: input.event.playerIndex,
+      }),
+      faceDown: input.event.kind === 'MoveCardReverse',
+    };
+  }
+  return {
+    kind: 'card',
+    faceDown: true,
   };
 }
 
@@ -3570,8 +3590,8 @@ function resolvingDiscardCardMoveMotion(
     startMs,
     durationMs: actionAnimationTiming.boardMoveMs,
     spriteVisual: {
-      kind: 'anchor-snapshot',
-      anchor: sourceAnchor,
+      kind: 'card',
+      card: entry.card,
     },
     handoffPolicy: {
       hideSourceUntil: 'scope-exit',

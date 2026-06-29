@@ -270,10 +270,10 @@
     timers.push(timer);
   }
 
-  function startPlannedPrizeTake(motions: CardMoveAnimationMotion[]): boolean {
+  function startPlannedPrizeTake(motions: CardMoveAnimationMotion[]) {
     const sprites = motions.flatMap((motion, index) => plannedPrizeTakeSprite(motion, index, motions.length) ?? []);
     if (!sprites.length) {
-      return false;
+      return;
     }
 
     const animation: PrizeTakeAnimation = {
@@ -290,7 +290,6 @@
       timers,
       removeIds: removePrizeTakes,
     });
-    return true;
   }
 
   function clearAnimations() {

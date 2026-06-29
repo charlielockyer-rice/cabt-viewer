@@ -167,7 +167,7 @@
     for (const motion of motions) {
       const sourceElement = elementForAnchor(motion.sourceAnchor, motion.identity);
       const targetElement = elementForAnchor(motion.targetAnchor, motion.identity);
-      if (!sourceElement || !targetElement) {
+      if (!sourceElement || !targetElement || motion.spriteVisual.kind !== 'card') {
         continue;
       }
       startBoardMoveInstruction({
@@ -183,8 +183,8 @@
         opponentSide: isOpponentAnchor(motion.sourceAnchor) || isOpponentAnchor(motion.targetAnchor),
         delayMs: motion.startMs,
         durationMs: motion.durationMs,
-        card: motion.spriteVisual.kind === 'card' ? motion.spriteVisual.card : undefined,
-        faceDown: motion.spriteVisual.kind === 'card' ? motion.spriteVisual.faceDown : undefined,
+        card: motion.spriteVisual.card,
+        faceDown: motion.spriteVisual.faceDown,
         key: motion.id,
         planned: true,
       }, generation, plannedBoardMoveHandoffDelayMs(motion));
@@ -267,7 +267,7 @@
 
     const sprite: BoardMoveSprite = {
       id: `${generation}:${instruction.key}`,
-      html: instruction.card ? '' : spriteHtml(instruction.source, instruction.target, instruction.fromDeck),
+      html: instruction.card || instruction.faceDown ? '' : spriteHtml(instruction.source, instruction.target, instruction.fromDeck),
       fallbackName: instruction.fallbackName ?? (instruction.cardId !== undefined ? cabtCardToView(instruction.cardId).name : 'Card'),
       left: targetRect.left,
       top: targetRect.top,
@@ -827,7 +827,7 @@
       style={spriteStyle(sprite)}
     >
       <span class="board-move-card-inner">
-        {#if sprite.card}
+        {#if sprite.card || sprite.faceDown}
           <CardTile card={spriteCard(sprite)} compact faceDown={sprite.faceDown} />
         {:else if sprite.html}
           {@html sprite.html}

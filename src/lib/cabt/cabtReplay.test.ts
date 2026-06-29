@@ -1380,7 +1380,7 @@ describe('cabtReplayToSnapshot', () => {
       coordinateSpace: 'board',
       sourceAnchor: { kind: 'deck-top', playerIndex: 0 },
       targetAnchor: { kind: 'prize-card', playerIndex: 0, prizeIndex: 0 },
-      spriteVisual: { kind: 'anchor-snapshot', anchor: { kind: 'deck-top', playerIndex: 0 } },
+      spriteVisual: { kind: 'card', faceDown: true },
       handoffPolicy: {
         hideSourceUntil: 'snapshot',
         hideDestinationUntil: 'prepaint',
@@ -5088,6 +5088,7 @@ describe('cabtReplayToSnapshot', () => {
         coordinateSpace: 'board',
         sourceAnchor: { kind: 'board-slot', playerIndex: 0, slot: 'active', slotIndex: 0 },
         targetAnchor: { kind: 'board-slot', playerIndex: 0, slot: 'bench', slotIndex: 0 },
+        spriteVisual: { kind: 'card', card: { id: 721, serial: 64 } },
         handoffPolicy: { removeSprite: 'scope-exit' },
       },
       {
@@ -5095,6 +5096,7 @@ describe('cabtReplayToSnapshot', () => {
         coordinateSpace: 'board',
         sourceAnchor: { kind: 'board-slot', playerIndex: 0, slot: 'bench', slotIndex: 0 },
         targetAnchor: { kind: 'board-slot', playerIndex: 0, slot: 'active', slotIndex: 0 },
+        spriteVisual: { kind: 'card', card: { id: 722, serial: 67 } },
         handoffPolicy: { removeSprite: 'scope-exit' },
       },
     ]);

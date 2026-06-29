@@ -137,10 +137,10 @@
     return event.kind === 'Draw' || event.kind === 'DrawReverse';
   }
 
-  function startPlannedDraw(motions: CardMoveAnimationMotion[]): boolean {
+  function startPlannedDraw(motions: CardMoveAnimationMotion[]) {
     const sprites = motions.flatMap((motion, index) => plannedSpriteForMotion(motion, index) ?? []);
     if (!sprites.length) {
-      return false;
+      return;
     }
 
     const animation: DrawAnimation = {
@@ -157,7 +157,6 @@
       timers,
       removeIds: removeDraws,
     });
-    return true;
   }
 
   function plannedSpriteForMotion(motion: CardMoveAnimationMotion, index: number): DrawSprite | undefined {

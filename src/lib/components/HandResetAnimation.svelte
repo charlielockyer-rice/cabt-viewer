@@ -149,10 +149,10 @@
     );
   }
 
-  function startPlannedReset(motions: CardMoveAnimationMotion[]): boolean {
+  function startPlannedReset(motions: CardMoveAnimationMotion[]) {
     const sprites = motions.map((motion) => plannedResetSpriteForMotion(motion));
     if (sprites.some((sprite) => !sprite)) {
-      return false;
+      return;
     }
     const plannedSprites = sprites.filter((sprite): sprite is ResetSprite => !!sprite);
 
@@ -168,7 +168,6 @@
       timers,
       removeIds: removeResets,
     });
-    return true;
   }
 
   function startReset(
