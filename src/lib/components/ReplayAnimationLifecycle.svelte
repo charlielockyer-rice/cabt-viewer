@@ -91,13 +91,17 @@
       // Reduced motion renders no replacement sprite, so the final DOM stays visible.
       const claims = reduceMotion ? [] : currentPlan.visibilityClaims;
       for (const claim of claims) {
-        const startMs = visibilityClaimStartMs(currentPlan, claim);
+        const motion = matchingMotionForClaim(currentPlan, claim);
+        if (!motion) {
+          continue;
+        }
+        const startMs = visibilityClaimStartMs(motion, claim);
         const startClaim = () => {
           const token = replayAnimationVisibility.hide({
             ...claim,
             scopeKey: currentScopeKey,
           });
-          const releaseMs = visibilityClaimReleaseMs(currentPlan, claim);
+          const releaseMs = visibilityClaimReleaseMs(currentPlan, motion, claim);
           planTokens = [...planTokens, token];
           if (releaseMs === undefined) {
             return;
@@ -146,22 +150,18 @@
     planTokens = [];
   }
 
-  function visibilityClaimStartMs(plan: ReplayAnimationPhasePlan, claim: AnimationVisibilityClaim): number {
+  function visibilityClaimStartMs(motion: TargetMotionTiming, claim: AnimationVisibilityClaim): number {
     if (claim.role !== 'source') {
-      return 0;
-    }
-    const motion = matchingMotionForClaim(plan, claim);
-    if (!motion) {
       return 0;
     }
     return motion.startMs;
   }
 
-  function visibilityClaimReleaseMs(plan: ReplayAnimationPhasePlan, claim: AnimationVisibilityClaim): number | undefined {
-    const motion = matchingMotionForClaim(plan, claim);
-    if (!motion) {
-      return Math.min(plan.durationMs, 240);
-    }
+  function visibilityClaimReleaseMs(
+    plan: ReplayAnimationPhasePlan,
+    motion: TargetMotionTiming,
+    claim: AnimationVisibilityClaim,
+  ): number | undefined {
     if (claim.role === 'source') {
       if (motion.handoffPolicy.hideSourceUntil === 'scope-exit') {
         return undefined;
