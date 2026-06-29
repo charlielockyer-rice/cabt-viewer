@@ -13,6 +13,7 @@
   import { replayAnimationPlanHasPhase, replayAnimationSelectedMotionsPlanKey, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { actionAnimationBatchEvents, actionAnimationStartMs } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
+  import { isReplayMoveBetween } from '../cabt/replayEventAreas';
   import { CabtAreaType } from '../cabt/types';
   import { elementRectInPlane } from '../dom/planeGeometry';
   import type { ActionTimelineEvent, CardView } from '../game/types';
@@ -125,10 +126,8 @@
 
   function isDeckDiscardEvent(event: ActionTimelineEvent) {
     const params = event.params as Record<string, unknown> | undefined;
-    return event.kind === 'MoveCard'
+    return isReplayMoveBetween(event, CabtAreaType.DECK, CabtAreaType.DISCARD)
       && event.playerIndex === playerIndex
-      && Number(params?.fromArea) === CabtAreaType.DECK
-      && Number(params?.toArea) === CabtAreaType.DISCARD
       && Number.isFinite(Number(params?.cardId));
   }
 

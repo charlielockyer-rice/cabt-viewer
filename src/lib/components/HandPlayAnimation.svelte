@@ -30,6 +30,7 @@
   } from '../animations/replayAnimationPlan';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
+  import { replayEventMoveAreas } from '../cabt/replayEventAreas';
   import { CabtAreaType } from '../cabt/types';
   import { viewportQuad } from '../dom/planeGeometry';
   import { replayAnimationPhaseGapMs } from '../game/replay';
@@ -176,12 +177,13 @@
     if (event.kind === 'Play' || event.kind === 'Attach' || event.kind === 'Evolve') {
       return Number.isFinite(Number(params?.cardId));
     }
+    const areas = replayEventMoveAreas(event);
     return event.kind === 'MoveCard'
-      && Number(params?.fromArea) === CabtAreaType.HAND
+      && areas?.fromArea === CabtAreaType.HAND
       && (
-        Number(params?.toArea) === CabtAreaType.DISCARD
-        || Number(params?.toArea) === CabtAreaType.ACTIVE
-        || Number(params?.toArea) === CabtAreaType.BENCH
+        areas.toArea === CabtAreaType.DISCARD
+        || areas.toArea === CabtAreaType.ACTIVE
+        || areas.toArea === CabtAreaType.BENCH
       )
       && Number.isFinite(Number(params?.cardId));
   }
@@ -485,7 +487,7 @@
   }
 
   function shouldHideTargetContents(event: ActionTimelineEvent, target: HTMLElement): boolean {
-    const params = event.params as Record<string, unknown> | undefined;
+    const areas = replayEventMoveAreas(event);
     if (event.kind === 'Attach') {
       return false;
     }
@@ -493,7 +495,7 @@
       return event.kind === 'Play'
         || (
           event.kind === 'MoveCard'
-          && Number(params?.toArea) === CabtAreaType.DISCARD
+          && areas?.toArea === CabtAreaType.DISCARD
         );
     }
     if (event.kind === 'Play' && isPlayZoneCardTarget(target)) {
@@ -503,8 +505,7 @@
       return true;
     }
     if (event.kind === 'MoveCard') {
-      const toArea = Number(params?.toArea);
-      return toArea === CabtAreaType.ACTIVE || toArea === CabtAreaType.BENCH;
+      return areas?.toArea === CabtAreaType.ACTIVE || areas?.toArea === CabtAreaType.BENCH;
     }
     return !!target.dataset.pokemonSerial;
   }
@@ -616,14 +617,14 @@
     }
 
     if (event.kind === 'MoveCard') {
-      const toArea = Number(params?.toArea);
-      if (toArea === CabtAreaType.DISCARD) {
+      const areas = replayEventMoveAreas(event);
+      if (areas?.toArea === CabtAreaType.DISCARD) {
         return discardTarget(playerIndex, serial);
       }
-      if (toArea === CabtAreaType.ACTIVE) {
+      if (areas?.toArea === CabtAreaType.ACTIVE) {
         return document.querySelector(`[data-card-anchor="player:${playerIndex}:active:0"]`);
       }
-      if (toArea === CabtAreaType.BENCH) {
+      if (areas?.toArea === CabtAreaType.BENCH) {
         return boardSlotByPokemonIdentity(serial, cardId, playerIndex)
           ?? document.querySelector(`[data-card-anchor^="player:${playerIndex}:bench:"]`);
       }

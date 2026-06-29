@@ -30,6 +30,7 @@
   } from '../animations/viewportCardMotion';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
+  import { isReplayMoveBetween } from '../cabt/replayEventAreas';
   import { CabtAreaType } from '../cabt/types';
   import { planeMapper } from '../dom/planeGeometry';
   import type { ActionTimelineEvent, CardView } from '../game/types';
@@ -172,17 +173,11 @@
   }
 
   function isPrizePlacementEvent(event: ActionTimelineEvent): boolean {
-    const params = event.params as Record<string, unknown> | undefined;
-    return (event.kind === 'MoveCard' || event.kind === 'MoveCardReverse')
-      && Number(params?.fromArea) === CabtAreaType.DECK
-      && Number(params?.toArea) === CabtAreaType.PRIZE;
+    return isReplayMoveBetween(event, CabtAreaType.DECK, CabtAreaType.PRIZE);
   }
 
   function isPrizeTakeEvent(event: ActionTimelineEvent): boolean {
-    const params = event.params as Record<string, unknown> | undefined;
-    return (event.kind === 'MoveCard' || event.kind === 'MoveCardReverse')
-      && Number(params?.fromArea) === CabtAreaType.PRIZE
-      && Number(params?.toArea) === CabtAreaType.HAND;
+    return isReplayMoveBetween(event, CabtAreaType.PRIZE, CabtAreaType.HAND);
   }
 
   function startPlacement(prizeEvents: ActionTimelineEvent[]) {

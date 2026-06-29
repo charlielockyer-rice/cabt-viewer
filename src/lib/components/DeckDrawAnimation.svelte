@@ -25,6 +25,7 @@
   } from '../animations/viewportCardMotion';
   import { actionAnimationBatchEvents, actionAnimationStartMs } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
+  import { isReplayMoveBetween } from '../cabt/replayEventAreas';
   import { CabtAreaType } from '../cabt/types';
   import type { ActionTimelineEvent, CardView } from '../game/types';
 
@@ -350,11 +351,9 @@
 
   function hasHandToDeckReset(playerIndex: number, animationEvents: ActionTimelineEvent[]): boolean {
     return animationEvents.some((event) => {
-      const params = event.params as Record<string, unknown> | undefined;
-      return event.kind === 'MoveCard'
+      return isReplayMoveBetween(event, CabtAreaType.HAND, CabtAreaType.DECK)
         && event.playerIndex === playerIndex
-        && Number(params?.fromArea) === CabtAreaType.HAND
-        && Number(params?.toArea) === CabtAreaType.DECK;
+        && event.kind === 'MoveCard';
     });
   }
 

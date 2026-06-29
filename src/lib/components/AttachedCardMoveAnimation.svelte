@@ -25,6 +25,7 @@
   import { actionAnimationPhaseKind, actionAnimationTimelinePhaseKeyForEvent } from '../cabt/actionAnimationPhases';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
+  import { replayEventMoveAreas } from '../cabt/replayEventAreas';
   import { CabtAreaType } from '../cabt/types';
   import { elementRectInPlane, type PlaneRect } from '../dom/planeGeometry';
   import { cardFaceImageUrl } from '../game/cardAssets';
@@ -266,6 +267,7 @@
 
   function spriteForEvent(event: ActionTimelineEvent, animationEvents: ActionTimelineEvent[]): AttachedMoveSprite[] {
     const params = event.params as Record<string, unknown> | undefined;
+    const areas = replayEventMoveAreas(event);
     const source = sourceForEvent(event);
     const target = targetElementForEvent(event);
     const serial = Number(params?.serial);
@@ -275,7 +277,7 @@
       source,
       target,
       identity: {
-        kind: Number(params?.fromArea) === CabtAreaType.TOOL ? 'tool' : 'energy',
+        kind: areas?.fromArea === CabtAreaType.TOOL ? 'tool' : 'energy',
         serial: Number.isFinite(serial) ? serial : undefined,
         cardId: Number.isFinite(cardId) ? cardId : undefined,
       },
@@ -352,15 +354,15 @@
   }
 
   function isAttachedMoveEvent(event: ActionTimelineEvent): boolean {
-    const params = event.params as Record<string, unknown> | undefined;
+    const areas = replayEventMoveAreas(event);
     return event.kind === 'MoveCard'
       && (
-        Number(params?.fromArea) === CabtAreaType.ENERGY
-        || Number(params?.fromArea) === CabtAreaType.TOOL
+        areas?.fromArea === CabtAreaType.ENERGY
+        || areas?.fromArea === CabtAreaType.TOOL
       )
       && (
-        Number(params?.toArea) === CabtAreaType.DISCARD
-        || Number(params?.toArea) === CabtAreaType.DECK
+        areas.toArea === CabtAreaType.DISCARD
+        || areas.toArea === CabtAreaType.DECK
       );
   }
 
@@ -402,7 +404,7 @@
   function sourceForEvent(event: ActionTimelineEvent): AttachedMoveSource | null {
     const params = event.params as Record<string, unknown> | undefined;
     const serial = Number(params?.serial);
-    const fromArea = Number(params?.fromArea);
+    const fromArea = replayEventMoveAreas(event)?.fromArea;
     if (!Number.isFinite(serial)) {
       return null;
     }
@@ -451,12 +453,11 @@
   }
 
   function targetElementForEvent(event: ActionTimelineEvent): HTMLElement | null {
-    const params = event.params as Record<string, unknown> | undefined;
     const playerIndex = event.playerIndex;
     if (playerIndex === undefined) {
       return null;
     }
-    const toArea = Number(params?.toArea);
+    const toArea = replayEventMoveAreas(event)?.toArea;
     if (toArea === CabtAreaType.DISCARD) {
       return discardTopElementForPlayer(playerIndex)
         ?? document.querySelector(`[data-card-anchor="player:${playerIndex}:discard"]`);

@@ -40,6 +40,7 @@
   } from '../animations/viewportCardMotion';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
+  import { replayEventMoveAreas } from '../cabt/replayEventAreas';
   import { CabtAreaType } from '../cabt/types';
   import type { ActionTimelineEvent, CardView } from '../game/types';
 
@@ -262,11 +263,12 @@
 
   function isDeckRevealEvent(event: ActionTimelineEvent): boolean {
     const params = event.params as Record<string, unknown> | undefined;
+    const areas = replayEventMoveAreas(event);
     return event.kind === 'MoveCard'
-      && Number(params?.fromArea) === CabtAreaType.DECK
+      && areas?.fromArea === CabtAreaType.DECK
       && (
-        Number(params?.toArea) === CabtAreaType.LOOKING
-        || Number(params?.toArea) === CabtAreaType.HAND
+        areas.toArea === CabtAreaType.LOOKING
+        || areas.toArea === CabtAreaType.HAND
       )
       && Number.isFinite(Number(params?.cardId));
   }
@@ -281,17 +283,19 @@
 
   function isRevealReturnEvent(event: ActionTimelineEvent): boolean {
     const params = event.params as Record<string, unknown> | undefined;
+    const areas = replayEventMoveAreas(event);
     return event.kind === 'MoveCard'
-      && Number(params?.fromArea) === CabtAreaType.LOOKING
-      && Number(params?.toArea) === CabtAreaType.DECK
+      && areas?.fromArea === CabtAreaType.LOOKING
+      && areas.toArea === CabtAreaType.DECK
       && Number.isFinite(Number(params?.serial));
   }
 
   function isRevealTakeEvent(event: ActionTimelineEvent): boolean {
     const params = event.params as Record<string, unknown> | undefined;
+    const areas = replayEventMoveAreas(event);
     return event.kind === 'MoveCard'
-      && Number(params?.fromArea) === CabtAreaType.LOOKING
-      && Number(params?.toArea) === CabtAreaType.HAND
+      && areas?.fromArea === CabtAreaType.LOOKING
+      && areas.toArea === CabtAreaType.HAND
       && Number.isFinite(Number(params?.serial));
   }
 
@@ -304,6 +308,7 @@
     if (event.playerIndex === undefined || !Number.isFinite(cardId)) {
       return undefined;
     }
+    const areas = replayEventMoveAreas(event);
     const serial = Number(params?.serial);
     return {
       id: String(event.id),
@@ -315,7 +320,7 @@
       },
       serial: Number.isFinite(serial) ? serial : undefined,
       startMs: actionAnimationStartMs(animationEvents, event),
-      toHand: Number(params?.toArea) === CabtAreaType.HAND,
+      toHand: areas?.toArea === CabtAreaType.HAND,
     };
   }
 
