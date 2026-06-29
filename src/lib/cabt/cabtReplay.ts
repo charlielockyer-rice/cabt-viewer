@@ -1466,7 +1466,7 @@ function animationPhaseMotions(
     return attackPulseMotions(phase, view);
   }
   if (phase.key.startsWith('Damage:')) {
-    return damagePulseMotions(phase, view);
+    return damagePulseMotions(phase, view, stepEvents);
   }
   if (phase.key.startsWith('Shuffle:')) {
     return shuffleMotions(phase);
@@ -1512,6 +1512,7 @@ function abilityPulseMotions(phase: AnimationEventPhase, view: GameView): Animat
       anchor,
       coordinateSpace: 'board',
       spriteVisual: { kind: 'pulse', tone: 'ability' },
+      label: abilityNameForEvent(event),
       startMs: actionAnimationStartMs(phase.events, event),
       durationMs: actionAnimationTiming.abilityAnnounceMs,
     } satisfies AnimationMotion];
@@ -1570,6 +1571,7 @@ function attackPulseMotions(phase: AnimationEventPhase, view: GameView): Animati
       anchor,
       coordinateSpace: 'board',
       spriteVisual: { kind: 'pulse', tone: 'attack' },
+      label: attackNameForEvent(event),
       startMs: actionAnimationStartMs(phase.events, event),
       durationMs: actionAnimationTiming.attackAnnounceMs,
     } satisfies AnimationMotion];
@@ -1577,7 +1579,11 @@ function attackPulseMotions(phase: AnimationEventPhase, view: GameView): Animati
   return motions.some((motion) => motion === null) ? [] : motions.flatMap((motion) => motion ?? []);
 }
 
-function damagePulseMotions(phase: AnimationEventPhase, view: GameView): AnimationMotion[] {
+function damagePulseMotions(phase: AnimationEventPhase, view: GameView, stepEvents: ActionTimelineEvent[]): AnimationMotion[] {
+  const attackEvent = stepEvents.find((event) => event.kind === 'Attack');
+  const attackAnchor = attackEvent?.playerIndex === undefined
+    ? undefined
+    : boardSlotAnchorForEvent(view.players[attackEvent.playerIndex], attackEvent);
   const motions = phase.events.map((event) => {
     if (event.kind !== 'HpChange' && event.kind !== 'HPChange') {
       return [];
@@ -1593,8 +1599,10 @@ function damagePulseMotions(phase: AnimationEventPhase, view: GameView): Animati
       id: `${phase.key}:${event.id}:damage`,
       identity: animationIdentityForEvent(event, 'pokemon'),
       anchor,
+      sourceAnchor: attackAnchor,
       coordinateSpace: 'board',
       spriteVisual: { kind: 'pulse', tone: 'damage' },
+      value: damageValueForEvent(event),
       startMs: actionAnimationStartMs(phase.events, event),
       durationMs: actionAnimationTiming.damageVisualMs,
     } satisfies AnimationMotion];
@@ -2590,6 +2598,27 @@ function animationIdentityForEvent(event: ActionTimelineEvent, kind: AnimationId
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
+}
+
+function abilityNameForEvent(event: ActionTimelineEvent): string {
+  const params = event.params as Record<string, unknown> | undefined;
+  const explicit = typeof params?.abilityName === 'string' ? params.abilityName.trim() : '';
+  if (explicit) {
+    return explicit;
+  }
+  const match = event.message.match(/\bused\s+(.+?)\s+with\b/i);
+  return match?.[1] ?? 'Ability';
+}
+
+function attackNameForEvent(event: ActionTimelineEvent): string {
+  const match = event.message.match(/\bused\s+(.+?)\s+with\b/i);
+  return match?.[1] ?? 'Attack';
+}
+
+function damageValueForEvent(event: ActionTimelineEvent): number {
+  const params = event.params as Record<string, unknown> | undefined;
+  const value = Number(params?.value);
+  return Number.isFinite(value) ? Math.abs(Math.min(0, value)) : 0;
 }
 
 function animationMotionVisibilityClaims(

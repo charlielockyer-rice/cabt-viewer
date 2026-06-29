@@ -111,7 +111,6 @@
   function startPlannedAbilityAnnouncements(motions: PulseAnimationMotion[]) {
     const generation = animationGeneration;
     for (const motion of motions) {
-      const event = eventForMotion(motion);
       const timer = setTimeout(() => {
         if (generation !== animationGeneration) {
           return;
@@ -120,7 +119,7 @@
         if (!source) {
           return;
         }
-        activateAbilityElement(source, event ? abilityNameForEvent(event) : 'Ability');
+        activateAbilityElement(source, motion.label ?? 'Ability');
         const cleanup = setTimeout(() => {
           if (generation !== animationGeneration) {
             return;
@@ -162,10 +161,6 @@
     const element = resolveAnimationAnchorElements(motion.anchor, { identity: motion.identity }).at(0)
       ?? resolveAnimationAnchorElements(motion.anchor).at(0);
     return element instanceof HTMLElement ? element : null;
-  }
-
-  function eventForMotion(motion: PulseAnimationMotion): ActionTimelineEvent | undefined {
-    return animationPlan?.actionTimeline.find((event) => `${animationPlan?.key}:${event.id}:ability` === motion.id);
   }
 
   function clearAbilityAnimations() {

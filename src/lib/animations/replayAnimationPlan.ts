@@ -65,8 +65,11 @@ export type RevealSessionAnimationMotion = TimedAnimationMotionBase & {
 export type PulseAnimationMotion = TimedAnimationMotionBase & {
   kind: 'pulse';
   anchor: AnimationAnchorRef;
+  sourceAnchor?: AnimationAnchorRef;
   coordinateSpace: AnimationCoordinateSpace;
   spriteVisual: AnimationSpriteVisual;
+  label?: string;
+  value?: number;
 };
 
 export type ShuffleAnimationMotion = TimedAnimationMotionBase & {

@@ -237,6 +237,7 @@ describe('cabtReplayToSnapshot', () => {
         coordinateSpace: 'board',
         anchor: { kind: 'board-slot', playerIndex: 0, slot: 'active', slotIndex: 0 },
         spriteVisual: { kind: 'pulse', tone: 'ability' },
+        label: 'Run Away Draw',
         durationMs: 560,
       },
     ]);
@@ -363,6 +364,7 @@ describe('cabtReplayToSnapshot', () => {
         coordinateSpace: 'board',
         anchor: { kind: 'board-slot', playerIndex: 0, slot: 'bench', slotIndex: 1 },
         spriteVisual: { kind: 'pulse', tone: 'ability' },
+        label: 'Run Away Draw',
       },
     ]);
   });
@@ -1572,6 +1574,7 @@ describe('cabtReplayToSnapshot', () => {
         coordinateSpace: 'board',
         anchor: { kind: 'board-slot', playerIndex: 0, slot: 'active', slotIndex: 0 },
         spriteVisual: { kind: 'pulse', tone: 'ability' },
+        label: 'Psychic Draw',
       },
     ]);
     expect(step.displayView?.players[0].hand.map((card) => card.serial)).toEqual([12, 27, 54]);
@@ -3809,6 +3812,7 @@ describe('cabtReplayToSnapshot', () => {
         anchor: { kind: 'board-slot', playerIndex: 0, slot: 'active', slotIndex: 0 },
         identity: { kind: 'pokemon', serial: 13, cardId: 723 },
         spriteVisual: { kind: 'pulse', tone: 'attack' },
+        label: 'Hammer-lanche',
         durationMs: 520,
       },
     ]);
@@ -3817,8 +3821,10 @@ describe('cabtReplayToSnapshot', () => {
         kind: 'pulse',
         coordinateSpace: 'board',
         anchor: { kind: 'board-slot', playerIndex: 1, slot: 'active', slotIndex: 0 },
+        sourceAnchor: { kind: 'board-slot', playerIndex: 0, slot: 'active', slotIndex: 0 },
         identity: { kind: 'pokemon', serial: 64, cardId: 721 },
         spriteVisual: { kind: 'pulse', tone: 'damage' },
+        value: 400,
         durationMs: 560,
       },
     ]);

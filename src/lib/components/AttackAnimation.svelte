@@ -168,7 +168,6 @@
 
   function startPlannedAttackAnnouncement(motion: PulseAnimationMotion) {
     const generation = animationGeneration;
-    const event = eventForMotion(motion, 'attack');
     const timer = setTimeout(() => {
       if (generation !== animationGeneration) {
         return;
@@ -179,7 +178,7 @@
       }
       activeAttackAnnouncements.add(attacker);
       attacker.dataset.attackAnnounceActive = 'true';
-      attacker.style.setProperty('--attack-name', JSON.stringify(event ? attackNameForEvent(event) : 'Attack'));
+      attacker.style.setProperty('--attack-name', JSON.stringify(motion.label ?? 'Attack'));
       const cleanup = setTimeout(() => {
         if (generation !== animationGeneration) {
           return;
@@ -193,11 +192,6 @@
 
   function startPlannedDamageAnimation(motion: PulseAnimationMotion) {
     const generation = animationGeneration;
-    const event = eventForMotion(motion, 'damage');
-    if (!event) {
-      return;
-    }
-    const attackEvent = stepEvents.find((candidate) => candidate.kind === 'Attack');
     const timer = setTimeout(() => {
       if (generation !== animationGeneration) {
         return;
@@ -206,12 +200,12 @@
       if (!target) {
         return;
       }
-      const attacker = attackEvent ? slotElementForEvent(attackEvent) : null;
+      const attacker = motion.sourceAnchor ? slotElementForAnchor(motion.sourceAnchor) : null;
       const targetRect = target.getBoundingClientRect();
       if (attacker) {
         startAttackLunge(attacker, targetRect, motion.durationMs);
       }
-      const value = damageValue(event);
+      const value = motion.value ?? 0;
       if (value <= 0) {
         return;
       }
@@ -448,13 +442,13 @@
   }
 
   function slotElementForMotion(motion: PulseAnimationMotion): HTMLElement | null {
-    const element = resolveAnimationAnchorElements(motion.anchor, { identity: motion.identity }).at(0)
-      ?? resolveAnimationAnchorElements(motion.anchor).at(0);
-    return element instanceof HTMLElement ? element : null;
+    return slotElementForAnchor(motion.anchor, motion.identity);
   }
 
-  function eventForMotion(motion: PulseAnimationMotion, suffix: 'attack' | 'damage'): ActionTimelineEvent | undefined {
-    return animationPlan?.actionTimeline.find((event) => `${animationPlan?.key}:${event.id}:${suffix}` === motion.id);
+  function slotElementForAnchor(anchor: PulseAnimationMotion['anchor'], identity?: PulseAnimationMotion['identity']): HTMLElement | null {
+    const element = resolveAnimationAnchorElements(anchor, { identity }).at(0)
+      ?? resolveAnimationAnchorElements(anchor).at(0);
+    return element instanceof HTMLElement ? element : null;
   }
 
   function discardElementForPlayer(playerIndex: number | undefined): HTMLElement | null {
