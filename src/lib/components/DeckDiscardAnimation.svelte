@@ -6,9 +6,12 @@
     releaseElementVisibilityClaims,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
+  import { resolveExactAnimationAnchorElement } from '../animations/animationAnchors';
+  import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { actionAnimationBatchEvents, actionAnimationStartMs } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
+  import { elementRectInPlane } from '../dom/planeGeometry';
   import type { ActionTimelineEvent, CardView } from '../game/types';
 
   type Props = {
@@ -19,6 +22,7 @@
     scopeKey?: string | number;
     replayMode?: boolean;
     opponent?: boolean;
+    animationPlan?: ReplayAnimationPhasePlan;
   };
 
   type DiscardSprite = {
@@ -32,6 +36,7 @@
     endY: number;
     width: number;
     height: number;
+    durationMs: number;
   };
 
   type DiscardAnimation = {
@@ -48,6 +53,7 @@
     scopeKey = '',
     replayMode = false,
     opponent = false,
+    animationPlan,
   }: Props = $props();
 
   const timers: ReturnType<typeof setTimeout>[] = [];
@@ -57,7 +63,9 @@
   let initialized = false;
   let nextAnimationId = 1;
   let reduceMotion = $state(false);
+  let motionLayer = $state<HTMLElement>();
   let lastScopeKey: string | number = '';
+  let lastPlanKey = '';
 
   onMount(() => {
     if (typeof window.matchMedia !== 'function') {
@@ -79,8 +87,25 @@
   $effect(() => {
     const currentEvents = events;
     const currentScopeKey = scopeKey;
+    const plannedMotions = deckDiscardPlanMotions(animationPlan);
+    const planKey = deckDiscardPlanKey(plannedMotions);
     const scopeChanged = initialized && currentScopeKey !== lastScopeKey;
+    const planChanged = planKey !== lastPlanKey;
     lastScopeKey = currentScopeKey;
+    lastPlanKey = planKey;
+
+    if (plannedMotions.length) {
+      const shouldStartPlan = !initialized || planChanged || scopeChanged;
+      initialized = true;
+      if (shouldStartPlan) {
+        clearDiscards();
+        if (!reduceMotion) {
+          startPlannedDiscard(plannedMotions);
+        }
+      }
+      markEventsSeen(currentEvents);
+      return;
+    }
 
     if (!initialized) {
       markEventsSeen(currentEvents);
@@ -114,6 +139,21 @@
       startDiscard(discardEvents, animationEvents);
     }
   });
+
+  function deckDiscardPlanMotions(plan: ReplayAnimationPhasePlan | undefined): CardMoveAnimationMotion[] {
+    return (plan?.motions ?? []).filter((motion): motion is CardMoveAnimationMotion =>
+      motion.kind === 'card-move'
+      && motion.coordinateSpace === 'board'
+      && motion.sourceAnchor.kind === 'deck-top'
+      && motion.sourceAnchor.playerIndex === playerIndex
+      && (motion.targetAnchor.kind === 'discard-card' || motion.targetAnchor.kind === 'discard-pile')
+      && plan?.key.startsWith(`DeckDiscard:${playerIndex}`),
+    );
+  }
+
+  function deckDiscardPlanKey(motions: CardMoveAnimationMotion[]): string {
+    return motions.map((motion) => `${motion.id}:${motion.startMs}:${motion.durationMs}`).join('|');
+  }
 
   function markEventsSeen(currentEvents: ActionTimelineEvent[]) {
     for (const event of currentEvents) {
@@ -162,6 +202,7 @@
         endY,
         width,
         height,
+        durationMs: cardMoveDurationMs,
       };
     });
 
@@ -179,8 +220,92 @@
       if (timerIndex >= 0) {
         timers.splice(timerIndex, 1);
       }
-    }, Math.max(...sprites.map((sprite) => sprite.delayMs)) + cardMoveDurationMs + 120);
+    }, Math.max(...sprites.map((sprite) => sprite.delayMs + sprite.durationMs)) + 120);
     timers.push(timer);
+  }
+
+  function startPlannedDiscard(motions: CardMoveAnimationMotion[]) {
+    const motionPlane = motionLayer?.parentElement;
+    if (!(motionPlane instanceof HTMLElement)) {
+      return;
+    }
+    const sprites = motions.flatMap((motion, index) => plannedSpriteForMotion(motion, index, motionPlane) ?? []);
+    if (!sprites.length) {
+      return;
+    }
+
+    const animation: DiscardAnimation = {
+      id: nextAnimationId++,
+      sprites,
+      destinationClaims: [],
+    };
+
+    discards = [...discards, animation];
+    const timer = setTimeout(() => {
+      releaseDestinationClaims(animation);
+      discards = discards.filter((item) => item.id !== animation.id);
+      const timerIndex = timers.indexOf(timer);
+      if (timerIndex >= 0) {
+        timers.splice(timerIndex, 1);
+      }
+    }, Math.max(...sprites.map((sprite) => sprite.delayMs + sprite.durationMs)) + 120);
+    timers.push(timer);
+  }
+
+  function plannedSpriteForMotion(
+    motion: CardMoveAnimationMotion,
+    index: number,
+    motionPlane: HTMLElement,
+  ): DiscardSprite | undefined {
+    const sourceElement = plannedVisualElementForAnchor(motion.sourceAnchor);
+    const targetElement = plannedVisualElementForAnchor(motion.targetAnchor);
+    if (!sourceElement || !targetElement) {
+      return undefined;
+    }
+    const sourceRect = elementRectInPlane(sourceElement, motionPlane);
+    const targetRect = elementRectInPlane(targetElement, motionPlane);
+    if (!sourceRect || !targetRect || sourceRect.width <= 0 || sourceRect.height <= 0 || targetRect.width <= 0 || targetRect.height <= 0) {
+      return undefined;
+    }
+    const cardId = motion.identity?.cardId ?? (motion.spriteVisual.kind === 'card' ? motion.spriteVisual.card?.id : undefined);
+    if (cardId === undefined) {
+      return undefined;
+    }
+    const card = motion.spriteVisual.kind === 'card' && motion.spriteVisual.card
+      ? { ...cabtCardToView(cardId), ...motion.spriteVisual.card }
+      : cabtCardToView(cardId);
+    return {
+      id: motion.id,
+      card,
+      order: index + 1,
+      delayMs: motion.startMs,
+      startX: sourceRect.left,
+      startY: sourceRect.top,
+      endX: targetRect.left,
+      endY: targetRect.top,
+      width: targetRect.width,
+      height: targetRect.height,
+      durationMs: motion.durationMs,
+    };
+  }
+
+  function plannedVisualElementForAnchor(anchor: CardMoveAnimationMotion['sourceAnchor']): HTMLElement | null {
+    const element = resolveExactAnimationAnchorElement(anchor);
+    if (!element) {
+      return null;
+    }
+    if (anchor.kind === 'deck-top') {
+      const pile = element.closest('.deck-pile');
+      if (pile instanceof HTMLElement) {
+        const face = pile.querySelector('.deck-card-face');
+        return face instanceof HTMLElement ? face : pile;
+      }
+    }
+    if (anchor.kind === 'discard-card') {
+      const card = element.classList.contains('card-tile') ? element : element.querySelector('.card-tile');
+      return card instanceof HTMLElement ? card : element;
+    }
+    return element;
   }
 
   function clearDiscards() {
@@ -234,6 +359,7 @@
       `--discard-y: ${(sprite.endY - sprite.startY).toFixed(1)}px`,
       `--base-rotation: ${opponent ? 180 : 0}deg`,
       `--discard-delay: ${sprite.delayMs}ms`,
+      `--discard-duration: ${sprite.durationMs}ms`,
       `z-index: ${sprite.order}`,
     ].join('; ');
   }
@@ -244,7 +370,7 @@
   }
 </script>
 
-<span class="deck-discard-animation" aria-hidden="true">
+<span class="deck-discard-animation" bind:this={motionLayer} aria-hidden="true">
   {#each discards as discard (discard.id)}
     {#each discard.sprites as sprite (sprite.id)}
       <span class="discard-card" style={spriteStyle(sprite)}>
@@ -279,7 +405,7 @@
     border-radius: 5px;
     pointer-events: none;
     transform-style: preserve-3d;
-    animation: deck-discard-travel 300ms cubic-bezier(0.24, 0.78, 0.24, 1) var(--discard-delay) both;
+    animation: deck-discard-travel var(--discard-duration, 300ms) cubic-bezier(0.24, 0.78, 0.24, 1) var(--discard-delay) both;
     will-change: transform, opacity;
   }
 
@@ -289,7 +415,7 @@
     display: block;
     border-radius: inherit;
     transform-style: preserve-3d;
-    animation: deck-discard-flip 300ms ease-in-out var(--discard-delay) both;
+    animation: deck-discard-flip var(--discard-duration, 300ms) ease-in-out var(--discard-delay) both;
     will-change: transform;
   }
 

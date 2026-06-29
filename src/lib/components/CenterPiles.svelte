@@ -179,6 +179,7 @@
           deckElement={topDeckPileElement}
           discardElement={topDiscardPileElement}
           scopeKey={animationScopeKey}
+          {animationPlan}
           {replayMode}
           opponent
         />
@@ -315,6 +316,7 @@
           deckElement={bottomDeckPileElement}
           discardElement={bottomDiscardPileElement}
           scopeKey={animationScopeKey}
+          {animationPlan}
           {replayMode}
         />
       </div>
