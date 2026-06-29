@@ -1463,7 +1463,7 @@ function animationPhaseMotions(
   if (phase.key.startsWith('HandToDeck:')) {
     return handToDeckCardMoveMotions(phase, view);
   }
-  if (phase.key.startsWith('Play:') || phase.key.startsWith('HandMove:')) {
+  if (phase.key.startsWith('Play:') || phase.key.startsWith('HandMove:') || phase.key.startsWith('Evolve:')) {
     return handPlayCardMoveMotions(phase, view);
   }
   if (phase.key.startsWith('Attach:')) {
@@ -1721,6 +1721,7 @@ function handPlayCardMoveMotionForEvent(
   const sourceCard = view.players[playerIndex]?.hand[sourceAnchor.kind === 'hand-card' ? sourceAnchor.handIndex ?? -1 : -1];
   const serial = finiteNumber(params?.serial) ?? sourceCard?.serial;
   const cardId = finiteNumber(params?.cardId) ?? sourceCard?.id;
+  const isEvolution = event.kind === 'Evolve';
   if (cardId === undefined) {
     return null;
   }
@@ -1746,8 +1747,8 @@ function handPlayCardMoveMotionForEvent(
     },
     handoffPolicy: {
       hideSourceUntil: 'scope-exit',
-      hideDestinationUntil: 'arrival',
-      removeSprite: 'arrival',
+      hideDestinationUntil: isEvolution ? 'none' : 'arrival',
+      removeSprite: isEvolution ? 'scope-exit' : 'arrival',
       prepaintFrames: 2,
     },
   };
@@ -1784,6 +1785,11 @@ function handPlayTargetAnchorForEvent(view: GameView, event: ActionTimelineEvent
   if (event.kind === 'Attach') {
     return attachedSourceAnchorForEvent(view.players[playerIndex], event, CabtAreaType.ENERGY)
       ?? attachedSourceAnchorForEvent(view.players[playerIndex], event, CabtAreaType.TOOL);
+  }
+  if (event.kind === 'Evolve') {
+    const targetSerial = finiteNumber(params?.serialTarget);
+    const targetCardId = finiteNumber(params?.cardIdTarget);
+    return boardSlotAnchorForPokemon(view.players[playerIndex], targetSerial, targetCardId);
   }
   if (!isMoveCardKind(event.kind)) {
     return undefined;
@@ -1826,6 +1832,9 @@ function handPlayIdentityKind(event: ActionTimelineEvent): AnimationIdentity['ki
   }
   if (event.kind === 'Attach' && cardId !== undefined) {
     return cardDatabase.get(cardId)?.kind === 'Tool' ? 'tool' : 'energy';
+  }
+  if (event.kind === 'Evolve') {
+    return 'pokemon';
   }
   return 'card';
 }
@@ -2378,7 +2387,7 @@ function stringValue(value: unknown): string | undefined {
 }
 
 function animationPhaseVisibilityClaims(phase: AnimationEventPhase, view: GameView): AnimationVisibilityClaim[] {
-  if (phase.key.startsWith('Play:') || phase.key.startsWith('HandMove:') || phase.key.startsWith('Attach:')) {
+  if (phase.key.startsWith('Play:') || phase.key.startsWith('HandMove:') || phase.key.startsWith('Attach:') || phase.key.startsWith('Evolve:')) {
     return handPlayDestinationVisibilityClaims(phase, view);
   }
   if (phase.key.startsWith('Draw:')) {
@@ -2424,6 +2433,9 @@ function handPlayDestinationVisibilityClaims(phase: AnimationEventPhase, view: G
       identity,
       role: 'source',
     });
+    if (event.kind === 'Evolve') {
+      continue;
+    }
     claims.push({
       scopeKey: phase.key,
       anchor,
@@ -2841,6 +2853,7 @@ function animationPhaseMayHavePlan(phase: AnimationEventPhase): boolean {
     || phase.key.startsWith('Play:')
     || phase.key.startsWith('HandMove:')
     || phase.key.startsWith('Attach:')
+    || phase.key.startsWith('Evolve:')
     || phase.key.startsWith('Draw:')
     || phase.key.startsWith('DeckDiscard:')
     || phase.key.startsWith('DeckBoardPlace:')
@@ -2857,7 +2870,7 @@ function animationSourceViewForPhase(
   phase: AnimationEventPhase,
 ): GameView {
   if (phase.key.startsWith('Evolve:')) {
-    return projectedViewForEvents(phaseStartView, currentView, phase.events, { deferBoardStateEvents: true });
+    return handPlaySourceView(phaseStartView, currentView, phase);
   }
   if (phase.key.startsWith('Ability:') || phase.key.startsWith('Attack:') || phase.key.startsWith('Damage:')) {
     return projectedViewForEvents(phaseStartView, currentView, phase.events, { deferBoardStateEvents: true });
@@ -3593,6 +3606,13 @@ function isPlannedHandPlayMoveEvent(event: ActionTimelineEvent): boolean {
     const params = event.params as Record<string, unknown> | undefined;
     return finiteNumber(params?.serial) !== undefined
       && finiteNumber(params?.cardId) !== undefined;
+  }
+  if (event.kind === 'Evolve') {
+    const params = event.params as Record<string, unknown> | undefined;
+    return finiteNumber(params?.serial) !== undefined
+      && finiteNumber(params?.cardId) !== undefined
+      && finiteNumber(params?.serialTarget) !== undefined
+      && finiteNumber(params?.cardIdTarget) !== undefined;
   }
   if (!isMoveCardKind(event.kind)) {
     return false;

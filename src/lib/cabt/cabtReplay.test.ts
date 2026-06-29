@@ -1565,11 +1565,34 @@ describe('cabtReplayToSnapshot', () => {
     });
 
     const evolveStep = snapshot.steps[1];
+    const evolvePhase = evolveStep.animationPhases?.[0];
     expect(evolveStep.label).toBe('Player 1 evolved into Mega Abomasnow ex.');
     expect(evolveStep.animationPhases?.map((phase) => phase.key)).toEqual(['Evolve:0']);
-    expect(evolveStep.animationPhases?.[0].view.players[0].active.pokemon?.id).toBe(722);
-    expect(evolveStep.animationPhases?.[0].view.players[0].active.damage).toBe(0);
-    expect(evolveStep.animationPhases?.[0].view.players[0].hand.map((card) => card.serial)).toEqual([46]);
+    expect(evolvePhase?.view.players[0].active.pokemon?.id).toBe(722);
+    expect(evolvePhase?.view.players[0].active.damage).toBe(0);
+    expect(evolvePhase?.view.players[0].hand.map((card) => card.serial)).toEqual([13, 46]);
+    expect(evolvePhase?.animationPlan?.motions).toMatchObject([
+      {
+        kind: 'card-move',
+        coordinateSpace: 'viewport',
+        sourceAnchor: { kind: 'hand-card', playerIndex: 0, handIndex: 0, serial: 13 },
+        targetAnchor: { kind: 'board-slot', playerIndex: 0, slot: 'active', slotIndex: 0 },
+        identity: { kind: 'pokemon', serial: 13, cardId: 723 },
+        handoffPolicy: {
+          hideSourceUntil: 'scope-exit',
+          hideDestinationUntil: 'none',
+          removeSprite: 'scope-exit',
+        },
+      },
+    ]);
+    expect(evolvePhase?.animationPlan?.visibilityClaims).toMatchObject([
+      {
+        anchor: { kind: 'hand-card', playerIndex: 0, handIndex: 0, serial: 13 },
+        identity: { kind: 'pokemon', serial: 13, cardId: 723 },
+        role: 'source',
+      },
+    ]);
+    expect(evolvePhase?.animationPlan?.visibilityClaims).toHaveLength(1);
     expect(snapshot.views[evolveStep.stateIndex].players[0].active.pokemon?.id).toBe(723);
     expect(snapshot.views[evolveStep.stateIndex].players[0].active.damage).toBe(30);
   });
@@ -1638,8 +1661,19 @@ describe('cabtReplayToSnapshot', () => {
     });
 
     const evolveStep = snapshot.steps[1];
-    expect(evolveStep.animationPhases?.[0].view.players[0].bench[0].pokemon?.id).toBe(722);
-    expect(evolveStep.animationPhases?.[0].view.players[0].hand.map((card) => card.serial)).toEqual([46]);
+    const evolvePhase = evolveStep.animationPhases?.[0];
+    expect(evolvePhase?.view.players[0].bench[0].pokemon?.id).toBe(722);
+    expect(evolvePhase?.view.players[0].hand.map((card) => card.serial)).toEqual([13, 46]);
+    expect(evolvePhase?.animationPlan?.motions).toMatchObject([
+      {
+        kind: 'card-move',
+        coordinateSpace: 'viewport',
+        sourceAnchor: { kind: 'hand-card', playerIndex: 0, handIndex: 0, serial: 13 },
+        targetAnchor: { kind: 'board-slot', playerIndex: 0, slot: 'bench', slotIndex: 0 },
+        identity: { kind: 'pokemon', serial: 13, cardId: 723 },
+      },
+    ]);
+    expect(evolvePhase?.animationPlan?.visibilityClaims).toHaveLength(1);
     expect(snapshot.views[evolveStep.stateIndex].players[0].bench[0].pokemon?.id).toBe(723);
     expect(snapshot.views[evolveStep.stateIndex].players[0].bench[0].cards.map((card) => card.serial)).toEqual([13, 6]);
   });

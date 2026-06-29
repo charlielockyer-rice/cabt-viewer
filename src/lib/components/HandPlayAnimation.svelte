@@ -285,9 +285,10 @@
     }
 
     const label = spriteCard?.name ?? metadataCard?.name ?? motion.identity?.name ?? 'Card';
+    const isEvolution = isEvolutionMotion(motion);
     return [{
       kind: 'fixed',
-      mode: 'play',
+      mode: isEvolution ? 'evolve' : 'play',
       id: nextPlayId++,
       target,
       delayMs: motion.startMs,
@@ -305,6 +306,10 @@
           : 'pokemon',
       hideContents: false,
     }];
+  }
+
+  function isEvolutionMotion(motion: CardMoveAnimationMotion): boolean {
+    return motion.id.startsWith('Evolve:');
   }
 
   function slotAttachTargetForMotion(motion: CardMoveAnimationMotion, target: HTMLElement): HTMLElement | null {
