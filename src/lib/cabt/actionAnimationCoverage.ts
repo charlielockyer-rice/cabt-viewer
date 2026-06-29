@@ -15,6 +15,8 @@ const polishedMoveAreas = new Set([
   moveKey(CabtAreaType.PRIZE, CabtAreaType.HAND),
   moveKey(CabtAreaType.DECK, CabtAreaType.DISCARD),
   moveKey(CabtAreaType.DECK, CabtAreaType.HAND),
+  moveKey(CabtAreaType.DISCARD, CabtAreaType.HAND),
+  moveKey(CabtAreaType.DISCARD, CabtAreaType.DECK),
   moveKey(CabtAreaType.DECK, CabtAreaType.ACTIVE),
   moveKey(CabtAreaType.DECK, CabtAreaType.BENCH),
   moveKey(CabtAreaType.DECK, CabtAreaType.LOOKING),
@@ -140,6 +142,11 @@ export function classifyAnimationCoverage(
     if (fromArea === CabtAreaType.HAND && !hasFiniteNumber(params?.serial)) {
       notes.push('Hand-origin animations use serials to find the exact source card; missing serials may fall back or skip.');
       return { key, level: 'conditional', label: 'Hand card move', notes };
+    }
+
+    if (fromArea === CabtAreaType.DISCARD && (toArea === CabtAreaType.HAND || toArea === CabtAreaType.DECK)) {
+      notes.push('Uses the visible discard card when present, otherwise starts from the discard pile surface.');
+      return { key, level: 'polished', label: moveLabel(fromArea, toArea), notes };
     }
 
     return {
@@ -285,6 +292,8 @@ function moveLabel(fromArea: number, toArea: number): string {
   if (fromArea === CabtAreaType.PRIZE && toArea === CabtAreaType.HAND) return 'Prize take';
   if (fromArea === CabtAreaType.DECK && toArea === CabtAreaType.DISCARD) return 'Deck discard';
   if (fromArea === CabtAreaType.DECK && toArea === CabtAreaType.HAND) return 'Deck search reveal to hand';
+  if (fromArea === CabtAreaType.DISCARD && toArea === CabtAreaType.HAND) return 'Discard recovery to hand';
+  if (fromArea === CabtAreaType.DISCARD && toArea === CabtAreaType.DECK) return 'Discard recovery to deck';
   if (fromArea === CabtAreaType.DECK && toArea === CabtAreaType.LOOKING) return 'Deck reveal';
   if (fromArea === CabtAreaType.HAND && toArea === CabtAreaType.DECK) return 'Hand reset to deck';
   if (fromArea === CabtAreaType.ACTIVE && toArea === CabtAreaType.BENCH) return 'Active to bench board move';

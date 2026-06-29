@@ -7,6 +7,7 @@ import {
   createReplayAnimationPhasePlan,
   replayAnimationMotionSpanMs,
   type AnimationAnchorRef,
+  type AnimationHandoffPolicy,
   type AnimationIdentity,
   type AnimationMotion,
   type AnimationSpriteVisual,
@@ -1520,6 +1521,7 @@ function animationPhaseMotions(
     || phase.key.startsWith('DeckPrizePlace:')
     || phase.key.startsWith('StadiumMove:')
     || phase.key.startsWith('AttachedMove:')
+    || phase.key.startsWith('DiscardRecover:')
     || phase.key.startsWith('KnockOut:')
   ) {
     return boardCardMoveMotions(phase, view);
@@ -2314,6 +2316,8 @@ function boardCardMoveMotionsForEvent(
   if (!sourceAnchor || !targetAnchor) {
     return null;
   }
+  const isDiscardRecovery = fromArea === CabtAreaType.DISCARD
+    && (toArea === CabtAreaType.HAND || toArea === CabtAreaType.DECK);
 
   return [cardMoveMotion({
     id: `${phase.key}:${event.id}:${serial ?? cardId}`,
@@ -2324,7 +2328,8 @@ function boardCardMoveMotionsForEvent(
     identity: {
       kind: attachedIdentityKind(fromArea)
         ?? (fromArea === CabtAreaType.STADIUM ? 'stadium' : undefined)
-        ?? (fromArea === CabtAreaType.DECK && (toArea === CabtAreaType.DISCARD || toArea === CabtAreaType.PRIZE) ? 'card' : 'pokemon'),
+        ?? ((fromArea === CabtAreaType.DECK && (toArea === CabtAreaType.DISCARD || toArea === CabtAreaType.PRIZE))
+          || isDiscardRecovery ? 'card' : 'pokemon'),
       serial,
       cardId,
       name: stringValue(params?.cardName),
@@ -2334,10 +2339,16 @@ function boardCardMoveMotionsForEvent(
       ? 'scope-exit'
       : 'prepaint',
     durationMs: cardMoveDurationMs(fromArea, toArea),
-    coordinateSpace: isAttachedCardArea(fromArea) && toArea === CabtAreaType.HAND ? 'cross-plane' : 'board',
+    coordinateSpace: (isAttachedCardArea(fromArea) || fromArea === CabtAreaType.DISCARD) && toArea === CabtAreaType.HAND
+      ? 'cross-plane'
+      : 'board',
     spriteVisual: (isAttachedCardArea(fromArea) && toArea === CabtAreaType.HAND)
       || (fromArea === CabtAreaType.DECK && toArea === CabtAreaType.DISCARD)
+      || isDiscardRecovery
       ? { kind: 'card', card: cardViewFromEvent(event) }
+      : undefined,
+    handoffPolicy: isDiscardRecovery && toArea === CabtAreaType.HAND
+      ? { hideDestinationUntil: 'none' }
       : undefined,
   })];
 }
@@ -2398,9 +2409,17 @@ function cardMoveMotion(input: {
   durationMs?: number;
   coordinateSpace?: AnimationMotion['coordinateSpace'];
   spriteVisual?: AnimationSpriteVisual;
+  handoffPolicy?: Partial<AnimationHandoffPolicy>;
 }): AnimationMotion {
   const coordinateSpace = input.coordinateSpace ?? 'board';
   const removeSprite = coordinateSpace === 'cross-plane' ? 'arrival' : input.removeSprite;
+  const handoffPolicy = {
+    hideSourceUntil: input.sourceAnchor.kind === 'deck-top' ? 'snapshot' : 'scope-exit',
+    hideDestinationUntil: coordinateSpace === 'cross-plane' ? 'arrival' : 'prepaint',
+    removeSprite,
+    prepaintFrames: 2,
+    ...input.handoffPolicy,
+  } satisfies AnimationHandoffPolicy;
   return {
     id: input.id,
     kind: 'card-move',
@@ -2414,12 +2433,7 @@ function cardMoveMotion(input: {
       kind: 'anchor-snapshot',
       anchor: input.sourceAnchor,
     },
-    handoffPolicy: {
-      hideSourceUntil: input.sourceAnchor.kind === 'deck-top' ? 'snapshot' : 'scope-exit',
-      hideDestinationUntil: coordinateSpace === 'cross-plane' ? 'arrival' : 'prepaint',
-      removeSprite,
-      prepaintFrames: 2,
-    },
+    handoffPolicy,
   };
 }
 
@@ -2451,6 +2465,15 @@ function boardMoveSourceAnchor(view: GameView, event: ActionTimelineEvent, fromA
     const player = view.players[playerIndex];
     const card = player?.stadium.find((candidate) => eventCardMatches(candidate, event));
     return card ? { kind: 'stadium-card', playerIndex, serial: card.serial } : undefined;
+  }
+  if (fromArea === CabtAreaType.DISCARD) {
+    const params = event.params as Record<string, unknown> | undefined;
+    const card = view.players[playerIndex]?.discard.find((candidate) => eventCardMatches(candidate, event));
+    return {
+      kind: 'discard-card',
+      playerIndex,
+      serial: card?.serial ?? finiteNumber(params?.serial),
+    };
   }
   if (fromArea === CabtAreaType.ENERGY || fromArea === CabtAreaType.TOOL) {
     return attachedSourceAnchorForEvent(view.players[playerIndex], event, fromArea);
@@ -2526,6 +2549,10 @@ function boardMoveTargetAnchor(
     return { kind: 'discard-pile', playerIndex };
   }
   if (toArea === CabtAreaType.HAND) {
+    const params = event.params as Record<string, unknown> | undefined;
+    if (Number(params?.fromArea) === CabtAreaType.DISCARD) {
+      return { kind: 'hand', playerIndex };
+    }
     const hand = view.players[playerIndex]?.hand ?? [];
     const handIndex = hand.findIndex((card) => eventCardMatches(card, event));
     const card = hand[handIndex];
@@ -2844,6 +2871,9 @@ function animationPhaseKey(event: ActionTimelineEvent): string | null {
     if (fromArea === CabtAreaType.HAND && toArea === CabtAreaType.DECK) {
       return `HandToDeck:${playerKey}`;
     }
+    if (fromArea === CabtAreaType.DISCARD && (toArea === CabtAreaType.HAND || toArea === CabtAreaType.DECK)) {
+      return `DiscardRecover:${playerKey}:${toArea}`;
+    }
     if (fromArea === CabtAreaType.HAND) {
       return `HandMove:${playerKey}:${toArea}`;
     }
@@ -2900,6 +2930,7 @@ function animationPhaseUsesSourceView(key: string): boolean {
     || key.startsWith('BoardToDeck:')
     || key.startsWith('BoardMove:')
     || key.startsWith('AttachedMove:')
+    || key.startsWith('DiscardRecover:')
     || key.startsWith('StadiumMove:')
     || key.startsWith('PrizeTake:');
 }
@@ -2913,6 +2944,7 @@ function animationPhaseNeedsDedicatedView(phase: AnimationEventPhase): boolean {
     || phase.key.startsWith('BoardToDeck:')
     || phase.key.startsWith('BoardMove:')
     || phase.key.startsWith('AttachedMove:')
+    || phase.key.startsWith('DiscardRecover:')
     || phase.key.startsWith('StadiumMove:')
     || phase.key.startsWith('PrizeTake:');
 }
@@ -2931,6 +2963,7 @@ function animationPhaseMayHavePlan(phase: AnimationEventPhase): boolean {
     || phase.key.startsWith('DeckDiscard:')
     || phase.key.startsWith('DeckBoardPlace:')
     || phase.key.startsWith('DeckPrizePlace:')
+    || phase.key.startsWith('DiscardRecover:')
     || phase.key.startsWith('DeckReveal:')
     || phase.key.startsWith('DeckSearchReveal:')
     || phase.key.startsWith('DeckRevealReturn:')

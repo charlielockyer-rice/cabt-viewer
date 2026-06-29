@@ -4876,4 +4876,153 @@ describe('cabtReplayToSnapshot', () => {
       },
     ]);
   });
+
+  it('plans discard recovery to hand as a cross-plane motion', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 3,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [],
+            benchMax: 5,
+            hand: [],
+            deckCount: 45,
+            discard: [{ id: 66, serial: 11 }],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 45,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'MoveCard', playerIndex: 0, cardId: 66, serial: 11, fromArea: CabtAreaType.DISCARD, toArea: CabtAreaType.HAND },
+        ],
+        current: {
+          turn: 3,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [],
+            benchMax: 5,
+            hand: [{ id: 66, serial: 11 }],
+            deckCount: 45,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 45,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    const step = snapshot.steps[1];
+    expect(step.animationPhases?.map((phase) => phase.key)).toEqual([`DiscardRecover:0:${CabtAreaType.HAND}`]);
+    expect(step.animationPhases?.[0].view.players[0].discard.map((card) => card.serial)).toEqual([11]);
+    expect(step.animationPhases?.[0].animationPlan?.motions).toMatchObject([
+      {
+        kind: 'card-move',
+        coordinateSpace: 'cross-plane',
+        sourceAnchor: { kind: 'discard-card', playerIndex: 0, serial: 11 },
+        targetAnchor: { kind: 'hand', playerIndex: 0 },
+        identity: { kind: 'card', serial: 11, cardId: 66 },
+        handoffPolicy: {
+          hideSourceUntil: 'scope-exit',
+          hideDestinationUntil: 'none',
+          removeSprite: 'arrival',
+        },
+      },
+    ]);
+    expect(step.animationPhases?.[0].animationPlan?.visibilityClaims).toMatchObject([
+      {
+        anchor: { kind: 'discard-card', playerIndex: 0, serial: 11 },
+        identity: { kind: 'card', serial: 11, cardId: 66 },
+        role: 'source',
+      },
+    ]);
+  });
+
+  it('plans discard recovery to deck as a board motion', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 3,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [],
+            benchMax: 5,
+            hand: [],
+            deckCount: 45,
+            discard: [{ id: 305, serial: 17 }],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 45,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'MoveCard', playerIndex: 0, cardId: 305, serial: 17, fromArea: CabtAreaType.DISCARD, toArea: CabtAreaType.DECK },
+        ],
+        current: {
+          turn: 3,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [],
+            benchMax: 5,
+            hand: [],
+            deckCount: 46,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 45,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    const step = snapshot.steps[1];
+    expect(step.animationPhases?.map((phase) => phase.key)).toEqual([`DiscardRecover:0:${CabtAreaType.DECK}`]);
+    expect(step.animationPhases?.[0].view.players[0].discard.map((card) => card.serial)).toEqual([17]);
+    expect(step.animationPhases?.[0].animationPlan?.motions).toMatchObject([
+      {
+        kind: 'card-move',
+        coordinateSpace: 'board',
+        sourceAnchor: { kind: 'discard-card', playerIndex: 0, serial: 17 },
+        targetAnchor: { kind: 'deck-top', playerIndex: 0 },
+        identity: { kind: 'card', serial: 17, cardId: 305 },
+        handoffPolicy: {
+          hideSourceUntil: 'scope-exit',
+          hideDestinationUntil: 'prepaint',
+          removeSprite: 'prepaint',
+        },
+      },
+    ]);
+  });
 });

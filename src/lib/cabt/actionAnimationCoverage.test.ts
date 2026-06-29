@@ -158,14 +158,30 @@ describe('classifyAnimationCoverage', () => {
 
   it('flags uncommon zone movements as static state changes', () => {
     const coverage = classifyAnimationCoverage(event('MoveCard', {
-      fromArea: CabtAreaType.DISCARD,
-      toArea: CabtAreaType.HAND,
+      fromArea: CabtAreaType.PRIZE,
+      toArea: CabtAreaType.DISCARD,
       cardId: 3,
       serial: 10,
     }));
 
     expect(coverage.level).toBe('static');
-    expect(coverage.key).toBe('MoveCard:discard->hand');
+    expect(coverage.key).toBe('MoveCard:prize->discard');
+  });
+
+  it('recognizes discard recovery moves as polished', () => {
+    expect(classifyAnimationCoverage(event('MoveCard', {
+      fromArea: CabtAreaType.DISCARD,
+      toArea: CabtAreaType.HAND,
+      cardId: 66,
+      serial: 11,
+    })).label).toBe('Discard recovery to hand');
+
+    expect(classifyAnimationCoverage(event('MoveCard', {
+      fromArea: CabtAreaType.DISCARD,
+      toArea: CabtAreaType.DECK,
+      cardId: 305,
+      serial: 17,
+    })).level).toBe('polished');
   });
 });
 

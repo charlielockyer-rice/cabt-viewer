@@ -346,6 +346,9 @@
     if (exact) {
       return visualElementForAnchor(exact, anchor);
     }
+    if (anchor.kind === 'discard-card') {
+      return discardPileElement(anchor.playerIndex);
+    }
     return null;
   }
 
@@ -571,6 +574,11 @@
     const anchor = document.querySelector(`[data-card-anchor="player:${playerIndex}:deck"]`);
     const pile = anchor?.closest('.deck-pile') as HTMLElement | null;
     return pile?.querySelector('.deck-card-face') ?? pile;
+  }
+
+  function discardPileElement(playerIndex: number): HTMLElement | null {
+    const element = document.querySelector(`[data-animation-anchor-key="player:${playerIndex}:discard-pile"]`);
+    return element instanceof HTMLElement ? element : null;
   }
 
   function pokemonElementForIdentity(serial: number, cardId: number, playerIndex: number | undefined): HTMLElement | null {
