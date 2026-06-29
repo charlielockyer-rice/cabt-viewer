@@ -6,7 +6,7 @@
     releaseElementVisibilityClaim,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
-  import { replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
+  import { replayAnimationSpriteGroupRemovalMs } from '../animations/replayAnimationHandoff';
   import { replayAnimationPlanHasPhase, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import {
     animationElementForMotionAnchor,
@@ -206,12 +206,13 @@
       sprites: plannedSprites,
     };
     resets = [...resets, animation];
-    const removalMs = Math.max(...motions.map((motion) =>
-      replayAnimationSpriteRemovalMs(motion, animationPlan?.durationMs) ?? (motion.startMs + motion.durationMs)));
-    const timer = setTimeout(() => {
-      resets = resets.filter((item) => item.id !== animation.id);
-    }, removalMs);
-    timers.push(timer);
+    const removalMs = replayAnimationSpriteGroupRemovalMs(motions, animationPlan?.durationMs);
+    if (removalMs !== undefined) {
+      const timer = setTimeout(() => {
+        resets = resets.filter((item) => item.id !== animation.id);
+      }, removalMs);
+      timers.push(timer);
+    }
     return true;
   }
 

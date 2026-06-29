@@ -47,6 +47,17 @@ export function replayAnimationSpriteRemovalMs(
   return motion.startMs + motion.durationMs;
 }
 
+export function replayAnimationSpriteGroupRemovalMs(
+  motions: Pick<ClaimTimingMotion, 'startMs' | 'durationMs' | 'handoffPolicy'>[],
+  phaseDurationMs?: number,
+): number | undefined {
+  const removals = motions.map((motion) => replayAnimationSpriteRemovalMs(motion, phaseDurationMs));
+  if (removals.some((removal) => removal === undefined)) {
+    return undefined;
+  }
+  return Math.max(...removals.filter((removal): removal is number => removal !== undefined));
+}
+
 export function replayAnimationMotionForClaim(
   plan: ReplayAnimationPhasePlan,
   claim: AnimationVisibilityClaim,

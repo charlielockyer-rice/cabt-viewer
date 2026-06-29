@@ -213,12 +213,18 @@
           );
         }
       }, sprite.delayMs);
-      const cleanupTimer = setTimeout(() => {
-        releaseActiveSprite(activeSprite);
-        element.remove();
-        activeSprites = activeSprites.filter((item) => item.element !== element);
-      }, sprite.removeMs ?? (sprite.delayMs + sprite.durationMs + replayHandoffHoldMs()));
-      timers.push(startTimer, cleanupTimer);
+      const cleanupDelayMs = sprite.planned
+        ? sprite.removeMs
+        : sprite.delayMs + sprite.durationMs + replayHandoffHoldMs();
+      if (cleanupDelayMs !== undefined) {
+        const cleanupTimer = setTimeout(() => {
+          releaseActiveSprite(activeSprite);
+          element.remove();
+          activeSprites = activeSprites.filter((item) => item.element !== element);
+        }, cleanupDelayMs);
+        timers.push(cleanupTimer);
+      }
+      timers.push(startTimer);
     }
     return true;
   }

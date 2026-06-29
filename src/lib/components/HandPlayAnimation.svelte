@@ -6,6 +6,7 @@
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
   import { resolveExactAnimationAnchorElement } from '../animations/animationAnchors';
+  import { replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
   import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
@@ -46,6 +47,8 @@
     setLabel: string;
     typeClass: string;
     hideContents: boolean;
+    removeMs?: number;
+    planned: boolean;
   };
 
   type SlotAttachAnimation = {
@@ -57,6 +60,8 @@
     startY: number;
     startRotation: number;
     hideContents: false;
+    removeMs?: number;
+    planned: boolean;
   };
 
   type TargetAnimation = FixedAnimation | SlotAttachAnimation;
@@ -229,19 +234,30 @@
       const animationVisibleMs = animation.kind === 'fixed' && animation.mode === 'evolve'
         ? evolveVisibleDurationMs
         : animationMoveMs;
-      const timer = setTimeout(() => {
-        if (animation.kind === 'fixed') {
-          activePlays = activePlays.filter((play) => play.id !== animation.id);
-        }
-        deactivateTargets([animation.target]);
-      }, animation.delayMs + animationVisibleMs + 24);
-      timers.push(timer);
+      const cleanupDelayMs = animation.planned
+        ? animation.removeMs
+        : animation.delayMs + animationVisibleMs + 24;
+      if (cleanupDelayMs !== undefined) {
+        const timer = setTimeout(() => {
+          if (animation.kind === 'fixed') {
+            activePlays = activePlays.filter((play) => play.id !== animation.id);
+          }
+          deactivateTargets([animation.target]);
+        }, cleanupDelayMs);
+        timers.push(timer);
+      }
     }
 
-    const timer = setTimeout(() => {
-      deactivateTargets(targetAnimations.map((animation) => animation.target));
-    }, Math.max(...targetAnimations.map((animation) => animation.delayMs + animationTotalMs(animation))) + 120);
-    timers.push(timer);
+    const cleanupTimes = targetAnimations
+      .map((animation) => animation.planned ? animation.removeMs : animation.delayMs + animationTotalMs(animation))
+      .filter((time): time is number => time !== undefined);
+    if (cleanupTimes.length) {
+      const timer = setTimeout(() => {
+        deactivateTargets(targetAnimations.filter((animation) =>
+          !animation.planned || animation.removeMs !== undefined).map((animation) => animation.target));
+      }, Math.max(...cleanupTimes) + 120);
+      timers.push(timer);
+    }
   }
 
   function targetAnimationForMotion(motion: CardMoveAnimationMotion): TargetAnimation[] {
@@ -282,6 +298,8 @@
         attachRect,
         cardFaceImageUrl(spriteCard ?? metadataCard) ?? '',
         motion.startMs,
+        replayAnimationSpriteRemovalMs(motion, animationPlan?.durationMs),
+        true,
       )];
     }
 
@@ -314,6 +332,8 @@
           ? 'trainer'
           : 'pokemon',
       hideContents: false,
+      removeMs: replayAnimationSpriteRemovalMs(motion, animationPlan?.durationMs),
+      planned: true,
     }];
   }
 
@@ -424,6 +444,7 @@
           ? 'trainer'
           : 'pokemon',
       hideContents: isEvolution ? false : shouldHideTargetContents(event, target),
+      planned: false,
     }];
   }
 
@@ -433,6 +454,8 @@
     targetRect: DOMRect,
     imageUrl: string,
     delayMs: number,
+    removeMs?: number,
+    planned = false,
   ): SlotAttachAnimation {
     const sourceCenter = centerOf(sourceRect);
     const targetCenter = centerOf(targetRect);
@@ -447,6 +470,8 @@
       startY,
       startRotation: target.closest('.top-active-slot, .bench-row.opponent') ? 180 : 0,
       hideContents: false,
+      removeMs,
+      planned,
     };
   }
 

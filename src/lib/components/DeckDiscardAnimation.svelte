@@ -7,7 +7,7 @@
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
   import { resolveExactAnimationAnchorElement } from '../animations/animationAnchors';
-  import { replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
+  import { replayAnimationSpriteGroupRemovalMs } from '../animations/replayAnimationHandoff';
   import { replayAnimationPlanHasPhase, type CardMoveAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { actionAnimationBatchEvents, actionAnimationStartMs } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
@@ -214,8 +214,6 @@
     };
 
     discards = [...discards, animation];
-    const removalMs = Math.max(...motions.map((motion) =>
-      replayAnimationSpriteRemovalMs(motion, animationPlan?.durationMs) ?? (motion.startMs + motion.durationMs)));
     const timer = setTimeout(() => {
       releaseDestinationClaims(animation);
       discards = discards.filter((item) => item.id !== animation.id);
@@ -223,7 +221,7 @@
       if (timerIndex >= 0) {
         timers.splice(timerIndex, 1);
       }
-    }, removalMs);
+    }, Math.max(...sprites.map((sprite) => sprite.delayMs + sprite.durationMs)) + 120);
     timers.push(timer);
   }
 
@@ -244,15 +242,18 @@
     };
 
     discards = [...discards, animation];
-    const timer = setTimeout(() => {
-      releaseDestinationClaims(animation);
-      discards = discards.filter((item) => item.id !== animation.id);
-      const timerIndex = timers.indexOf(timer);
-      if (timerIndex >= 0) {
-        timers.splice(timerIndex, 1);
-      }
-    }, Math.max(...sprites.map((sprite) => sprite.delayMs + sprite.durationMs)) + 120);
-    timers.push(timer);
+    const removalMs = replayAnimationSpriteGroupRemovalMs(motions, animationPlan?.durationMs);
+    if (removalMs !== undefined) {
+      const timer = setTimeout(() => {
+        releaseDestinationClaims(animation);
+        discards = discards.filter((item) => item.id !== animation.id);
+        const timerIndex = timers.indexOf(timer);
+        if (timerIndex >= 0) {
+          timers.splice(timerIndex, 1);
+        }
+      }, removalMs);
+      timers.push(timer);
+    }
   }
 
   function plannedSpriteForMotion(

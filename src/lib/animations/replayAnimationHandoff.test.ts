@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { replayAnimationClaimTiming, replayAnimationSpriteRemovalMs } from './replayAnimationHandoff';
+import {
+  replayAnimationClaimTiming,
+  replayAnimationSpriteGroupRemovalMs,
+  replayAnimationSpriteRemovalMs,
+} from './replayAnimationHandoff';
 import { createReplayAnimationPhasePlan, type AnimationMotion } from './replayAnimationPlan';
 import type { GameView } from '../game/types';
 
@@ -69,6 +73,38 @@ describe('replay animation handoff timing', () => {
       durationMs: 250,
       removeSprite: 'scope-exit',
     }))).toBeUndefined();
+  });
+
+  it('keeps grouped planned sprites until scope exit when any sprite is scope-owned', () => {
+    expect(replayAnimationSpriteGroupRemovalMs([
+      cardMoveMotion({
+        id: 'arrival',
+        startMs: 100,
+        durationMs: 250,
+        removeSprite: 'arrival',
+      }),
+      cardMoveMotion({
+        id: 'scope-exit',
+        startMs: 300,
+        durationMs: 250,
+        removeSprite: 'scope-exit',
+      }),
+    ], 900)).toBeUndefined();
+
+    expect(replayAnimationSpriteGroupRemovalMs([
+      cardMoveMotion({
+        id: 'arrival',
+        startMs: 100,
+        durationMs: 250,
+        removeSprite: 'arrival',
+      }),
+      cardMoveMotion({
+        id: 'phase-end',
+        startMs: 300,
+        durationMs: 250,
+        removeSprite: 'phase-end',
+      }),
+    ], 900)).toBe(900);
   });
 
   it('rejects claims whose identity does not match the owning motion', () => {
