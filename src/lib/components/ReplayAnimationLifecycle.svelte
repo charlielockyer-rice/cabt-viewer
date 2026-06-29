@@ -23,6 +23,10 @@
   let planTokens: AnimationVisibilityToken[] = [];
   const planTokenStartTimers: ReturnType<typeof setTimeout>[] = [];
   const planTokenReleaseTimers: ReturnType<typeof setTimeout>[] = [];
+  const delayedPlanTokenReleaseTimers: {
+    timer: ReturnType<typeof setTimeout>;
+    tokens: AnimationVisibilityToken[];
+  }[] = [];
   const staleScopeReleaseTimers: ReturnType<typeof setTimeout>[] = [];
   let refreshGeneration = 0;
   let reduceMotion = $state(false);
@@ -129,6 +133,7 @@
   });
 
   function releasePlanTokens({ delayMs = 0 }: { delayMs?: number } = {}) {
+    flushDelayedPlanTokenReleases();
     for (const timer of planTokenStartTimers) {
       clearTimeout(timer);
     }
@@ -140,17 +145,41 @@
     const tokens = planTokens;
     planTokens = [];
     if (delayMs > 0 && tokens.length) {
-      setTimeout(() => {
-        for (const token of tokens) {
-          replayAnimationVisibility.release(token);
-        }
-        scheduleVisibilityRefresh();
-      }, delayMs);
+      scheduleDelayedPlanTokenRelease(tokens, delayMs);
       return;
     }
     for (const token of tokens) {
       replayAnimationVisibility.release(token);
     }
+  }
+
+  function scheduleDelayedPlanTokenRelease(tokens: AnimationVisibilityToken[], delayMs: number) {
+    const delayedRelease = {
+      tokens,
+      timer: setTimeout(() => {
+        const timerIndex = delayedPlanTokenReleaseTimers.indexOf(delayedRelease);
+        if (timerIndex >= 0) {
+          delayedPlanTokenReleaseTimers.splice(timerIndex, 1);
+        }
+        releaseTokens(tokens);
+      }, delayMs),
+    };
+    delayedPlanTokenReleaseTimers.push(delayedRelease);
+  }
+
+  function flushDelayedPlanTokenReleases() {
+    const delayedReleases = delayedPlanTokenReleaseTimers.splice(0);
+    for (const delayedRelease of delayedReleases) {
+      clearTimeout(delayedRelease.timer);
+      releaseTokens(delayedRelease.tokens);
+    }
+  }
+
+  function releaseTokens(tokens: AnimationVisibilityToken[]) {
+    for (const token of tokens) {
+      replayAnimationVisibility.release(token);
+    }
+    scheduleVisibilityRefresh();
   }
 
   function scheduleStaleScopeRelease(scopeKey: string) {
