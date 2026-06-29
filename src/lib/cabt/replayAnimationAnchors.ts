@@ -1,6 +1,9 @@
 import { isBoardPositionMove } from './actionAnimationPhases';
-import { isMoveCardKind } from './replayActionGroups';
 import { eventCardMatches } from './replayCardIdentity';
+import {
+  isReplayMoveBetween,
+  replayEventMoveAreas,
+} from './replayEventAreas';
 import { finiteNumber } from './replayEventParams';
 import {
   isCabtResolvingTrainerCard,
@@ -47,11 +50,8 @@ export function prizeSourceAnchorForEvent(
   }
 
   const samePlayerPrizeEvents = phaseEvents.filter((candidate) => {
-    const candidateParams = candidate.params as Record<string, unknown> | undefined;
     return candidate.playerIndex === playerIndex
-      && isMoveCardKind(candidate.kind)
-      && Number(candidateParams?.fromArea) === CabtAreaType.PRIZE
-      && Number(candidateParams?.toArea) === CabtAreaType.HAND;
+      && isReplayMoveBetween(candidate, CabtAreaType.PRIZE, CabtAreaType.HAND);
   });
   const eventIndex = samePlayerPrizeEvents.findIndex((candidate) => candidate.id === event.id);
   if (eventIndex < 0) {
@@ -102,10 +102,11 @@ export function handPlayTargetAnchorForEvent(view: GameView, event: ActionTimeli
     const targetCardId = finiteNumber(params?.cardIdTarget);
     return boardSlotAnchorForPokemon(view.players[playerIndex], targetSerial, targetCardId);
   }
-  if (!isMoveCardKind(event.kind)) {
+  const areas = replayEventMoveAreas(event);
+  if (!areas) {
     return undefined;
   }
-  const toArea = Number(params?.toArea);
+  const toArea = areas.toArea;
   if (toArea === CabtAreaType.DISCARD) {
     return { kind: 'discard-card', playerIndex, serial };
   }
@@ -220,8 +221,8 @@ export function boardMoveTargetAnchor(
     return { kind: 'discard-pile', playerIndex };
   }
   if (toArea === CabtAreaType.HAND) {
-    const params = event.params as Record<string, unknown> | undefined;
-    if (Number(params?.fromArea) === CabtAreaType.DISCARD) {
+    const areas = replayEventMoveAreas(event);
+    if (areas?.fromArea === CabtAreaType.DISCARD) {
       return { kind: 'hand', playerIndex };
     }
     return handDestinationAnchorForEvent(view, event);
@@ -307,11 +308,8 @@ function prizeDestinationAnchorForEvent(
   }
 
   const samePlayerPrizeEvents = phaseEvents.filter((candidate) => {
-    const candidateParams = candidate.params as Record<string, unknown> | undefined;
     return candidate.playerIndex === playerIndex
-      && isMoveCardKind(candidate.kind)
-      && Number(candidateParams?.fromArea) === CabtAreaType.DECK
-      && Number(candidateParams?.toArea) === CabtAreaType.PRIZE;
+      && isReplayMoveBetween(candidate, CabtAreaType.DECK, CabtAreaType.PRIZE);
   });
   const eventIndex = samePlayerPrizeEvents.findIndex((candidate) => candidate.id === event.id);
   if (eventIndex < 0) {
@@ -326,18 +324,14 @@ function prizeDestinationAnchorForEvent(
 }
 
 function reciprocalBoardPositionEvent(phase: AnimationEventPhase, event: ActionTimelineEvent): ActionTimelineEvent | undefined {
-  const params = event.params as Record<string, unknown> | undefined;
-  const fromArea = Number(params?.fromArea);
-  const toArea = Number(params?.toArea);
-  if (!isBoardPositionMove(fromArea, toArea)) {
+  const areas = replayEventMoveAreas(event);
+  if (!areas || !isBoardPositionMove(areas.fromArea, areas.toArea)) {
     return undefined;
   }
   return phase.events.find((candidate) => {
-    if (candidate === event || candidate.playerIndex !== event.playerIndex || !isMoveCardKind(candidate.kind)) {
+    if (candidate === event || candidate.playerIndex !== event.playerIndex) {
       return false;
     }
-    const candidateParams = candidate.params as Record<string, unknown> | undefined;
-    return Number(candidateParams?.fromArea) === toArea
-      && Number(candidateParams?.toArea) === fromArea;
+    return isReplayMoveBetween(candidate, areas.toArea, areas.fromArea);
   });
 }
