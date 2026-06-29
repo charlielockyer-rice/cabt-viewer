@@ -33,7 +33,7 @@
 
   type BoardMoveSprite = {
     id: string;
-    html: string;
+    html?: string;
     fallbackName: string;
     left: number;
     top: number;
@@ -68,7 +68,6 @@
     toDeck: boolean;
     fromDeck: boolean;
     key: string;
-    planned: boolean;
   };
 
   type HiddenBoardMoveElement = ElementVisibilityClaim;
@@ -169,28 +168,111 @@
     for (const motion of motions) {
       const sourceElement = elementForAnchor(motion.sourceAnchor, motion.identity);
       const targetElement = elementForAnchor(motion.targetAnchor, motion.identity);
-      if (!sourceElement || !targetElement || motion.spriteVisual.kind !== 'card') {
+      if (!sourceElement || !targetElement) {
         continue;
       }
-      startBoardMoveInstruction({
+      const sprite = plannedBoardMoveSpriteForMotion(motion, sourceElement, targetElement, generation);
+      if (!sprite) {
+        continue;
+      }
+      startPlannedBoardMoveSprite({
+        sprite,
         source: sourceElement,
         target: targetElement,
-        cardId: motion.identity?.cardId ?? (motion.spriteVisual.kind === 'card' ? motion.spriteVisual.card?.id : undefined),
-        serial: motion.identity?.serial,
-        fallbackName: motion.identity?.name,
-        waitForDestinationCard: motion.targetAnchor.kind === 'discard-pile' || motion.targetAnchor.kind === 'discard-card',
+        generation,
+        handoffDelayMs: plannedBoardMoveHandoffDelayMs(motion),
         holdUntilScopeChange: motion.handoffPolicy.removeSprite === 'scope-exit',
-        toDeck: motion.targetAnchor.kind === 'deck-top',
-        fromDeck: motion.sourceAnchor.kind === 'deck-top',
-        opponentSide: isOpponentAnchor(motion.sourceAnchor) || isOpponentAnchor(motion.targetAnchor),
-        delayMs: motion.startMs,
-        durationMs: motion.durationMs,
-        card: motion.spriteVisual.card,
-        faceDown: motion.spriteVisual.faceDown,
-        key: motion.id,
-        planned: true,
-      }, generation, plannedBoardMoveHandoffDelayMs(motion));
+      });
     }
+  }
+
+  function plannedBoardMoveSpriteForMotion(
+    motion: CardMoveAnimationMotion,
+    sourceElement: HTMLElement,
+    targetElement: HTMLElement,
+    generation: number,
+  ): BoardMoveSprite | undefined {
+    const boardPlane = motionLayer?.parentElement;
+    if (!boardPlane || motion.spriteVisual.kind !== 'card') {
+      return undefined;
+    }
+    const card = motion.spriteVisual.card;
+    const faceDown = motion.spriteVisual.faceDown;
+    if (!card && !faceDown) {
+      return undefined;
+    }
+    const sourceRect = elementRectInPlane(sourceElement, boardPlane);
+    const targetRect = elementRectInPlane(targetElement, boardPlane);
+    if (!sourceRect || !targetRect || sourceRect.width <= 0 || targetRect.width <= 0) {
+      return undefined;
+    }
+    const cardId = motion.identity?.cardId ?? card?.id;
+    return {
+      id: `${generation}:${motion.id}`,
+      fallbackName: motion.identity?.name ?? card?.name ?? (cardId !== undefined ? cabtCardToView(cardId).name : 'Card'),
+      left: targetRect.left,
+      top: targetRect.top,
+      width: targetRect.width,
+      height: targetRect.height,
+      startX: sourceRect.left + sourceRect.width / 2 - (targetRect.left + targetRect.width / 2),
+      startY: sourceRect.top + sourceRect.height / 2 - (targetRect.top + targetRect.height / 2),
+      startScale: sourceRect.width / targetRect.width,
+      correctionX: 0,
+      correctionY: 0,
+      destinationCardId: cardId ?? 0,
+      destinationSerial: motion.identity?.serial,
+      waitForDestinationCard: motion.targetAnchor.kind === 'discard-pile' || motion.targetAnchor.kind === 'discard-card',
+      toDeck: motion.targetAnchor.kind === 'deck-top',
+      fromDeck: motion.sourceAnchor.kind === 'deck-top',
+      opponentSide: isOpponentAnchor(motion.sourceAnchor) || isOpponentAnchor(motion.targetAnchor),
+      delayMs: motion.startMs,
+      durationMs: motion.durationMs,
+      measuring: true,
+      card,
+      faceDown,
+    };
+  }
+
+  function startPlannedBoardMoveSprite(input: {
+    sprite: BoardMoveSprite;
+    source: HTMLElement;
+    target: HTMLElement;
+    generation: number;
+    handoffDelayMs?: number;
+    holdUntilScopeChange: boolean;
+  }) {
+    const startTimer = setTimeout(async () => {
+      if (input.generation !== animationGeneration) {
+        return;
+      }
+      sprites = [...sprites, input.sprite];
+      await tick();
+      if (input.generation !== animationGeneration) {
+        return;
+      }
+      if (!document.body.contains(input.source) || !document.body.contains(input.target)) {
+        sprites = sprites.filter((item) => item.id !== input.sprite.id);
+        return;
+      }
+
+      const correction = measureSpriteCorrection(input.sprite, input.target);
+      sprites = sprites.map((item) => item.id === input.sprite.id
+        ? {
+            ...item,
+            correctionX: correction.x,
+            correctionY: correction.y,
+            measuring: false,
+          }
+        : item);
+      if (input.holdUntilScopeChange || input.handoffDelayMs === undefined) {
+        return;
+      }
+      const finishTimer = setTimeout(() => {
+        removeSpritesAfterPrepaint(new Set([input.sprite.id]), input.generation);
+      }, input.handoffDelayMs);
+      timers.push(finishTimer);
+    }, input.sprite.delayMs);
+    timers.push(startTimer);
   }
 
   function plannedBoardMoveHandoffDelayMs(motion: CardMoveAnimationMotion) {
@@ -230,7 +312,6 @@
         delayMs,
         durationMs: actionAnimationTiming.boardMoveMs,
         key: `${instruction.event.id}-${instruction.key}`,
-        planned: false,
       }, generation, liveBoardMoveHandoffDelayMs(animationEvents, instruction, delayMs));
     }
   }
@@ -249,10 +330,7 @@
       opponentSide: boolean;
       delayMs: number;
       durationMs: number;
-      card?: Pick<CardView, 'id' | 'serial' | 'name' | 'fullName' | 'cardImage' | 'imageUrl'>;
-      faceDown?: boolean;
       key: string;
-      planned: boolean;
     },
     generation: number,
     handoffDelayMs?: number,
@@ -269,7 +347,7 @@
 
     const sprite: BoardMoveSprite = {
       id: `${generation}:${instruction.key}`,
-      html: instruction.card || instruction.faceDown ? '' : spriteHtml(instruction.source, instruction.target, instruction.fromDeck),
+      html: spriteHtml(instruction.source, instruction.target, instruction.fromDeck),
       fallbackName: instruction.fallbackName ?? (instruction.cardId !== undefined ? cabtCardToView(instruction.cardId).name : 'Card'),
       left: targetRect.left,
       top: targetRect.top,
@@ -289,8 +367,6 @@
       delayMs: instruction.delayMs,
       durationMs: instruction.durationMs,
       measuring: true,
-      card: instruction.card,
-      faceDown: instruction.faceDown,
     };
 
     const startTimer = setTimeout(async () => {
@@ -308,10 +384,8 @@
       }
 
       const correction = measureSpriteCorrection(sprite, instruction.target);
-      if (!instruction.planned) {
-        hideBoardMoveElement(instruction.source);
-        hideBoardMoveElement(instruction.target);
-      }
+      hideBoardMoveElement(instruction.source);
+      hideBoardMoveElement(instruction.target);
       sprites = sprites.map((item) => item.id === sprite.id
         ? {
             ...item,
@@ -323,17 +397,11 @@
       if (instruction.holdUntilScopeChange) {
         return;
       }
-      const resolvedHandoffDelayMs = handoffDelayMs ?? (instruction.planned
-        ? undefined
-        : instruction.durationMs);
+      const resolvedHandoffDelayMs = handoffDelayMs ?? instruction.durationMs;
       if (resolvedHandoffDelayMs === undefined) {
         return;
       }
       const finishTimer = setTimeout(() => {
-        if (instruction.planned) {
-          removeSpritesAfterPrepaint(new Set([sprite.id]), generation);
-          return;
-        }
         handOffWhenDestinationReady(instruction.source, instruction.target, sprite, Date.now(), generation);
       }, resolvedHandoffDelayMs);
       timers.push(finishTimer);
@@ -447,7 +515,6 @@
       toDeck: Number(params?.toArea) === CabtAreaType.DECK,
       fromDeck: Number(params?.fromArea) === CabtAreaType.DECK,
       key: `${params?.serial ?? cardId}`,
-      planned: false,
     }];
   }
 
@@ -472,7 +539,6 @@
         toDeck: false,
         fromDeck: false,
         key: `active-${params?.serialActive ?? activeCardId}`,
-        planned: false,
       },
       {
         event,
@@ -485,7 +551,6 @@
         toDeck: false,
         fromDeck: false,
         key: `bench-${params?.serialBench ?? benchCardId}`,
-        planned: false,
       },
     ];
   }

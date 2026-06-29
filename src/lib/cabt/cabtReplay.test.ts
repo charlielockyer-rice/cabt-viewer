@@ -231,7 +231,8 @@ describe('cabtReplayToSnapshot', () => {
       index: 0,
     });
     expect(step.animationPhases?.map((phase) => phase.key)).toEqual(['Ability:0', 'Draw:0', 'BoardToDeck:0', 'Shuffle:0']);
-    expect(step.animationPhases?.every((phase) => phase.kind === actionAnimationPhaseKind(phase.key))).toBe(true);
+    expect(step.animationPhases?.map((phase) => phase.kind)).toEqual(['Ability', 'Draw', 'BoardToDeck', 'Shuffle']);
+    expect(step.animationPhases?.every((phase) => phase.animationPlan?.kind === phase.kind)).toBe(true);
     expect(step.animationPhases?.every((phase) => phase.animationPlan?.playerIndex === 0)).toBe(true);
     expect(step.animationPhases?.[0].view.players[0].active.pokemon?.serial).toBe(14);
     expect(step.animationPhases?.[0].animationPlan?.motions).toMatchObject([
@@ -2665,7 +2666,7 @@ describe('cabtReplayToSnapshot', () => {
       'MoveCard',
       'Shuffle',
     ]);
-    expect(step.animationPhases?.map((phase) => phase.key.replace(/:\d+$/, ''))).toEqual([
+    expect(step.animationPhases?.map((phase) => phase.kind)).toEqual([
       'Play',
       'DeckSearchReveal',
       'Shuffle',
@@ -3150,7 +3151,7 @@ describe('cabtReplayToSnapshot', () => {
 
     const step = snapshot.steps[1];
     expect(step.label).toBe("Player 1 played Lillie's Determination, shuffled 5 cards from hand into their deck, and drew 4 cards.");
-    expect(step.animationPhases?.map((phase) => phase.key.replace(/:\d+$/, ''))).toEqual([
+    expect(step.animationPhases?.map((phase) => phase.kind)).toEqual([
       'Play',
       'HandToDeck',
       'Shuffle',
@@ -3326,7 +3327,7 @@ describe('cabtReplayToSnapshot', () => {
     });
 
     const step = snapshot.steps[1];
-    expect(step.animationPhases?.map((phase) => phase.key.replace(/:\d+$/, ''))).toEqual([
+    expect(step.animationPhases?.map((phase) => phase.kind)).toEqual([
       'Play',
       'DeckReveal',
     ]);
@@ -3390,7 +3391,7 @@ describe('cabtReplayToSnapshot', () => {
     });
 
     const step = snapshot.steps[1];
-    expect(step.animationPhases?.map((phase) => phase.key.replace(/:\d+$/, ''))).toEqual([
+    expect(step.animationPhases?.map((phase) => phase.kind)).toEqual([
       'DeckBoardPlace',
       'Shuffle',
     ]);
@@ -3503,7 +3504,7 @@ describe('cabtReplayToSnapshot', () => {
     const step = snapshot.steps[1];
     expect(step.label).toBe('Player 1 played Buddy-Buddy Poffin, put 2 Pokemon from their deck onto the board, and shuffled their deck.');
     expect(step.actionTimeline?.map((event) => event.kind)).toEqual(['Play', 'MoveCard', 'MoveCard', 'Shuffle']);
-    expect(step.animationPhases?.map((phase) => phase.key.replace(/:\d+$/, ''))).toEqual([
+    expect(step.animationPhases?.map((phase) => phase.kind)).toEqual([
       'Play',
       'DeckBoardPlace',
       'Shuffle',
@@ -3664,7 +3665,7 @@ describe('cabtReplayToSnapshot', () => {
       'MoveCard',
       'Shuffle',
     ]);
-    expect(step.animationPhases?.map((phase) => phase.key.replace(/:\d+$/, ''))).toEqual([
+    expect(step.animationPhases?.map((phase) => phase.kind)).toEqual([
       'Play',
       'DeckReveal',
       'Attach',
@@ -3860,7 +3861,7 @@ describe('cabtReplayToSnapshot', () => {
       ['MoveCard', 82, CabtAreaType.DECK],
       ['MoveCard', 117, CabtAreaType.HAND],
     ]);
-    expect(step.animationPhases?.map((phase) => phase.key.replace(/:\d+$/, ''))).toEqual([
+    expect(step.animationPhases?.map((phase) => phase.kind)).toEqual([
       'Play',
       'DeckReveal',
       'DeckRevealReturn',
@@ -4439,7 +4440,7 @@ describe('cabtReplayToSnapshot', () => {
       'MoveCard',
       'MoveCard',
     ]);
-    expect(step.animationPhases?.map((phase) => phase.key.replace(/:\d+$/, ''))).toEqual([
+    expect(step.animationPhases?.map((phase) => phase.kind)).toEqual([
       'Attack',
       'DeckDiscard',
       'Damage',
@@ -4740,7 +4741,7 @@ describe('cabtReplayToSnapshot', () => {
     });
 
     const step = snapshot.steps[1];
-    expect(step.animationPhases?.map((phase) => phase.key.replace(/:\d+:.+$/, ''))).toEqual(['AttachedMove']);
+    expect(step.animationPhases?.map((phase) => phase.kind)).toEqual(['AttachedMove']);
     expect(step.animationPhases?.[0].view.players[0].active.energy.map((card) => card.serial)).toEqual([91]);
     expect(step.animationPhases?.[0].animationPlan?.motions).toMatchObject([
       {
@@ -4833,7 +4834,7 @@ describe('cabtReplayToSnapshot', () => {
     });
 
     const step = snapshot.steps[1];
-    expect(step.animationPhases?.map((phase) => phase.key.replace(/:\d+:.+$/, ''))).toEqual(['AttachedMove']);
+    expect(step.animationPhases?.map((phase) => phase.kind)).toEqual(['AttachedMove']);
     expect(step.animationPhases?.[0].view.players[0].active.energy.map((card) => card.serial)).toEqual([91]);
     expect(step.animationPhases?.[0].view.players[0].hand.map((card) => card.serial)).toEqual([91]);
     expect(step.animationPhases?.[0].animationPlan?.motions).toMatchObject([
@@ -4930,7 +4931,7 @@ describe('cabtReplayToSnapshot', () => {
     });
 
     const step = snapshot.steps[1];
-    expect(step.animationPhases?.map((phase) => phase.key.replace(/:\d+:.+$/, ''))).toEqual(['AttachedMove']);
+    expect(step.animationPhases?.map((phase) => phase.kind)).toEqual(['AttachedMove']);
     expect(step.animationPhases?.[0].view.players[1].active.tools.map((card) => card.serial)).toEqual([92]);
     expect(step.animationPhases?.[0].view.players[1].hand.map((card) => card.serial)).toEqual([92]);
     expect(step.animationPhases?.[0].animationPlan?.motions).toMatchObject([

@@ -102,13 +102,6 @@ export type ReplayAnimationPhasePlan = {
 
 export type ReplayAnimationPhaseKind = ActionAnimationPhaseKind;
 
-export type ReplayAnimationMotionTiming = {
-  id: string;
-  startMs: number;
-  durationMs: number;
-  endMs: number;
-};
-
 export function createReplayAnimationPhasePlan(input: {
   key: string;
   kind: ReplayAnimationPhaseKind;
@@ -216,19 +209,6 @@ export function replayAnimationPlanHasAnyPhase(
   return kinds.some((kind) => replayAnimationPlanHasPhase(plan, kind, playerIndex));
 }
 
-export function replayAnimationMotionTiming(motion: AnimationMotion): ReplayAnimationMotionTiming {
-  return {
-    id: motion.id,
-    startMs: motion.startMs,
-    durationMs: motion.durationMs,
-    endMs: motion.startMs + motion.durationMs,
-  };
-}
-
-export function replayAnimationMotionTimings(plan: Pick<ReplayAnimationPhasePlan, 'motions'>): ReplayAnimationMotionTiming[] {
-  return plan.motions.map(replayAnimationMotionTiming);
-}
-
 export function replayAnimationMotionKey(motion: Pick<AnimationMotion, 'id' | 'startMs' | 'durationMs'>): string {
   return `${motion.id}:${motion.startMs}:${motion.durationMs}`;
 }
@@ -243,10 +223,6 @@ export function replayAnimationPhasePlanKey(plan: Pick<ReplayAnimationPhasePlan,
 
 export function replayAnimationMotionSpanMs(motions: readonly AnimationMotion[]): number {
   return motions.reduce((spanMs, motion) => Math.max(spanMs, motion.startMs + motion.durationMs), 0);
-}
-
-export function replayAnimationPhasePlanDurationMs(plan: Pick<ReplayAnimationPhasePlan, 'durationMs'>): number {
-  return plan.durationMs;
 }
 
 function validateMotionCoordinateSpace(phaseKey: string, motion: AnimationMotion): void {

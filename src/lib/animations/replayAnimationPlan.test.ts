@@ -4,8 +4,6 @@ import {
   replayAnimationPlanHasAnyPhase,
   replayAnimationPlanHasPhase,
   replayAnimationMotionSpanMs,
-  replayAnimationMotionTimings,
-  replayAnimationPhasePlanDurationMs,
   replayAnimationVisibilityClaimsForMotions,
   type AnimationMotion,
 } from './replayAnimationPlan';
@@ -26,7 +24,12 @@ describe('replay animation phase plans', () => {
       motions,
     });
 
-    expect(replayAnimationMotionTimings(plan)).toEqual([
+    expect(plan.motions.map((motion) => ({
+      id: motion.id,
+      startMs: motion.startMs,
+      durationMs: motion.durationMs,
+      endMs: motion.startMs + motion.durationMs,
+    }))).toEqual([
       {
         id: 'play-card',
         startMs: 120,
@@ -40,7 +43,7 @@ describe('replay animation phase plans', () => {
         endMs: 940,
       },
     ]);
-    expect(replayAnimationPhasePlanDurationMs(plan)).toBe(980);
+    expect(plan.durationMs).toBe(980);
   });
 
   it('computes the motion span from explicit start and duration fields', () => {
@@ -265,7 +268,7 @@ describe('replay animation phase plans', () => {
       ],
     });
 
-    expect(replayAnimationPhasePlanDurationMs(plan)).toBe(900);
+    expect(plan.durationMs).toBe(900);
   });
 
   it('rejects negative nested reveal session timing', () => {

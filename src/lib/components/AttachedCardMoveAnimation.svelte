@@ -462,10 +462,6 @@
     return element;
   }
 
-  function exactElementForAnchor(anchor: AnimationAnchorRef): HTMLElement | null {
-    return resolveExactAnimationAnchorElement(anchor);
-  }
-
   function strictElementForAnchor(anchor: AnimationAnchorRef, identity?: AnimationIdentity): HTMLElement | null {
     return resolveStrictAnimationAnchorElement(anchor, { identity });
   }
