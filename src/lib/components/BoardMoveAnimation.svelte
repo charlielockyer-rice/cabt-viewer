@@ -3,6 +3,9 @@
   import CardTile from './CardTile.svelte';
   import { actionAnimationPhaseKind, actionAnimationTimelinePhaseKeyForEvent } from '../cabt/actionAnimationPhases';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
+  import { isDeckBoardPlacementEvent, isLiveBoardMoveEvent } from '../cabt/replayBoardMoveEvents';
+  import { replayEventMoveAreas, replayEventSerial } from '../cabt/replayEventAreas';
+  import { finiteNumber } from '../cabt/replayEventParams';
   import type { AnimationAnchorRef, AnimationIdentity } from '../animations/animationAnchors';
   import { afterTwoAnimationFrames } from '../animations/animationFrames';
   import { strictAnimationVisualElementForAnchor } from '../animations/animationAnchorVisuals';
@@ -290,7 +293,7 @@
     }
     const generation = animationGeneration;
     const moveEvents = animationEvents.filter((event) =>
-      isBoardMoveEvent(event)
+      isLiveBoardMoveEvent(event)
       && ownsLiveBoardMovePhase(animationEvents, event));
     for (const instruction of moveEvents.flatMap((event) => liveMoveInstructionsForEvent(event, moveEvents))) {
       const sourceElement = instruction.source;
@@ -444,24 +447,6 @@
       + Math.max(0, latestDeckPlacementStartMs - delayMs);
   }
 
-  function isBoardMoveEvent(event: ActionTimelineEvent) {
-    const params = event.params as Record<string, unknown> | undefined;
-    const fromArea = Number(params?.fromArea);
-    const toArea = Number(params?.toArea);
-    return event.kind === 'Switch'
-      || (
-        event.kind === 'MoveCard'
-        && (
-          (fromArea === CabtAreaType.BENCH && toArea === CabtAreaType.ACTIVE)
-          || (fromArea === CabtAreaType.ACTIVE && toArea === CabtAreaType.BENCH)
-          || (fromArea === CabtAreaType.DECK && (toArea === CabtAreaType.ACTIVE || toArea === CabtAreaType.BENCH))
-          || ((fromArea === CabtAreaType.ACTIVE || fromArea === CabtAreaType.BENCH) && toArea === CabtAreaType.DECK)
-          || ((fromArea === CabtAreaType.ACTIVE || fromArea === CabtAreaType.BENCH) && toArea === CabtAreaType.DISCARD)
-          || (fromArea === CabtAreaType.STADIUM && toArea === CabtAreaType.DISCARD)
-        )
-      );
-  }
-
   function ownsLiveBoardMovePhase(animationEvents: ActionTimelineEvent[], event: ActionTimelineEvent): boolean {
     const key = actionAnimationTimelinePhaseKeyForEvent(animationEvents, event);
     const kind = key ? actionAnimationPhaseKind(key) : null;
@@ -472,15 +457,6 @@
       || kind === 'KnockOut';
   }
 
-  function isDeckBoardPlacementEvent(event: ActionTimelineEvent) {
-    const params = event.params as Record<string, unknown> | undefined;
-    const fromArea = Number(params?.fromArea);
-    const toArea = Number(params?.toArea);
-    return event.kind === 'MoveCard'
-      && fromArea === CabtAreaType.DECK
-      && (toArea === CabtAreaType.ACTIVE || toArea === CabtAreaType.BENCH);
-  }
-
   function liveMoveInstructionsForEvent(event: ActionTimelineEvent, moveEvents: ActionTimelineEvent[]): BoardMoveInstruction[] {
     if (event.kind === 'Switch') {
       return switchMoveInstructions(event);
@@ -488,32 +464,36 @@
 
     const source = sourceElementForEvent(event);
     const target = targetElementForEvent(event, moveEvents);
+    const areas = replayEventMoveAreas(event);
     const params = event.params as Record<string, unknown> | undefined;
-    const cardId = Number(params?.cardId);
-    if (!source || !target || !Number.isFinite(cardId)) {
+    const cardId = finiteNumber(params?.cardId);
+    if (!source || !target || !areas || cardId === undefined) {
       return [];
     }
+    const serial = replayEventSerial(event);
     return [{
       event,
       source,
       target,
       cardId,
-      serial: Number.isFinite(Number(params?.serial)) ? Number(params?.serial) : undefined,
-      waitForDestinationCard: Number(params?.toArea) === CabtAreaType.DISCARD,
+      serial,
+      waitForDestinationCard: areas.toArea === CabtAreaType.DISCARD,
       holdUntilScopeChange: false,
-      toDeck: Number(params?.toArea) === CabtAreaType.DECK,
-      fromDeck: Number(params?.fromArea) === CabtAreaType.DECK,
-      key: `${params?.serial ?? cardId}`,
+      toDeck: areas.toArea === CabtAreaType.DECK,
+      fromDeck: areas.fromArea === CabtAreaType.DECK,
+      key: `${serial ?? cardId}`,
     }];
   }
 
   function switchMoveInstructions(event: ActionTimelineEvent): BoardMoveInstruction[] {
     const params = event.params as Record<string, unknown> | undefined;
-    const activeCardId = Number(params?.cardIdActive);
-    const benchCardId = Number(params?.cardIdBench);
-    const activeSource = pokemonElementForIdentity(Number(params?.serialActive), activeCardId, event.playerIndex);
-    const benchSource = pokemonElementForIdentity(Number(params?.serialBench), benchCardId, event.playerIndex);
-    if (!activeSource || !benchSource || !Number.isFinite(activeCardId) || !Number.isFinite(benchCardId)) {
+    const activeCardId = finiteNumber(params?.cardIdActive);
+    const benchCardId = finiteNumber(params?.cardIdBench);
+    const activeSerial = finiteNumber(params?.serialActive);
+    const benchSerial = finiteNumber(params?.serialBench);
+    const activeSource = pokemonElementForIdentity(activeSerial ?? Number.NaN, activeCardId ?? Number.NaN, event.playerIndex);
+    const benchSource = pokemonElementForIdentity(benchSerial ?? Number.NaN, benchCardId ?? Number.NaN, event.playerIndex);
+    if (!activeSource || !benchSource || activeCardId === undefined || benchCardId === undefined) {
       return [];
     }
     return [
@@ -522,93 +502,95 @@
         source: activeSource,
         target: benchSource,
         cardId: activeCardId,
-        serial: Number.isFinite(Number(params?.serialActive)) ? Number(params?.serialActive) : undefined,
+        serial: activeSerial,
         waitForDestinationCard: false,
         holdUntilScopeChange: false,
         toDeck: false,
         fromDeck: false,
-        key: `active-${params?.serialActive ?? activeCardId}`,
+        key: `active-${activeSerial ?? activeCardId}`,
       },
       {
         event,
         source: benchSource,
         target: activeSource,
         cardId: benchCardId,
-        serial: Number.isFinite(Number(params?.serialBench)) ? Number(params?.serialBench) : undefined,
+        serial: benchSerial,
         waitForDestinationCard: false,
         holdUntilScopeChange: false,
         toDeck: false,
         fromDeck: false,
-        key: `bench-${params?.serialBench ?? benchCardId}`,
+        key: `bench-${benchSerial ?? benchCardId}`,
       },
     ];
   }
 
   function sourceElementForEvent(event: ActionTimelineEvent): HTMLElement | null {
     const params = event.params as Record<string, unknown> | undefined;
-    if (Number(params?.fromArea) === CabtAreaType.STADIUM && event.playerIndex !== undefined) {
-      const stadium = document.querySelector(`[data-card-anchor="player:${event.playerIndex}:stadium"][data-card-serial="${Number(params?.serial)}"]`);
+    const areas = replayEventMoveAreas(event);
+    const serial = replayEventSerial(event);
+    if (areas?.fromArea === CabtAreaType.STADIUM && event.playerIndex !== undefined && serial !== undefined) {
+      const stadium = document.querySelector(`[data-card-anchor="player:${event.playerIndex}:stadium"][data-card-serial="${serial}"]`);
       return stadium instanceof HTMLElement ? stadium : null;
     }
-    if (Number(params?.fromArea) === CabtAreaType.DECK && event.playerIndex !== undefined) {
+    if (areas?.fromArea === CabtAreaType.DECK && event.playerIndex !== undefined) {
       return deckTopElement(event.playerIndex);
     }
-    const cardId = Number(params?.cardId);
-    return pokemonElementForIdentity(Number(params?.serial), cardId, event.playerIndex);
+    const cardId = finiteNumber(params?.cardId);
+    return pokemonElementForIdentity(serial ?? Number.NaN, cardId ?? Number.NaN, event.playerIndex);
   }
 
   function targetElementForEvent(event: ActionTimelineEvent, moveEvents: ActionTimelineEvent[]): HTMLElement | null {
     const params = event.params as Record<string, unknown> | undefined;
     const playerIndex = event.playerIndex;
+    const areas = replayEventMoveAreas(event);
     if (playerIndex === undefined) {
       return null;
     }
-    const toArea = Number(params?.toArea);
-    if (toArea === CabtAreaType.ACTIVE) {
-      const destination = pokemonElementForIdentity(Number(params?.serial), Number(params?.cardId), playerIndex);
+    const serial = replayEventSerial(event);
+    const cardId = finiteNumber(params?.cardId);
+    if (areas?.toArea === CabtAreaType.ACTIVE) {
+      const destination = pokemonElementForIdentity(serial ?? Number.NaN, cardId ?? Number.NaN, playerIndex);
       if (destination) {
         return destination;
       }
       return boardAnchor(playerIndex, 'active', 0);
     }
-    if (toArea === CabtAreaType.BENCH) {
-      const destination = pokemonElementForIdentity(Number(params?.serial), Number(params?.cardId), playerIndex);
+    if (areas?.toArea === CabtAreaType.BENCH) {
+      const destination = pokemonElementForIdentity(serial ?? Number.NaN, cardId ?? Number.NaN, playerIndex);
       if (destination) {
         return destination;
       }
-      const benchIndex = Number(params?.toIndex ?? params?.index ?? params?.benchIndex);
-      if (Number.isInteger(benchIndex)) {
+      const benchIndex = finiteNumber(params?.toIndex ?? params?.index ?? params?.benchIndex);
+      if (benchIndex !== undefined && Number.isInteger(benchIndex)) {
         return boardAnchor(playerIndex, 'bench', benchIndex);
       }
       return pairedBenchSourceElement(event, moveEvents);
     }
-    if (toArea === CabtAreaType.DISCARD) {
-      const discardCard = discardCardElement(playerIndex, Number(params?.serial), Number(params?.cardId));
+    if (areas?.toArea === CabtAreaType.DISCARD) {
+      const discardCard = discardCardElement(playerIndex, serial ?? Number.NaN, cardId ?? Number.NaN);
       if (discardCard) {
         return discardCard;
       }
       const discard = document.querySelector(`[data-card-anchor="player:${playerIndex}:discard"]`);
       return discard instanceof HTMLElement ? discard : null;
     }
-    if (toArea === CabtAreaType.DECK) {
+    if (areas?.toArea === CabtAreaType.DECK) {
       return deckTopElement(playerIndex);
     }
     return null;
   }
 
   function pairedBenchSourceElement(event: ActionTimelineEvent, moveEvents: ActionTimelineEvent[]): HTMLElement | null {
-    const params = event.params as Record<string, unknown> | undefined;
-    const fromArea = Number(params?.fromArea);
-    const toArea = Number(params?.toArea);
-    if (fromArea !== CabtAreaType.ACTIVE || toArea !== CabtAreaType.BENCH) {
+    const areas = replayEventMoveAreas(event);
+    if (areas?.fromArea !== CabtAreaType.ACTIVE || areas.toArea !== CabtAreaType.BENCH) {
       return null;
     }
     const pairedEvent = moveEvents.find((candidate) => {
-      const candidateParams = candidate.params as Record<string, unknown> | undefined;
+      const candidateAreas = replayEventMoveAreas(candidate);
       return candidate !== event
         && candidate.playerIndex === event.playerIndex
-        && Number(candidateParams?.fromArea) === CabtAreaType.BENCH
-        && Number(candidateParams?.toArea) === CabtAreaType.ACTIVE;
+        && candidateAreas?.fromArea === CabtAreaType.BENCH
+        && candidateAreas.toArea === CabtAreaType.ACTIVE;
     });
     return pairedEvent ? sourceElementForEvent(pairedEvent) : null;
   }
