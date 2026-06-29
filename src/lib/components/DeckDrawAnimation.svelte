@@ -6,6 +6,8 @@
     releaseElementVisibilityClaim,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
+  import { resolveAnimationAnchorElements } from '../animations/animationAnchors';
+  import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { actionAnimationBatchEvents, actionAnimationStartMs } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -15,6 +17,7 @@
     events?: ActionTimelineEvent[];
     scopeKey?: string | number;
     replayMode?: boolean;
+    animationPlan?: ReplayAnimationPhasePlan;
   };
 
   type DrawSprite = {
@@ -23,6 +26,7 @@
     reveal: boolean;
     order: number;
     delayMs: number;
+    durationMs: number;
     startX: number;
     startY: number;
     width: number;
@@ -52,6 +56,7 @@
     events = [],
     scopeKey = '',
     replayMode = false,
+    animationPlan,
   }: Props = $props();
 
   const timers: ReturnType<typeof setTimeout>[] = [];
@@ -64,6 +69,7 @@
   let nextAnimationId = 1;
   let reduceMotion = $state(false);
   let lastScopeKey: string | number = '';
+  let lastPlanKey = '';
 
   onMount(() => {
     if (typeof window.matchMedia !== 'function') {
@@ -85,8 +91,31 @@
   $effect(() => {
     const currentEvents = events;
     const currentScopeKey = scopeKey;
+    const plannedMotions = drawPlanMotions(animationPlan);
+    const planKey = drawPlanKey(plannedMotions);
     const scopeChanged = initialized && currentScopeKey !== lastScopeKey;
+    const planChanged = planKey !== lastPlanKey;
     lastScopeKey = currentScopeKey;
+    lastPlanKey = planKey;
+
+    if (plannedMotions.length) {
+      const shouldStartPlan = !initialized || planChanged || scopeChanged;
+      initialized = true;
+      if (shouldStartPlan) {
+        clearDraws();
+        if (reduceMotion || startPlannedDraw(plannedMotions)) {
+          for (const event of currentEvents) {
+            seenEventIds.add(event.id);
+          }
+          return;
+        }
+      } else {
+        for (const event of currentEvents) {
+          seenEventIds.add(event.id);
+        }
+        return;
+      }
+    }
 
     if (!initialized) {
       for (const event of currentEvents) {
@@ -120,8 +149,120 @@
     }
   });
 
+  function drawPlanMotions(plan: ReplayAnimationPhasePlan | undefined): CardMoveAnimationMotion[] {
+    return (plan?.motions ?? []).filter((motion): motion is CardMoveAnimationMotion =>
+      motion.kind === 'card-move'
+      && motion.coordinateSpace === 'viewport'
+      && motion.sourceAnchor.kind === 'deck-top'
+      && motion.targetAnchor.kind === 'hand-card'
+      && plan?.key.startsWith(`Draw:${motion.sourceAnchor.playerIndex}`),
+    );
+  }
+
+  function drawPlanKey(motions: CardMoveAnimationMotion[]): string {
+    return motions.map((motion) => motion.id).join('|');
+  }
+
   function isDrawEvent(event: ActionTimelineEvent): boolean {
     return event.kind === 'Draw' || event.kind === 'DrawReverse';
+  }
+
+  function startPlannedDraw(motions: CardMoveAnimationMotion[]): boolean {
+    const sprites = motions.flatMap((motion, index) => plannedSpriteForMotion(motion, index) ?? []);
+    if (!sprites.length) {
+      return false;
+    }
+
+    const animation: DrawAnimation = {
+      id: nextAnimationId++,
+      sprites,
+      hiddenTargets: [],
+    };
+    draws = [...draws, animation];
+
+    const timer = setTimeout(() => {
+      showTargets(animation.hiddenTargets);
+      draws = draws.filter((item) => item.id !== animation.id);
+    }, Math.max(...sprites.map((sprite) => sprite.delayMs + sprite.durationMs)) + 120);
+    timers.push(timer);
+    return true;
+  }
+
+  function plannedSpriteForMotion(motion: CardMoveAnimationMotion, index: number): DrawSprite | undefined {
+    const sourceElement = animationElementForMotionAnchor(motion.sourceAnchor, motion.identity);
+    const targetElement = animationElementForMotionAnchor(motion.targetAnchor, motion.identity);
+    if (!sourceElement || !targetElement) {
+      return undefined;
+    }
+    const sourceRect = sourceElement.getBoundingClientRect();
+    const targetRect = targetElement.getBoundingClientRect();
+    if (sourceRect.width <= 0 || sourceRect.height <= 0 || targetRect.width <= 0 || targetRect.height <= 0) {
+      return undefined;
+    }
+
+    const startCenter = centerOf(sourceRect);
+    const targetCenter = centerOf(targetRect);
+    const spriteWidth = sourceRect.width;
+    const spriteHeight = spriteWidth * cardHeightToWidthRatio;
+    const card = plannedMotionCard(motion);
+    const reveal = !plannedMotionFaceDown(motion) && !isConcealedHandTarget(targetElement) && !!card;
+
+    return {
+      id: motion.id,
+      card,
+      reveal,
+      order: index + 1,
+      delayMs: motion.startMs,
+      durationMs: motion.durationMs,
+      startX: startCenter.x - spriteWidth / 2,
+      startY: startCenter.y - spriteHeight / 2,
+      width: spriteWidth,
+      height: spriteHeight,
+      moveX: targetCenter.x - startCenter.x,
+      moveY: targetCenter.y - startCenter.y,
+      scale: Math.max(0.5, Math.min(1.5, targetRect.width / spriteWidth)),
+      arcY: motion.sourceAnchor.playerIndex === 0 ? -18 : 18,
+      rotation: motion.sourceAnchor.playerIndex === 0 ? -3 : 3,
+      targetElement,
+    };
+  }
+
+  function animationElementForMotionAnchor(
+    anchor: CardMoveAnimationMotion['sourceAnchor'],
+    identity: CardMoveAnimationMotion['identity'],
+  ): HTMLElement | undefined {
+    const element = resolveAnimationAnchorElements(anchor, { identity }).at(0)
+      ?? resolveAnimationAnchorElements(anchor).at(0);
+    if (!element) {
+      return undefined;
+    }
+    if (anchor.kind === 'deck-top') {
+      const pile = element.closest('.deck-pile');
+      if (pile instanceof HTMLElement) {
+        const face = pile.querySelector('.deck-card-face');
+        return face instanceof HTMLElement ? face : pile;
+      }
+    }
+    return element;
+  }
+
+  function plannedMotionCard(motion: CardMoveAnimationMotion): CardView | undefined {
+    if (motion.spriteVisual.kind !== 'card') {
+      return undefined;
+    }
+    const cardId = motion.identity?.cardId ?? motion.spriteVisual.card?.id;
+    if (!Number.isFinite(Number(cardId))) {
+      return undefined;
+    }
+    return {
+      ...cabtCardToView(Number(cardId)),
+      ...(motion.spriteVisual.card ?? {}),
+      serial: motion.identity?.serial ?? motion.spriteVisual.card?.serial,
+    };
+  }
+
+  function plannedMotionFaceDown(motion: CardMoveAnimationMotion): boolean {
+    return motion.spriteVisual.kind === 'card' && motion.spriteVisual.faceDown === true;
   }
 
   function startDraw(drawEvents: ActionTimelineEvent[], animationEvents: ActionTimelineEvent[]) {
@@ -223,6 +364,7 @@
         reveal,
         order: index + 1,
         delayMs: actionAnimationStartMs(animationEvents, event),
+        durationMs: cardMoveDurationMs,
         startX: startCenter.x - spriteWidth / 2,
         startY: startCenter.y - spriteHeight / 2,
         width: spriteWidth,
@@ -236,6 +378,10 @@
       };
     });
     return { sprites, hiddenTargets };
+  }
+
+  function isConcealedHandTarget(element: HTMLElement): boolean {
+    return !!element.closest('.hand.concealed');
   }
 
   function hasHandToDeckReset(playerIndex: number, animationEvents: ActionTimelineEvent[]): boolean {
@@ -328,6 +474,7 @@
       `--draw-arc-y: ${sprite.arcY.toFixed(1)}px`,
       `--draw-rotation: ${sprite.rotation.toFixed(1)}deg`,
       `--draw-delay: ${sprite.delayMs}ms`,
+      `--draw-duration: ${sprite.durationMs}ms`,
       `z-index: ${sprite.order}`,
     ].join('; ');
   }
@@ -373,7 +520,7 @@
     pointer-events: none;
     transform-origin: center;
     transform-style: preserve-3d;
-    animation: deck-draw-travel 320ms cubic-bezier(0.2, 0.82, 0.22, 1) var(--draw-delay) both;
+    animation: deck-draw-travel var(--draw-duration, 320ms) cubic-bezier(0.2, 0.82, 0.22, 1) var(--draw-delay) both;
     will-change: transform, opacity;
   }
 
@@ -387,7 +534,7 @@
   }
 
   .draw-card.revealed .draw-card-inner {
-    animation: deck-draw-flip 320ms ease-in-out var(--draw-delay) both;
+    animation: deck-draw-flip var(--draw-duration, 320ms) ease-in-out var(--draw-delay) both;
   }
 
   .draw-card-face {

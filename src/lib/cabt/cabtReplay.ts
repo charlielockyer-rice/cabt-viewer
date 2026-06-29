@@ -1454,6 +1454,9 @@ function animationPhaseMotions(
   ) {
     return boardCardMoveMotions(phase, view);
   }
+  if (phase.key.startsWith('Draw:')) {
+    return drawCardMoveMotions(phase, view);
+  }
   if (
     phase.key.startsWith('DeckReveal:')
     || phase.key.startsWith('DeckSearchReveal:')
@@ -1464,6 +1467,59 @@ function animationPhaseMotions(
     return revealSessionMotions(phase, view, stepEvents);
   }
   return [];
+}
+
+function drawCardMoveMotions(phase: AnimationEventPhase, view: GameView): AnimationMotion[] {
+  const motionGroups = phase.events.map((event) => drawCardMoveMotionForEvent(phase, view, event));
+  if (motionGroups.some((motion) => motion === null)) {
+    return [];
+  }
+  return motionGroups.flatMap((motion) => motion ?? []);
+}
+
+function drawCardMoveMotionForEvent(
+  phase: AnimationEventPhase,
+  view: GameView,
+  event: ActionTimelineEvent,
+): AnimationMotion | null | undefined {
+  if (event.kind !== 'Draw' && event.kind !== 'DrawReverse') {
+    return undefined;
+  }
+  const playerIndex = event.playerIndex;
+  const params = event.params as Record<string, unknown> | undefined;
+  const serial = finiteNumber(params?.serial);
+  const cardId = finiteNumber(params?.cardId);
+  const targetAnchor = handDestinationAnchorForEvent(view, event);
+  if (playerIndex === undefined || cardId === undefined || !targetAnchor) {
+    return null;
+  }
+
+  return {
+    id: `${phase.key}:draw:${event.id}:${serial ?? cardId}`,
+    kind: 'card-move',
+    identity: {
+      kind: 'card',
+      serial,
+      cardId,
+      name: stringValue(params?.cardName),
+    },
+    sourceAnchor: { kind: 'deck-top', playerIndex },
+    targetAnchor,
+    coordinateSpace: 'viewport',
+    startMs: actionAnimationStartMs(phase.events, event),
+    durationMs: actionAnimationTiming.deckDrawMs,
+    spriteVisual: {
+      kind: 'card',
+      card: cardViewFromEvent(event),
+      faceDown: event.kind === 'DrawReverse',
+    },
+    handoffPolicy: {
+      hideSourceUntil: 'none',
+      hideDestinationUntil: 'prepaint',
+      removeSprite: 'prepaint',
+      prepaintFrames: 2,
+    },
+  };
 }
 
 function revealSessionMotions(
@@ -2005,6 +2061,9 @@ function stringValue(value: unknown): string | undefined {
 }
 
 function animationPhaseVisibilityClaims(phase: AnimationEventPhase, view: GameView): AnimationVisibilityClaim[] {
+  if (phase.key.startsWith('Draw:')) {
+    return drawDestinationVisibilityClaims(phase, view);
+  }
   if (phase.key.startsWith('DeckBoardPlace:')) {
     return boardPlaceDestinationVisibilityClaims(phase, view);
   }
@@ -2015,6 +2074,33 @@ function animationPhaseVisibilityClaims(phase: AnimationEventPhase, view: GameVi
     return attachedHandDestinationVisibilityClaims(phase, view);
   }
   return [];
+}
+
+function drawDestinationVisibilityClaims(phase: AnimationEventPhase, view: GameView): AnimationVisibilityClaim[] {
+  const claims: AnimationVisibilityClaim[] = [];
+  for (const event of phase.events) {
+    if ((event.kind !== 'Draw' && event.kind !== 'DrawReverse') || event.playerIndex === undefined) {
+      continue;
+    }
+    const targetAnchor = handDestinationAnchorForEvent(view, event);
+    if (!targetAnchor || targetAnchor.kind !== 'hand-card') {
+      continue;
+    }
+    const params = event.params as Record<string, unknown> | undefined;
+    const card = view.players[event.playerIndex]?.hand[targetAnchor.handIndex ?? -1];
+    claims.push({
+      scopeKey: phase.key,
+      anchor: targetAnchor,
+      identity: {
+        kind: 'card',
+        serial: targetAnchor.serial,
+        cardId: card?.id ?? finiteNumber(params?.cardId),
+        name: card?.name ?? stringValue(params?.cardName),
+      },
+      role: 'destination',
+    });
+  }
+  return claims;
 }
 
 function attachedHandDestinationVisibilityClaims(phase: AnimationEventPhase, view: GameView): AnimationVisibilityClaim[] {
@@ -2346,7 +2432,8 @@ function animationPhaseNeedsDedicatedView(phase: AnimationEventPhase): boolean {
 }
 
 function animationPhaseMayHavePlan(phase: AnimationEventPhase): boolean {
-  return phase.key.startsWith('DeckDiscard:')
+  return phase.key.startsWith('Draw:')
+    || phase.key.startsWith('DeckDiscard:')
     || phase.key.startsWith('DeckBoardPlace:')
     || phase.key.startsWith('DeckReveal:')
     || phase.key.startsWith('DeckSearchReveal:')

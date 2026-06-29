@@ -1404,6 +1404,7 @@
           events={game.actionTimeline ?? []}
           scopeKey={animationScopeKey}
           {replayMode}
+          animationPlan={replayAnimationPlan}
         />
 
         <DeckRevealAnimation

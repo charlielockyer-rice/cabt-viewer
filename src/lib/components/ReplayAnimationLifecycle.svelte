@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { onDestroy, tick } from 'svelte';
-  import { replayAnimationVisibility, type AnimationVisibilityToken } from '../animations/animationVisibility';
+  import { onDestroy, onMount, tick } from 'svelte';
+  import { serializeAnimationAnchor } from '../animations/animationAnchors';
+  import { replayAnimationVisibility, type AnimationVisibilityClaim, type AnimationVisibilityToken } from '../animations/animationVisibility';
   import { releaseAnimationVisibilityScope } from '../animations/animationVisibilityClaims';
-  import type { ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
+  import type { AnimationHandoffPolicy, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
 
   type Props = {
     active?: boolean;
@@ -19,9 +20,30 @@
   let lastScopeKey: string | undefined;
   let lastPlan: ReplayAnimationPhasePlan | undefined;
   let planTokens: AnimationVisibilityToken[] = [];
-  let planTokenReleaseTimer: ReturnType<typeof setTimeout> | undefined;
+  const planTokenReleaseTimers: ReturnType<typeof setTimeout>[] = [];
   const staleScopeReleaseTimers: ReturnType<typeof setTimeout>[] = [];
   let refreshGeneration = 0;
+  let reduceMotion = $state(false);
+
+  type TargetMotionTiming = {
+    identity?: { serial?: number; cardId?: number };
+    startMs: number;
+    durationMs: number;
+    handoffPolicy: AnimationHandoffPolicy;
+  };
+
+  onMount(() => {
+    if (typeof window.matchMedia !== 'function') {
+      return;
+    }
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const updateMotionPreference = () => {
+      reduceMotion = media.matches;
+    };
+    updateMotionPreference();
+    media.addEventListener('change', updateMotionPreference);
+    return () => media.removeEventListener('change', updateMotionPreference);
+  });
 
   onDestroy(() => {
     releasePlanTokens();
@@ -61,31 +83,101 @@
     lastScopeKey = currentScopeKey;
     lastPlan = currentPlan;
 
-    if (currentPlan?.visibilityClaims.length) {
-      planTokens = currentPlan.visibilityClaims.map((claim) =>
-        replayAnimationVisibility.hide({
+    if (!reduceMotion && currentPlan?.visibilityClaims.length) {
+      for (const claim of currentPlan.visibilityClaims) {
+        const token = replayAnimationVisibility.hide({
           ...claim,
           scopeKey: currentScopeKey,
-        }));
-      const releaseMs = Math.min(currentPlan.durationMs, 240);
-      planTokenReleaseTimer = setTimeout(() => {
-        releasePlanTokens();
-        scheduleVisibilityRefresh();
-      }, releaseMs);
+        });
+        planTokens = [...planTokens, token];
+        const releaseTimer = setTimeout(() => {
+          replayAnimationVisibility.release(token);
+          planTokens = planTokens.filter((candidate) => candidate !== token);
+          const timerIndex = planTokenReleaseTimers.indexOf(releaseTimer);
+          if (timerIndex >= 0) {
+            planTokenReleaseTimers.splice(timerIndex, 1);
+          }
+          scheduleVisibilityRefresh();
+        }, visibilityClaimReleaseMs(currentPlan, claim));
+        planTokenReleaseTimers.push(releaseTimer);
+      }
     }
 
     scheduleVisibilityRefresh();
   });
 
   function releasePlanTokens() {
-    if (planTokenReleaseTimer) {
-      clearTimeout(planTokenReleaseTimer);
-      planTokenReleaseTimer = undefined;
+    for (const timer of planTokenReleaseTimers) {
+      clearTimeout(timer);
     }
+    planTokenReleaseTimers.length = 0;
     for (const token of planTokens) {
       replayAnimationVisibility.release(token);
     }
     planTokens = [];
+  }
+
+  function visibilityClaimReleaseMs(plan: ReplayAnimationPhasePlan, claim: AnimationVisibilityClaim): number {
+    const motion = matchingTargetMotion(plan, claim);
+    if (!motion) {
+      return Math.min(plan.durationMs, 240);
+    }
+    if (motion.handoffPolicy.hideDestinationUntil === 'prepaint') {
+      return motion.startMs + Math.round(motion.durationMs * 0.88);
+    }
+    if (motion.handoffPolicy.hideDestinationUntil === 'arrival') {
+      return motion.startMs + motion.durationMs;
+    }
+    return 0;
+  }
+
+  function matchingTargetMotion(plan: ReplayAnimationPhasePlan, claim: AnimationVisibilityClaim): TargetMotionTiming | undefined {
+    const claimAnchorKey = serializeAnimationAnchor(claim.anchor);
+    for (const motion of plan.motions) {
+      if (
+        'targetAnchor' in motion
+        && serializeAnimationAnchor(motion.targetAnchor) === claimAnchorKey
+        && motionIdentityMatchesClaim(motion.identity, claim)
+      ) {
+        return motion;
+      }
+      if (motion.kind !== 'reveal-session') {
+        continue;
+      }
+      for (const step of motion.steps) {
+        if (
+          step.targetAnchor
+          && step.handoffPolicy
+          && serializeAnimationAnchor(step.targetAnchor) === claimAnchorKey
+          && motionIdentityMatchesClaim(step.identity, claim)
+        ) {
+          return {
+            identity: step.identity,
+            startMs: motion.startMs + step.startMs,
+            durationMs: step.durationMs,
+            handoffPolicy: step.handoffPolicy,
+          };
+        }
+      }
+    }
+    return undefined;
+  }
+
+  function motionIdentityMatchesClaim(
+    identity: { serial?: number; cardId?: number } | undefined,
+    claim: AnimationVisibilityClaim,
+  ): boolean {
+    const claimIdentity = claim.identity;
+    if (!identity || !claimIdentity) {
+      return true;
+    }
+    if (identity.serial !== undefined && claimIdentity.serial !== undefined) {
+      return identity.serial === claimIdentity.serial;
+    }
+    if (identity.cardId !== undefined && claimIdentity.cardId !== undefined) {
+      return identity.cardId === claimIdentity.cardId;
+    }
+    return true;
   }
 
   function scheduleStaleScopeRelease(scopeKey: string) {

@@ -231,6 +231,40 @@ describe('cabtReplayToSnapshot', () => {
     });
     expect(step.animationPhases?.map((phase) => phase.key)).toEqual(['Ability:0', 'Draw:0', 'BoardToDeck:0', 'Shuffle:0']);
     expect(step.animationPhases?.[0].view.players[0].active.pokemon?.serial).toBe(14);
+    expect(step.animationPhases?.[1].animationPlan?.motions).toMatchObject([
+      {
+        kind: 'card-move',
+        coordinateSpace: 'viewport',
+        sourceAnchor: { kind: 'deck-top', playerIndex: 0 },
+        targetAnchor: { kind: 'hand-card', playerIndex: 0, handIndex: 0, serial: 101 },
+        identity: { kind: 'card', serial: 101, cardId: 3 },
+        durationMs: 320,
+        handoffPolicy: {
+          hideDestinationUntil: 'prepaint',
+          removeSprite: 'prepaint',
+        },
+      },
+      {
+        kind: 'card-move',
+        coordinateSpace: 'viewport',
+        sourceAnchor: { kind: 'deck-top', playerIndex: 0 },
+        targetAnchor: { kind: 'hand-card', playerIndex: 0, handIndex: 1, serial: 102 },
+        identity: { kind: 'card', serial: 102, cardId: 4 },
+        startMs: 35,
+      },
+    ]);
+    expect(step.animationPhases?.[1].animationPlan?.visibilityClaims).toMatchObject([
+      {
+        anchor: { kind: 'hand-card', playerIndex: 0, handIndex: 0, serial: 101 },
+        identity: { kind: 'card', serial: 101, cardId: 3 },
+        role: 'destination',
+      },
+      {
+        anchor: { kind: 'hand-card', playerIndex: 0, handIndex: 1, serial: 102 },
+        identity: { kind: 'card', serial: 102, cardId: 4 },
+        role: 'destination',
+      },
+    ]);
     expect(step.animationPhases?.[2].view.players[0].active.pokemon?.serial).toBe(14);
     expect(step.animationPhases?.[2].view.players[0].deckCount).toBe(38);
     expect(snapshot.views[step.stateIndex].players[0].active.empty).toBe(true);
@@ -2837,6 +2871,84 @@ describe('cabtReplayToSnapshot', () => {
     expect(snapshot.steps.map((step) => step.type)).toEqual(['TurnEnd', 'TurnStart']);
     expect(snapshot.steps[0].actionTimeline?.[0]).toEqual(expect.objectContaining({ kind: 'TurnEnd' }));
     expect(snapshot.steps[1].actionTimeline?.map((event) => event.kind)).toEqual(['TurnStart', 'Draw']);
+  });
+
+  it('plans DrawReverse deck-to-hand motion to the final hand-card anchor', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 2,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [],
+            benchMax: 5,
+            hand: [],
+            deckCount: 45,
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            hand: [],
+            deckCount: 46,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'DrawReverse', playerIndex: 1, cardId: 4, serial: 92 },
+        ],
+        current: {
+          turn: 2,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [],
+            benchMax: 5,
+            hand: [],
+            deckCount: 45,
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            hand: [{ id: 4, serial: 92 }],
+            deckCount: 45,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    const step = snapshot.steps[1];
+    expect(step.animationPhases?.map((phase) => phase.key)).toEqual(['Draw:1']);
+    expect(step.animationPhases?.[0].animationPlan?.motions).toMatchObject([
+      {
+        kind: 'card-move',
+        coordinateSpace: 'viewport',
+        sourceAnchor: { kind: 'deck-top', playerIndex: 1 },
+        targetAnchor: { kind: 'hand-card', playerIndex: 1, handIndex: 0, serial: 92 },
+        identity: { kind: 'card', serial: 92, cardId: 4 },
+        spriteVisual: {
+          kind: 'card',
+          faceDown: true,
+        },
+        handoffPolicy: {
+          hideDestinationUntil: 'prepaint',
+          removeSprite: 'prepaint',
+        },
+      },
+    ]);
+    expect(step.animationPhases?.[0].animationPlan?.visibilityClaims).toMatchObject([
+      {
+        anchor: { kind: 'hand-card', playerIndex: 1, handIndex: 0, serial: 92 },
+        identity: { kind: 'card', serial: 92, cardId: 4 },
+        role: 'destination',
+      },
+    ]);
   });
 
   it('does not show a later turn-start draw on an earlier attack step from the same frame', () => {
