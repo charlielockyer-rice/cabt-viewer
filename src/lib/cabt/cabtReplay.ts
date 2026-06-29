@@ -151,19 +151,28 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
     frameEntries.push({ frame, view, groups });
   });
 
+  let resolvingPlayedCards: ResolvingPlayedCard[] = [];
+
   for (let index = 0; index < frameEntries.length; index += 1) {
     const { frame, view, groups } = frameEntries[index];
     const continuation = cardEffectContinuation(frameEntries, index);
     if (continuation) {
       const currentView = frameEntries[continuation.endIndex].view;
+      const resolvingContext = resolvingContextForStep({
+        baseView: currentView,
+        actionTimeline: continuation.group.events,
+        hasAnimationPhases: shouldBuildGroupedStepAnimationPhases(views[index - 1], continuation.group),
+        resolving: resolvingPlayedCards,
+      });
+      resolvingPlayedCards = resolvingContext.nextResolving;
       steps.push(replayStepForFrame({
         view: currentView,
         stateIndex: continuation.endIndex,
         label: continuation.group.label,
         type: continuation.group.type,
         actionTimeline: continuation.group.events,
-        displayView: groupedStepDisplayView(views[index - 1], currentView, [continuation.group], 0),
-        animationPhases: groupedStepAnimationPhases(views[index - 1], currentView, [continuation.group], 0),
+        displayView: groupedStepDisplayView(views[index - 1], currentView, [continuation.group], 0, resolvingContext),
+        animationPhases: groupedStepAnimationPhases(views[index - 1], currentView, [continuation.group], 0, resolvingContext),
         payload: {
           events: continuation.group.events,
           select: frameEntries[continuation.endIndex].frame.select,
@@ -177,14 +186,21 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
 
     if (groups.length) {
       for (const [groupIndex, group] of groups.entries()) {
+        const resolvingContext = resolvingContextForStep({
+          baseView: view,
+          actionTimeline: group.events,
+          hasAnimationPhases: shouldBuildGroupedStepAnimationPhases(views[index - 1], group),
+          resolving: resolvingPlayedCards,
+        });
+        resolvingPlayedCards = resolvingContext.nextResolving;
         steps.push(replayStepForFrame({
           view,
           stateIndex: index,
           label: group.label,
           type: group.type,
           actionTimeline: group.events,
-          displayView: groupedStepDisplayView(views[index - 1], view, groups, groupIndex),
-          animationPhases: groupedStepAnimationPhases(views[index - 1], view, groups, groupIndex),
+          displayView: groupedStepDisplayView(views[index - 1], view, groups, groupIndex, resolvingContext),
+          animationPhases: groupedStepAnimationPhases(views[index - 1], view, groups, groupIndex, resolvingContext),
           payload: {
             events: group.events,
             select: frame.select,
@@ -194,11 +210,19 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
         }));
       }
     } else {
+      const resolvingContext = resolvingContextForStep({
+        baseView: view,
+        actionTimeline: undefined,
+        hasAnimationPhases: false,
+        resolving: resolvingPlayedCards,
+      });
+      resolvingPlayedCards = resolvingContext.nextResolving;
       steps.push(replayStepForFrame({
         view,
         stateIndex: index,
         label: stepLabel(frame, index),
         type: String(frame.select?.type ?? 'frame'),
+        displayView: resolvingDisplayView(view, resolvingContext),
         payload: {
           select: frame.select,
           selected: frame.selected,
@@ -208,7 +232,6 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
     }
   }
 
-  applyResolvingPlayedCards(steps, views);
   applyKnockOutDiscardTopOrdering(steps);
 
   steps.forEach((step, index) => {
@@ -1338,14 +1361,15 @@ function groupedStepDisplayView(
   currentView: GameView,
   groups: ReplayActionGroup[],
   groupIndex: number,
+  resolvingContext?: ResolvingPlayedCardContext,
 ): GameView | undefined {
   const group = groups[groupIndex];
   if (!previousView || !group) {
-    return undefined;
+    return resolvingDisplayView(currentView, resolvingContext);
   }
   const needsProjection = groups.length >= 2 || shouldProjectSingleGroup(currentView, group);
   if (!needsProjection) {
-    return undefined;
+    return resolvingDisplayView(currentView, resolvingContext);
   }
 
   const players = currentView.players.map((currentPlayer, playerIndex) => {
@@ -1375,7 +1399,7 @@ function groupedStepDisplayView(
     }
   }
 
-  return view;
+  return resolvingDisplayView(view, resolvingContext) ?? view;
 }
 
 function groupedStepAnimationPhases(
@@ -1383,6 +1407,7 @@ function groupedStepAnimationPhases(
   currentView: GameView,
   groups: ReplayActionGroup[],
   groupIndex: number,
+  resolvingContext?: ResolvingPlayedCardContext,
 ): ReplayAnimationPhase[] | undefined {
   const group = groups[groupIndex];
   if (!previousView || !group) {
@@ -1400,17 +1425,32 @@ function groupedStepAnimationPhases(
       ? animationSourceViewForPhase(phaseStartView, currentView, phase)
       : projectedViewForEvents(phaseStartView, currentView, phase.events);
     const label = animationPhaseLabel(phase);
+    const isLastPhase = phases.length === eventPhases.length - 1;
+    const resolvedInPhase = isLastPhase ? (resolvingContext?.displayResolved ?? []) : [];
+    const phaseResolving = resolvingContext?.phaseResolving ?? [];
+    if (phaseResolving.length) {
+      phaseView = gameViewWithResolvingCards(phaseView, phaseResolving);
+    }
+    if (resolvedInPhase.length) {
+      phaseView = gameViewWithResolvingDiscardDestinations(phaseView, resolvedInPhase);
+    }
     const view = {
       ...phaseView,
       actionTimeline: phase.events,
     };
+    const baseMotions = animationPhaseMotions(phase, view, group.events);
+    const resolvingMotions = resolvedInPhase.length
+      ? resolvingDiscardCardMoveMotions(phase, resolvedInPhase, Math.max(phase.durationMs, replayAnimationMotionSpanMs(baseMotions)) + resolvingDiscardHandoffGapMs)
+      : [];
+    const motions = [...baseMotions, ...resolvingMotions];
+    const durationMs = Math.max(phase.durationMs, replayAnimationMotionSpanMs(motions));
     phases.push({
       key: phase.key,
       label,
       view,
       actionTimeline: phase.events,
-      durationMs: phase.durationMs,
-      animationPlan: replayAnimationPlanForPhase(phase, view, label, group.events),
+      durationMs,
+      animationPlan: replayAnimationPlanForPhase(phase, view, label, group.events, { motions, durationMs }),
     });
     phaseStartView = projectedViewForEvents(phaseStartView, currentView, phase.events);
   }
@@ -1422,8 +1462,12 @@ function replayAnimationPlanForPhase(
   view: GameView,
   label: string | undefined,
   stepEvents: ActionTimelineEvent[] = phase.events,
+  options: {
+    motions?: AnimationMotion[];
+    durationMs?: number;
+  } = {},
 ) {
-  const motions = animationPhaseMotions(phase, view, stepEvents);
+  const motions = options.motions ?? animationPhaseMotions(phase, view, stepEvents);
   const visibilityClaims = animationMotionVisibilityClaims(phase.key, motions);
   if (!visibilityClaims.length && !motions.length) {
     return undefined;
@@ -1432,10 +1476,23 @@ function replayAnimationPlanForPhase(
     key: phase.key,
     label,
     view,
-    durationMs: phase.durationMs,
+    durationMs: options.durationMs ?? phase.durationMs,
     motions,
     visibilityClaims,
   });
+}
+
+function shouldBuildGroupedStepAnimationPhases(
+  previousView: GameView | undefined,
+  group: ReplayActionGroup | undefined,
+): boolean {
+  if (!previousView || !group) {
+    return false;
+  }
+  const eventPhases = animationEventPhases(group.events);
+  return eventPhases.length > 1
+    || eventPhases.some(animationPhaseNeedsDedicatedView)
+    || eventPhases.some(animationPhaseMayHavePlan);
 }
 
 function animationPhaseMotions(
@@ -3292,73 +3349,86 @@ type ResolvingPlayedCard = {
   card: CardView;
 };
 
+type ResolvingPlayedCardContext = {
+  displayResolved: ResolvingPlayedCard[];
+  displayResolving: ResolvingPlayedCard[];
+  phaseResolving: ResolvingPlayedCard[];
+  nextResolving: ResolvingPlayedCard[];
+};
+
 const resolvingDiscardHandoffGapMs = 24;
 
-function applyResolvingPlayedCards(steps: ReplayStep[], views: GameView[]): void {
-  let resolving: ResolvingPlayedCard[] = [];
-
-  for (const step of steps) {
-    const baseView = views[step.stateIndex];
-    if (!baseView) {
-      continue;
-    }
-
-    for (const event of step.actionTimeline ?? []) {
-      const resolvingCard = resolvingPlayedCardForEvent(baseView, event);
-      if (resolvingCard && !resolving.some((entry) => entry.playerIndex === resolvingCard.playerIndex && sameKnownCard(entry.card, resolvingCard.card))) {
-        resolving = [...resolving, resolvingCard];
-      }
-    }
-
-    const displayResolved = resolving.filter((entry) => shouldResolveCardInDisplay(step, entry));
-    const displayResolving = resolving.filter((entry) =>
-      !displayResolved.some((resolvedEntry) => sameResolvingCard(resolvedEntry, entry))
-      && shouldShowResolvingCardInDisplay(step, baseView, entry));
-    const phaseResolving = resolving.filter((entry) => shouldShowResolvingCardInPhase(step, baseView, entry));
-    if (displayResolved.length) {
-      const view = step.displayView ?? baseView;
-      step.displayView = gameViewWithResolvedDiscards(view, displayResolved);
-    }
-    if (displayResolving.length) {
-      const view = step.displayView ?? baseView;
-      step.displayView = gameViewWithResolvingCards(view, displayResolving);
-    }
-    if (phaseResolving.length && step.animationPhases?.length) {
-      const lastPhaseIndex = step.animationPhases.length - 1;
-      step.animationPhases = step.animationPhases.map((phase, phaseIndex) => {
-        const resolvedInPhase = phaseIndex === lastPhaseIndex ? displayResolved : [];
-        const viewWithResolving = gameViewWithResolvingCards(phase.view, phaseResolving);
-        const view = resolvedInPhase.length
-          ? gameViewWithResolvingDiscardDestinations(viewWithResolving, resolvedInPhase)
-          : viewWithResolving;
-        const nextPhase = {
-          ...phase,
-          view,
-          animationPlan: phase.animationPlan ? { ...phase.animationPlan, view } : undefined,
-        };
-        return resolvedInPhase.length
-          ? replayPhaseWithResolvingDiscardAnimation(nextPhase, resolvedInPhase)
-          : nextPhase;
-      });
-    }
-
-    const visibleResolving = [...displayResolving, ...phaseResolving];
-    resolving = resolving.flatMap((entry) => {
-      if (!visibleResolving.some((visibleEntry) => sameResolvingCard(visibleEntry, entry))) {
-        return [];
-      }
-      if (playerHasDiscardCard(baseView.players[entry.playerIndex], entry.card)) {
-        return [];
-      }
-      if (displayResolved.some((resolvedEntry) => sameResolvingCard(resolvedEntry, entry))) {
-        return [];
-      }
-      if (stepContainsPlayForCard(step, entry.card)) {
-        return [entry];
-      }
-      return [entry];
-    });
+function resolvingContextForStep(
+  input: {
+    baseView: GameView | undefined;
+    actionTimeline: ReplayStep['actionTimeline'];
+    hasAnimationPhases: boolean;
+    resolving: ResolvingPlayedCard[];
+  },
+): ResolvingPlayedCardContext {
+  const { baseView, actionTimeline, hasAnimationPhases, resolving: currentResolving } = input;
+  if (!baseView) {
+    return emptyResolvingPlayedCardContext(currentResolving);
   }
+
+  let resolving = currentResolving;
+  for (const event of actionTimeline ?? []) {
+    const resolvingCard = resolvingPlayedCardForEvent(baseView, event);
+    if (resolvingCard && !resolving.some((entry) => entry.playerIndex === resolvingCard.playerIndex && sameKnownCard(entry.card, resolvingCard.card))) {
+      resolving = [...resolving, resolvingCard];
+    }
+  }
+
+  const displayResolved = resolving.filter((entry) => shouldResolveCardInDisplay(actionTimeline, hasAnimationPhases, entry));
+  const displayResolving = resolving.filter((entry) =>
+    !displayResolved.some((resolvedEntry) => sameResolvingCard(resolvedEntry, entry))
+    && shouldShowResolvingCardInDisplay(actionTimeline, baseView, entry));
+  const phaseResolving = resolving.filter((entry) => shouldShowResolvingCardInPhase(actionTimeline, hasAnimationPhases, baseView, entry));
+  const visibleResolving = [...displayResolving, ...phaseResolving];
+  const nextResolving = resolving.flatMap((entry) => {
+    if (!visibleResolving.some((visibleEntry) => sameResolvingCard(visibleEntry, entry))) {
+      return [];
+    }
+    if (playerHasDiscardCard(baseView.players[entry.playerIndex], entry.card)) {
+      return [];
+    }
+    if (displayResolved.some((resolvedEntry) => sameResolvingCard(resolvedEntry, entry))) {
+      return [];
+    }
+    return [entry];
+  });
+  return {
+    displayResolved,
+    displayResolving,
+    phaseResolving,
+    nextResolving,
+  };
+}
+
+function emptyResolvingPlayedCardContext(nextResolving: ResolvingPlayedCard[] = []): ResolvingPlayedCardContext {
+  return {
+    displayResolved: [],
+    displayResolving: [],
+    phaseResolving: [],
+    nextResolving,
+  };
+}
+
+function resolvingDisplayView(
+  baseView: GameView | undefined,
+  context: ResolvingPlayedCardContext | undefined,
+): GameView | undefined {
+  if (!baseView || (!context?.displayResolved.length && !context?.displayResolving.length)) {
+    return undefined;
+  }
+  let view = baseView;
+  if (context.displayResolved.length) {
+    view = gameViewWithResolvedDiscards(view, context.displayResolved);
+  }
+  if (context.displayResolving.length) {
+    view = gameViewWithResolvingCards(view, context.displayResolving);
+  }
+  return view;
 }
 
 function applyKnockOutDiscardTopOrdering(steps: ReplayStep[]): void {
@@ -3505,36 +3575,17 @@ function gameViewWithResolvingDiscardDestinations(view: GameView, resolving: Res
   };
 }
 
-function replayPhaseWithResolvingDiscardAnimation(
-  phase: ReplayAnimationPhase,
+function resolvingDiscardCardMoveMotions(
+  phase: AnimationEventPhase,
   resolving: ResolvingPlayedCard[],
-): ReplayAnimationPhase {
-  const existingPlan = phase.animationPlan;
-  const existingMotions = existingPlan?.motions ?? [];
-  const startBaseMs = Math.max(phase.durationMs, replayAnimationMotionSpanMs(existingMotions)) + resolvingDiscardHandoffGapMs;
-  const motions = resolving.map((entry, index) =>
+  startBaseMs: number,
+): AnimationMotion[] {
+  return resolving.map((entry, index) =>
     resolvingDiscardCardMoveMotion(phase, entry, startBaseMs + index * actionAnimationTiming.handMoveStepMs));
-  const durationMs = Math.max(phase.durationMs, replayAnimationMotionSpanMs([...existingMotions, ...motions]));
-  const visibilityClaims = [
-    ...(existingPlan?.visibilityClaims ?? []),
-    ...animationMotionVisibilityClaims(phase.key, motions),
-  ];
-  return {
-    ...phase,
-    durationMs,
-    animationPlan: createReplayAnimationPhasePlan({
-      key: existingPlan?.key ?? phase.key,
-      label: existingPlan?.label ?? phase.label,
-      view: phase.view,
-      durationMs,
-      motions: [...existingMotions, ...motions],
-      visibilityClaims,
-    }),
-  };
 }
 
 function resolvingDiscardCardMoveMotion(
-  phase: ReplayAnimationPhase,
+  phase: Pick<ReplayAnimationPhase, 'key'>,
   entry: ResolvingPlayedCard,
   startMs: number,
 ): AnimationMotion {
@@ -3568,30 +3619,46 @@ function resolvingDiscardCardMoveMotion(
   };
 }
 
-function shouldResolveCardInDisplay(step: ReplayStep, entry: ResolvingPlayedCard): boolean {
-  return !!step.animationPhases?.length
-    && (stepContainsPlayForCard(step, entry.card) || isCardEffectContinuationStep(step));
+function shouldResolveCardInDisplay(
+  actionTimeline: ReplayStep['actionTimeline'],
+  hasAnimationPhases: boolean,
+  entry: ResolvingPlayedCard,
+): boolean {
+  return hasAnimationPhases
+    && (actionTimelineContainsPlayForCard(actionTimeline, entry.card) || isCardEffectContinuationTimeline(actionTimeline));
 }
 
-function shouldShowResolvingCardInDisplay(step: ReplayStep, baseView: GameView, entry: ResolvingPlayedCard): boolean {
+function shouldShowResolvingCardInDisplay(
+  actionTimeline: ReplayStep['actionTimeline'],
+  baseView: GameView,
+  entry: ResolvingPlayedCard,
+): boolean {
   if (!playerHasDiscardCard(baseView.players[entry.playerIndex], entry.card)) {
     return true;
   }
-  return stepContainsPlayForCard(step, entry.card) && !step.animationPhases?.length;
+  return actionTimelineContainsPlayForCard(actionTimeline, entry.card);
 }
 
-function shouldShowResolvingCardInPhase(step: ReplayStep, baseView: GameView, entry: ResolvingPlayedCard): boolean {
-  return shouldShowResolvingCardInDisplay(step, baseView, entry)
-    || stepContainsPlayForCard(step, entry.card)
-    || isCardEffectContinuationStep(step);
+function shouldShowResolvingCardInPhase(
+  actionTimeline: ReplayStep['actionTimeline'],
+  hasAnimationPhases: boolean,
+  baseView: GameView,
+  entry: ResolvingPlayedCard,
+): boolean {
+  if (!hasAnimationPhases) {
+    return false;
+  }
+  return shouldShowResolvingCardInDisplay(actionTimeline, baseView, entry)
+    || actionTimelineContainsPlayForCard(actionTimeline, entry.card)
+    || isCardEffectContinuationTimeline(actionTimeline);
 }
 
-function stepContainsPlayForCard(step: ReplayStep, card: CardView): boolean {
-  return (step.actionTimeline ?? []).some((event) => event.kind === 'Play' && eventCardMatches(card, event));
+function actionTimelineContainsPlayForCard(actionTimeline: ReplayStep['actionTimeline'], card: CardView): boolean {
+  return (actionTimeline ?? []).some((event) => event.kind === 'Play' && eventCardMatches(card, event));
 }
 
-function isCardEffectContinuationStep(step: ReplayStep): boolean {
-  return (step.actionTimeline ?? []).some((event) => [
+function isCardEffectContinuationTimeline(actionTimeline: ReplayStep['actionTimeline']): boolean {
+  return (actionTimeline ?? []).some((event) => [
     'Switch',
     'MoveCard',
     'MoveCardReverse',
