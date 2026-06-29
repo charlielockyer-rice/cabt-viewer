@@ -7,6 +7,7 @@
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
   import {
+    resolveStrictAnimationAnchorElement,
     type AnimationAnchorRef,
   } from '../animations/animationAnchors';
   import { afterTwoAnimationFrames } from '../animations/animationFrames';
@@ -88,6 +89,12 @@
   type LiveRevealCardAction = RevealCardAction & {
     serialTarget?: number;
     cardIdTarget?: number;
+  };
+  type RevealTakeTarget = {
+    center: { x: number; y: number };
+    width: number;
+    concealed: boolean;
+    element?: HTMLElement;
   };
   type HiddenRevealTarget = ElementVisibilityClaim;
   let {
@@ -387,8 +394,10 @@
   ) {
     for (const action of attachActions) {
       const sprite = revealSprite(action.serial);
-      const target = boardSlotByPokemonIdentity(action.serialTarget, action.cardIdTarget, action.playerIndex)
-        ?? boardSlotForRevealTargetAnchor(action.targetAnchor);
+      const target = visibilityMode === 'planned'
+        ? plannedAttachTargetForAction(action)
+        : boardSlotByPokemonIdentity(action.serialTarget, action.cardIdTarget, action.playerIndex)
+          ?? boardSlotForRevealTargetAnchor(action.targetAnchor);
       const targetRect = visualTargetForAnimation(target)?.getBoundingClientRect();
       if (!sprite || !targetRect || targetRect.width <= 0 || targetRect.height <= 0) {
         continue;
@@ -397,7 +406,9 @@
       const sourceCenter = spriteCenter(sprite);
       const targetCenter = centerOf(targetRect);
       const delayMs = action.startMs;
-      markAttachTarget(target, action.serial, delayMs, visibilityMode);
+      if (visibilityMode === 'local') {
+        markAttachTarget(target, action.serial, delayMs);
+      }
       updateSprites((item) => item.serial === action.serial
         ? {
             ...item,
@@ -424,7 +435,9 @@
       if (!sprite) {
         continue;
       }
-      const target = handTargetForPlayer(action.playerIndex, action.serial, 0, 1);
+      const target = visibilityMode === 'planned'
+        ? plannedHandTargetForAction(action)
+        : handTargetForPlayer(action.playerIndex, action.serial, 0, 1);
       if (!target) {
         continue;
       }
@@ -615,6 +628,34 @@
     return element instanceof HTMLElement ? element : null;
   }
 
+  function plannedAttachTargetForAction(action: RevealCardAction): HTMLElement | null {
+    const targetAnchor = action.targetAnchor;
+    if (!targetAnchor || (targetAnchor.kind !== 'attached-energy' && targetAnchor.kind !== 'attached-tool')) {
+      return null;
+    }
+    const target = resolveStrictAnimationAnchorElement(targetAnchor, { identity: action.identity });
+    const slot = target?.closest('.board-slot');
+    return slot instanceof HTMLElement ? slot : null;
+  }
+
+  function plannedHandTargetForAction(action: RevealCardAction): RevealTakeTarget | undefined {
+    const targetAnchor = action.targetAnchor;
+    if (!targetAnchor || targetAnchor.kind !== 'hand-card') {
+      return undefined;
+    }
+    const targetElement = resolveStrictAnimationAnchorElement(targetAnchor, { identity: action.identity });
+    const targetRect = handCardVisualRect(targetElement ?? undefined);
+    if (!targetElement || !targetRect) {
+      return undefined;
+    }
+    return {
+      center: centerOf(targetRect),
+      width: targetRect.width,
+      concealed: targetElement.closest('.hand')?.classList.contains('concealed') ?? false,
+      element: targetElement,
+    };
+  }
+
   function visualTargetForAnimation(target: HTMLElement | null): HTMLElement | null {
     if (!target) {
       return null;
@@ -627,10 +668,9 @@
     target: HTMLElement,
     serial: number,
     delayMs: number,
-    visibilityMode: DestinationVisibilityMode = 'local',
   ) {
     const immediateElement = attachedCardElement(target, serial);
-    const immediateClaim = immediateElement && visibilityMode === 'local'
+    const immediateClaim = immediateElement
       ? hideElementForAnimation({
           element: immediateElement,
           scopeKey,

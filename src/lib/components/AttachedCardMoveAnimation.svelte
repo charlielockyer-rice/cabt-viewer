@@ -3,6 +3,7 @@
   import {
     resolveExactAnimationAnchorElement,
     resolveAnimationAnchorElements,
+    resolveStrictAnimationAnchorElement,
     type AnimationAnchorRef,
     type AnimationIdentity,
   } from '../animations/animationAnchors';
@@ -229,8 +230,8 @@
   }
 
   function spriteForMotion(motion: CardMoveAnimationMotion): AttachedMoveSprite[] {
-    const source = sourceForAnchor(motion.sourceAnchor, 'planned');
-    const target = targetElementForAnchor(motion.targetAnchor, 'planned');
+    const source = sourceForAnchor(motion.sourceAnchor, 'planned', motion.identity);
+    const target = targetElementForAnchor(motion.targetAnchor, 'planned', motion.identity);
     const boardPlane = boardPlaneElement();
     if (!source || !target || !boardPlane) {
       return [];
@@ -346,11 +347,15 @@
       );
   }
 
-  function sourceForAnchor(anchor: AnimationAnchorRef, mode: 'planned' | 'live' = 'live'): AttachedMoveSource | null {
+  function sourceForAnchor(
+    anchor: AnimationAnchorRef,
+    mode: 'planned' | 'live' = 'live',
+    identity?: AnimationIdentity,
+  ): AttachedMoveSource | null {
     if (anchor.kind !== 'attached-energy' && anchor.kind !== 'attached-tool') {
       return null;
     }
-    const element = mode === 'planned' ? exactElementForAnchor(anchor) : elementForAnchor(anchor);
+    const element = mode === 'planned' ? strictElementForAnchor(anchor, identity) : elementForAnchor(anchor);
     if (!element) {
       if (mode === 'planned') {
         return null;
@@ -442,8 +447,12 @@
     return null;
   }
 
-  function targetElementForAnchor(anchor: AnimationAnchorRef, mode: 'planned' | 'live' = 'live'): HTMLElement | null {
-    const element = mode === 'planned' ? exactElementForAnchor(anchor) : elementForAnchor(anchor);
+  function targetElementForAnchor(
+    anchor: AnimationAnchorRef,
+    mode: 'planned' | 'live' = 'live',
+    identity?: AnimationIdentity,
+  ): HTMLElement | null {
+    const element = mode === 'planned' ? strictElementForAnchor(anchor, identity) : elementForAnchor(anchor);
     if (!element) {
       return null;
     }
@@ -455,6 +464,10 @@
 
   function exactElementForAnchor(anchor: AnimationAnchorRef): HTMLElement | null {
     return resolveExactAnimationAnchorElement(anchor);
+  }
+
+  function strictElementForAnchor(anchor: AnimationAnchorRef, identity?: AnimationIdentity): HTMLElement | null {
+    return resolveStrictAnimationAnchorElement(anchor, { identity });
   }
 
   function elementForAnchor(anchor: AnimationAnchorRef): HTMLElement | null {

@@ -46,4 +46,18 @@ describe('ReplayAnimationRunState', () => {
     expect(state.hasSeen(event)).toBe(true);
     expect(state.seenEventIds.has(42)).toBe(true);
   });
+
+  it('clears seen event ids when the animation scope changes', () => {
+    const state = new ReplayAnimationRunState();
+    const event = { id: 1 } as ActionTimelineEvent;
+
+    state.update('scope-a', 'plan-a');
+    state.markEventsSeen([event]);
+    expect(state.hasSeen(event)).toBe(true);
+
+    state.update('scope-b', 'plan-a');
+
+    expect(state.hasSeen(event)).toBe(false);
+    expect(state.seenEventIds.size).toBe(0);
+  });
 });

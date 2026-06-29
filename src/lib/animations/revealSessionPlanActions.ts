@@ -1,5 +1,6 @@
 import { replayAnimationSpriteRemovalMs } from './replayAnimationHandoff';
 import type {
+  AnimationIdentity,
   RevealSessionAnimationMotion,
   RevealSessionStep,
   ReplayAnimationPhasePlan,
@@ -28,6 +29,7 @@ export type RevealCardAction = {
   id: string;
   playerIndex: number;
   serial: number;
+  identity?: AnimationIdentity;
   startMs: number;
   targetAnchor?: RevealSessionStep['targetAnchor'];
   removeMs?: number;
@@ -101,6 +103,7 @@ export function revealCardActionsForSteps(
       id: step.id,
       playerIndex: motion.playerIndex,
       serial,
+      identity: step.identity,
       startMs: motion.startMs + step.startMs,
       targetAnchor: step.targetAnchor,
       removeMs: removalMsForStep(motion, step, planDurationMs),

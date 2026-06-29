@@ -17,6 +17,9 @@ export class ReplayAnimationRunState {
     const firstRun = !this.initialized;
     const scopeChanged = this.initialized && scopeKey !== this.lastScopeKey;
     const planChanged = planKey !== this.lastPlanKey;
+    if (scopeChanged) {
+      this.seenEventIds.clear();
+    }
     this.initialized = true;
     this.lastScopeKey = scopeKey;
     this.lastPlanKey = planKey;
