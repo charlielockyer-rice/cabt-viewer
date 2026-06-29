@@ -118,6 +118,9 @@ export function actionAnimationPhaseKey(event: ActionTimelineEvent): string | nu
   if (event.kind === 'Coin') {
     return `Coin:${playerKey}`;
   }
+  if (event.kind === 'Change') {
+    return `Change:${playerKey}`;
+  }
   if (isSpecialConditionEvent(event.kind)) {
     return `Condition:${playerKey}`;
   }
@@ -247,6 +250,9 @@ export function actionAnimationPhaseCardDurationMs(key: string): number {
   if (key.startsWith('Condition:')) {
     return actionAnimationTiming.conditionAnnounceMs;
   }
+  if (key.startsWith('Change:')) {
+    return actionAnimationTiming.conditionAnnounceMs;
+  }
   if (key.startsWith('Damage:')) {
     return actionAnimationTiming.damageVisualMs;
   }
@@ -314,6 +320,9 @@ export function actionAnimationPhaseStepMs(key: string): number {
   if (key.startsWith('Condition:')) {
     return actionAnimationTiming.conditionAnnounceMs;
   }
+  if (key.startsWith('Change:')) {
+    return actionAnimationTiming.conditionAnnounceMs;
+  }
   if (key.startsWith('Damage:')) {
     return actionAnimationTiming.damageVisualMs;
   }
@@ -337,6 +346,7 @@ export function actionAnimationPhaseUsesSourceView(key: string): boolean {
     || key.startsWith('Evolve:')
     || key.startsWith('Ability:')
     || key.startsWith('Attack:')
+    || key.startsWith('Change:')
     || key.startsWith('Condition:')
     || key.startsWith('Damage:')
     || key.startsWith('KnockOut:')
@@ -353,6 +363,7 @@ export function actionAnimationPhaseNeedsDedicatedView(key: string): boolean {
     || key.startsWith('Ability:')
     || key.startsWith('Attack:')
     || key.startsWith('Coin:')
+    || key.startsWith('Change:')
     || key.startsWith('Condition:')
     || key.startsWith('Damage:')
     || key.startsWith('KnockOut:')
@@ -373,6 +384,7 @@ export function actionAnimationPhaseMayHavePlan(key: string): boolean {
     || key.startsWith('Ability:')
     || key.startsWith('Attack:')
     || key.startsWith('Coin:')
+    || key.startsWith('Change:')
     || key.startsWith('Condition:')
     || key.startsWith('Damage:')
     || key.startsWith('KnockOut:')

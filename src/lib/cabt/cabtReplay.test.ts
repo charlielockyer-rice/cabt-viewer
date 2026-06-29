@@ -435,6 +435,73 @@ describe('cabtReplayToSnapshot', () => {
     ]);
   });
 
+  it('plans board Pokemon changes as neutral source-slot pulses', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 721, serial: 14, hp: 140, maxHp: 140 }],
+            bench: [],
+            benchMax: 5,
+            hand: [],
+            deckCount: 40,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 60,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'Change', playerIndex: 0, cardIdBefore: 721, cardIdAfter: 722, serial: 14 },
+        ],
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 722, serial: 14, hp: 120, maxHp: 120 }],
+            bench: [],
+            benchMax: 5,
+            hand: [],
+            deckCount: 40,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 60,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    const step = snapshot.steps[1];
+    expect(step.animationPhases?.map((phase) => phase.key)).toEqual(['Change:0']);
+    expect(step.animationPhases?.[0].view.players[0].active.pokemon?.id).toBe(721);
+    expect(snapshot.views[step.stateIndex].players[0].active.pokemon?.id).toBe(722);
+    expect(step.animationPhases?.[0].animationPlan?.motions).toMatchObject([
+      {
+        kind: 'pulse',
+        coordinateSpace: 'board',
+        anchor: { kind: 'board-slot', playerIndex: 0, slot: 'active', slotIndex: 0 },
+        spriteVisual: { kind: 'pulse', tone: 'neutral' },
+        label: 'Changed to Snover',
+      },
+    ]);
+  });
+
   it('plans special-condition changes as neutral active-slot pulses using the source board state', () => {
     const snapshot = cabtReplayToSnapshot({
       visualize: [{

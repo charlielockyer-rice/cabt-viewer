@@ -202,6 +202,18 @@ export function classifyAnimationCoverage(
     return { key: kind, level: 'polished', label: 'Coin flip announcement', notes };
   }
 
+  if (kind === 'Change') {
+    if (event.playerIndex === undefined) {
+      notes.push('Change animation needs a player index so it can anchor to that player’s board.');
+      return { key: kind, level: 'conditional', label: 'Board Pokemon change announcement', notes };
+    }
+    if (!hasFiniteNumber(params?.serial) && !hasFiniteNumber(params?.serialBefore) && !hasFiniteNumber(params?.cardIdBefore) && !hasFiniteNumber(params?.cardId)) {
+      notes.push('Change animation needs a source-matchable identity to find the current board slot.');
+      return { key: kind, level: 'conditional', label: 'Board Pokemon change announcement', notes };
+    }
+    return { key: kind, level: 'polished', label: 'Board Pokemon change announcement', notes };
+  }
+
   if (['Poisoned', 'Burned', 'Asleep', 'Paralyzed', 'Confused'].includes(kind)) {
     return {
       key: kind,
@@ -244,7 +256,7 @@ export function classifyAnimationCoverage(
     return { key: kind, level: 'static', label: 'Timeline/state-only phase marker', notes };
   }
 
-  if (['Devolve', 'Change', 'MoveAttached'].includes(kind)) {
+  if (['Devolve', 'MoveAttached'].includes(kind)) {
     return {
       key: kind,
       level: 'unsupported',

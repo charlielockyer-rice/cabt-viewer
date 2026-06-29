@@ -74,6 +74,38 @@ describe('classifyAnimationCoverage', () => {
     })).level).toBe('unsupported');
   });
 
+  it('recognizes board Pokemon changes as polished announcements when identity is present', () => {
+    const coverage = classifyAnimationCoverage(event('Change', {
+      cardIdBefore: 721,
+      cardIdAfter: 722,
+      serial: 14,
+    }));
+
+    expect(coverage.level).toBe('polished');
+    expect(coverage.label).toBe('Board Pokemon change announcement');
+  });
+
+  it('marks board Pokemon changes conditional without an anchorable source identity', () => {
+    const coverage = classifyAnimationCoverage(event('Change', {
+      cardIdAfter: 722,
+    }));
+
+    expect(coverage.level).toBe('conditional');
+    expect(coverage.notes[0]).toContain('source-matchable identity');
+  });
+
+  it('marks board Pokemon changes conditional without a player index', () => {
+    const coverage = classifyAnimationCoverage({
+      id: 1,
+      kind: 'Change',
+      message: 'Change',
+      params: { type: 'Change', cardIdBefore: 721, cardIdAfter: 722, serial: 14 },
+    });
+
+    expect(coverage.level).toBe('conditional');
+    expect(coverage.notes[0]).toContain('player index');
+  });
+
   it('recognizes Switch as a polished active and bench board move', () => {
     const coverage = classifyAnimationCoverage(event('Switch', {
       cardIdActive: 304,

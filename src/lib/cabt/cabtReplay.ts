@@ -1555,6 +1555,9 @@ function animationPhaseMotions(
   if (phase.key.startsWith('Coin:')) {
     return coinPulseMotions(phase);
   }
+  if (phase.key.startsWith('Change:')) {
+    return changePulseMotions(phase, view);
+  }
   if (phase.key.startsWith('Condition:')) {
     return conditionPulseMotions(phase, view);
   }
@@ -1720,6 +1723,62 @@ function coinPulseMotions(phase: AnimationEventPhase): AnimationMotion[] {
     } satisfies AnimationMotion];
   });
   return compactAnimationMotions(motions);
+}
+
+function changePulseMotions(phase: AnimationEventPhase, view: GameView): AnimationMotion[] {
+  const motions = phase.events.map((event) => {
+    if (event.kind !== 'Change' || event.playerIndex === undefined) {
+      return [];
+    }
+    const anchor = changeAnchorForEvent(view, event);
+    if (!anchor) {
+      return null;
+    }
+    return [{
+      kind: 'pulse',
+      id: `${phase.key}:${event.id}:change`,
+      identity: changeAnimationIdentityForEvent(event),
+      anchor,
+      coordinateSpace: 'board',
+      spriteVisual: { kind: 'pulse', tone: 'neutral' },
+      label: changePulseLabel(event),
+      startMs: actionAnimationStartMs(phase.events, event),
+      durationMs: actionAnimationTiming.conditionAnnounceMs,
+    } satisfies AnimationMotion];
+  });
+  return compactAnimationMotions(motions);
+}
+
+function changeAnchorForEvent(view: GameView, event: ActionTimelineEvent): AnimationAnchorRef | undefined {
+  if (event.playerIndex === undefined) {
+    return undefined;
+  }
+  const params = event.params as Record<string, unknown> | undefined;
+  const player = view.players[event.playerIndex];
+  return boardSlotAnchorForPokemon(
+    player,
+    finiteNumber(params?.serial) ?? finiteNumber(params?.serialBefore) ?? finiteNumber(params?.serialAfter),
+    finiteNumber(params?.cardIdBefore) ?? finiteNumber(params?.cardId) ?? finiteNumber(params?.cardIdAfter),
+  );
+}
+
+function changeAnimationIdentityForEvent(event: ActionTimelineEvent): AnimationIdentity {
+  const params = event.params as Record<string, unknown> | undefined;
+  return {
+    kind: 'pokemon',
+    serial: finiteNumber(params?.serial) ?? finiteNumber(params?.serialBefore) ?? finiteNumber(params?.serialAfter),
+    cardId: finiteNumber(params?.cardIdBefore) ?? finiteNumber(params?.cardId) ?? finiteNumber(params?.cardIdAfter),
+    name: stringValue(params?.cardNameBefore) ?? stringValue(params?.cardName),
+  };
+}
+
+function changePulseLabel(event: ActionTimelineEvent): string {
+  const params = event.params as Record<string, unknown> | undefined;
+  const cardIdAfter = finiteNumber(params?.cardIdAfter);
+  if (cardIdAfter !== undefined) {
+    return `Changed to ${cardName(cardIdAfter)}`;
+  }
+  return 'Changed';
 }
 
 function conditionPulseMotions(phase: AnimationEventPhase, view: GameView): AnimationMotion[] {
@@ -2936,7 +2995,13 @@ function animationSourceViewForPhase(
   if (phase.key.startsWith('Evolve:')) {
     return handPlaySourceView(phaseStartView, currentView, phase);
   }
-  if (phase.key.startsWith('Ability:') || phase.key.startsWith('Attack:') || phase.key.startsWith('Condition:') || phase.key.startsWith('Damage:')) {
+  if (
+    phase.key.startsWith('Ability:')
+    || phase.key.startsWith('Attack:')
+    || phase.key.startsWith('Change:')
+    || phase.key.startsWith('Condition:')
+    || phase.key.startsWith('Damage:')
+  ) {
     return projectedViewForEvents(phaseStartView, currentView, phase.events, { deferBoardStateEvents: true });
   }
   if (phase.key.startsWith('KnockOut:')) {
@@ -3766,6 +3831,7 @@ function isBoardStateEvent(kind: string | undefined): boolean {
   return [
     'Attack',
     'Attach',
+    'Change',
     'Evolve',
     'Devolve',
     'Switch',

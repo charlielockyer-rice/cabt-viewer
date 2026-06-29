@@ -59,6 +59,7 @@
       && motion.spriteVisual.tone === 'neutral'
       && (
         replayAnimationPlanHasPhase(plan, 'Coin', motion.anchor.playerIndex)
+        || replayAnimationPlanHasPhase(plan, 'Change', motion.anchor.playerIndex)
         || replayAnimationPlanHasPhase(plan, 'Condition', motion.anchor.playerIndex)
       ),
     );

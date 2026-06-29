@@ -126,6 +126,16 @@ describe('actionAnimationStartMs', () => {
     expect(actionAnimationStartMs(events, events[1])).toBe(actionAnimationTiming.coinAnnounceMs);
   });
 
+  it('announces board Pokemon changes before their follow-up effects', () => {
+    const events: ActionTimelineEvent[] = [
+      event(1, 'Change', { cardIdBefore: 721, cardIdAfter: 722, serial: 14 }),
+      event(2, 'Draw', { cardId: 3, serial: 12 }),
+    ];
+
+    expect(actionAnimationStartMs(events, events[0])).toBe(0);
+    expect(actionAnimationStartMs(events, events[1])).toBe(actionAnimationTiming.conditionAnnounceMs);
+  });
+
   it('announces special conditions before their follow-up effects', () => {
     const events: ActionTimelineEvent[] = [
       event(1, 'Poisoned', { cardId: 721, serial: 14 }),
@@ -301,6 +311,7 @@ describe('actionAnimationPhaseKey', () => {
       toArea: CabtAreaType.DECK,
     }))).toBe('HandToDeck:1');
     expect(actionAnimationPhaseKey(event(4, 'Poisoned', {}))).toBe('Condition:1');
+    expect(actionAnimationPhaseKey(event(5, 'Change', {}))).toBe('Change:1');
   });
 
   it('keeps board and attached motions on source-owned phase views with animation plans', () => {

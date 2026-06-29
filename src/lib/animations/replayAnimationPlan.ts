@@ -104,6 +104,7 @@ export type ReplayAnimationPhasePlan = {
 export type ReplayAnimationPhaseKind =
   | 'Ability'
   | 'Attack'
+  | 'Change'
   | 'Coin'
   | 'Condition'
   | 'Damage'
