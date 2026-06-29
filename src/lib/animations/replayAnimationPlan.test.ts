@@ -306,13 +306,8 @@ function cardMoveMotion(id: string, startMs: number, durationMs: number): Animat
     },
     coordinateSpace: 'cross-plane',
     spriteVisual: {
-      kind: 'anchor-snapshot',
-      anchor: {
-        kind: 'hand-card',
-        playerIndex: 0,
-        handIndex: 0,
-        serial: 101,
-      },
+      kind: 'card',
+      card: { id: 101, serial: 101 },
     },
     handoffPolicy: {
       hideSourceUntil: 'snapshot',

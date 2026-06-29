@@ -14,10 +14,6 @@ export type AnimationSpriteVisual =
       faceDown?: boolean;
     }
   | {
-      kind: 'anchor-snapshot';
-      anchor: AnimationAnchorRef;
-    }
-  | {
       kind: 'pulse';
       tone: 'ability' | 'attack' | 'damage' | 'neutral';
     };
