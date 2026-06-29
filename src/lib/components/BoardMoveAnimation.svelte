@@ -14,7 +14,7 @@
   import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import {
     replayAnimationPhasePlanKey,
-    replayAnimationPlanHasAnyPhase,
+    replayAnimationPlanOwnsMotion,
     type CardMoveAnimationMotion,
     type ReplayAnimationPhasePlan,
   } from '../animations/replayAnimationPlan';
@@ -141,8 +141,10 @@
   }
 
   function boardMoveOwnsPlannedMotion(plan: ReplayAnimationPhasePlan | undefined, motion: CardMoveAnimationMotion): boolean {
-    const playerIndex = playerIndexForMotion(motion);
-    return replayAnimationPlanHasAnyPhase(plan, [
+    if (isResolvingCardCleanupMotion(motion)) {
+      return true;
+    }
+    return replayAnimationPlanOwnsMotion(plan, motion, [
       'BoardMove',
       'BoardToDeck',
       'DeckBoardPlace',
@@ -150,13 +152,12 @@
       'StadiumMove',
       'DiscardRecover',
       'KnockOut',
-    ], playerIndex);
+    ]);
   }
 
-  function playerIndexForMotion(motion: CardMoveAnimationMotion): number | undefined {
-    return 'playerIndex' in motion.sourceAnchor && motion.sourceAnchor.playerIndex !== undefined
-      ? motion.sourceAnchor.playerIndex
-      : 'playerIndex' in motion.targetAnchor ? motion.targetAnchor.playerIndex : undefined;
+  function isResolvingCardCleanupMotion(motion: CardMoveAnimationMotion): boolean {
+    return motion.sourceAnchor.kind === 'play-zone-card'
+      && motion.targetAnchor.kind === 'discard-card';
   }
 
   function startPlannedBoardMoves(motions: CardMoveAnimationMotion[]) {

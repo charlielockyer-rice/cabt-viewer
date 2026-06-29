@@ -14,7 +14,11 @@
   import { replayAnimationScopeExitSettleMs, replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
   import { createReplayPhasePlanRunner, type ReplayPhasePlanRunnerContext } from '../animations/replayPhasePlanRunner.svelte';
   import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
-  import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
+  import {
+    replayAnimationPlanOwnsMotion,
+    type CardMoveAnimationMotion,
+    type ReplayAnimationPhasePlan,
+  } from '../animations/replayAnimationPlan';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -148,7 +152,8 @@
       && motion.coordinateSpace === 'viewport'
       && motion.sourceAnchor.kind === 'hand-card'
       && motion.targetAnchor.kind !== 'deck-top'
-      && motion.targetAnchor.kind !== 'hand-card');
+      && motion.targetAnchor.kind !== 'hand-card'
+      && replayAnimationPlanOwnsMotion(plan, motion, ['Play', 'HandMove', 'Evolve', 'Attach']));
   }
 
   function isHandPlayEvent(event: ActionTimelineEvent): boolean {

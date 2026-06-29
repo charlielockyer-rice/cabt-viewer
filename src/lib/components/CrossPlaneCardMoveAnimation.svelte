@@ -9,7 +9,11 @@
   import { replayAnimationScopeExitSettleMs, replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
   import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
-  import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
+  import {
+    replayAnimationPlanOwnsMotion,
+    type CardMoveAnimationMotion,
+    type ReplayAnimationPhasePlan,
+  } from '../animations/replayAnimationPlan';
   import type { CardView } from '../game/types';
   import CardTile from './CardTile.svelte';
 
@@ -62,7 +66,9 @@
 
   function crossPlaneMotions(plan: ReplayAnimationPhasePlan | undefined): CardMoveAnimationMotion[] {
     return (plan?.motions ?? []).filter((motion): motion is CardMoveAnimationMotion =>
-      motion.kind === 'card-move' && motion.coordinateSpace === 'cross-plane');
+      motion.kind === 'card-move'
+      && motion.coordinateSpace === 'cross-plane'
+      && replayAnimationPlanOwnsMotion(plan, motion, ['AttachedMove', 'DiscardRecover']));
   }
 
   async function startMotions(motions: CardMoveAnimationMotion[]) {

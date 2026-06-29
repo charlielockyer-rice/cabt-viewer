@@ -3,6 +3,7 @@ import {
   createReplayAnimationPhasePlan,
   replayAnimationPlanHasAnyPhase,
   replayAnimationPlanHasPhase,
+  replayAnimationPlanOwnsMotion,
   replayAnimationMotionSpanMs,
   replayAnimationVisibilityClaimsForMotions,
   type AnimationMotion,
@@ -66,6 +67,39 @@ describe('replay animation phase plans', () => {
     expect(replayAnimationPlanHasAnyPhase({ kind: 'Damage', playerIndex: 1 }, ['Attack', 'Damage'], 1)).toBe(true);
     expect(replayAnimationPlanHasAnyPhase({ kind: 'Damage', playerIndex: 1 }, ['Attack', 'Damage'], 0)).toBe(false);
     expect(replayAnimationPlanHasAnyPhase({ kind: 'Coin', playerIndex: 0 }, ['Attack', 'Damage'], 0)).toBe(false);
+  });
+
+  it('matches animation motion ownership by phase kind and motion player', () => {
+    expect(replayAnimationPlanOwnsMotion(
+      { kind: 'Play', playerIndex: 0 },
+      cardMoveMotion('play-card', 0, 300),
+      ['Play', 'Attach'],
+    )).toBe(true);
+    expect(replayAnimationPlanOwnsMotion(
+      { kind: 'Play', playerIndex: 1 },
+      cardMoveMotion('play-card', 0, 300),
+      ['Play', 'Attach'],
+    )).toBe(false);
+    expect(replayAnimationPlanOwnsMotion(
+      { kind: 'DeckSearchReveal', playerIndex: 0 },
+      revealSessionMotion(),
+      ['DeckReveal', 'DeckSearchReveal'],
+    )).toBe(true);
+    expect(replayAnimationPlanOwnsMotion(
+      { kind: 'Shuffle', playerIndex: 0 },
+      revealSessionMotion(),
+      ['DeckReveal', 'DeckSearchReveal'],
+    )).toBe(false);
+    expect(replayAnimationPlanOwnsMotion(
+      { kind: 'Condition', playerIndex: 0 },
+      neutralPulseMotion('condition-pulse'),
+      ['Coin', 'Change', 'Condition', 'Devolve', 'MoveAttached'],
+    )).toBe(true);
+    expect(replayAnimationPlanOwnsMotion(
+      { kind: 'Condition', playerIndex: 1 },
+      neutralPulseMotion('condition-pulse'),
+      ['Coin', 'Change', 'Condition', 'Devolve', 'MoveAttached'],
+    )).toBe(false);
   });
 
   it('derives card-move visibility claims from handoff policies by default', () => {
@@ -368,6 +402,18 @@ function revealSessionMotion(): AnimationMotion {
         },
       },
     ],
+  };
+}
+
+function neutralPulseMotion(id: string): AnimationMotion {
+  return {
+    id,
+    kind: 'pulse',
+    anchor: { kind: 'board-slot', playerIndex: 0, slot: 'active', slotIndex: 0 },
+    coordinateSpace: 'board',
+    startMs: 0,
+    durationMs: 300,
+    spriteVisual: { kind: 'pulse', tone: 'neutral' },
   };
 }
 

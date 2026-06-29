@@ -16,7 +16,11 @@
   import { replayAnimationScopeExitSettleMs, replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
   import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
-  import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
+  import {
+    replayAnimationPlanOwnsMotion,
+    type CardMoveAnimationMotion,
+    type ReplayAnimationPhasePlan,
+  } from '../animations/replayAnimationPlan';
   import { actionAnimationPhaseKind, actionAnimationTimelinePhaseKeyForEvent } from '../cabt/actionAnimationPhases';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
@@ -226,7 +230,8 @@
     return (plan?.motions ?? []).filter((motion): motion is CardMoveAnimationMotion =>
       motion.kind === 'card-move'
       && motion.coordinateSpace === 'board'
-      && (motion.sourceAnchor.kind === 'attached-energy' || motion.sourceAnchor.kind === 'attached-tool'));
+      && (motion.sourceAnchor.kind === 'attached-energy' || motion.sourceAnchor.kind === 'attached-tool')
+      && replayAnimationPlanOwnsMotion(plan, motion, ['AttachedMove']));
   }
 
   function spriteForMotion(motion: CardMoveAnimationMotion): AttachedMoveSprite[] {

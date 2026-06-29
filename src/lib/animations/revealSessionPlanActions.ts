@@ -5,6 +5,7 @@ import type {
   RevealSessionStep,
   ReplayAnimationPhasePlan,
 } from './replayAnimationPlan';
+import { replayAnimationPlanOwnsMotion } from './replayAnimationPlan';
 import { cabtCardToView } from '../cabt/cardView';
 import type { CardView } from '../game/types';
 
@@ -46,7 +47,14 @@ export type PlannedRevealCard = {
 export function revealSessionMotions(plan: ReplayAnimationPhasePlan | undefined): RevealSessionAnimationMotion[] {
   return (plan?.motions ?? []).filter((motion): motion is RevealSessionAnimationMotion =>
     motion.kind === 'reveal-session'
-    && motion.coordinateSpace === 'viewport',
+    && motion.coordinateSpace === 'viewport'
+    && replayAnimationPlanOwnsMotion(plan, motion, [
+      'Attach',
+      'DeckReveal',
+      'DeckSearchReveal',
+      'DeckRevealReturn',
+      'DeckRevealTake',
+    ]),
   );
 }
 

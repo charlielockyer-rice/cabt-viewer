@@ -209,6 +209,31 @@ export function replayAnimationPlanHasAnyPhase(
   return kinds.some((kind) => replayAnimationPlanHasPhase(plan, kind, playerIndex));
 }
 
+export function replayAnimationPlanOwnsMotion(
+  plan: Pick<ReplayAnimationPhasePlan, 'kind' | 'playerIndex'> | undefined,
+  motion: AnimationMotion,
+  kinds: readonly ReplayAnimationPhaseKind[],
+): boolean {
+  return replayAnimationPlanHasAnyPhase(plan, kinds, replayAnimationMotionPlayerIndex(motion));
+}
+
+export function replayAnimationMotionPlayerIndex(motion: AnimationMotion): number | undefined {
+  if (motion.kind === 'reveal-session') {
+    return motion.playerIndex;
+  }
+  if (motion.kind === 'pulse') {
+    return playerIndexForAnchor(motion.anchor) ?? playerIndexForAnchor(motion.sourceAnchor);
+  }
+  if (motion.kind === 'shuffle' || motion.kind === 'settle') {
+    return playerIndexForAnchor(motion.anchor);
+  }
+  return playerIndexForAnchor(motion.sourceAnchor) ?? playerIndexForAnchor(motion.targetAnchor);
+}
+
+function playerIndexForAnchor(anchor: AnimationAnchorRef | undefined): number | undefined {
+  return anchor && 'playerIndex' in anchor ? anchor.playerIndex : undefined;
+}
+
 export function replayAnimationMotionKey(motion: Pick<AnimationMotion, 'id' | 'startMs' | 'durationMs'>): string {
   return `${motion.id}:${motion.startMs}:${motion.durationMs}`;
 }

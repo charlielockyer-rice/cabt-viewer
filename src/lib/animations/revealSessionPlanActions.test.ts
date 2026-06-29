@@ -16,6 +16,7 @@ describe('reveal session plan actions', () => {
     const plan = {
       key: 'DeckReveal:0',
       kind: 'DeckReveal',
+      playerIndex: 0,
       view: {} as GameView,
       durationMs: 1000,
       motions: [
