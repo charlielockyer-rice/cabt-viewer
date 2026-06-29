@@ -5,6 +5,11 @@
     releaseElementVisibilityClaim,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
+  import {
+    claimAnimationElementEffect,
+    releaseAnimationElementEffectClaim,
+    type AnimationElementEffectClaim,
+  } from '../animations/animationElementEffects';
   import { resolveExactAnimationAnchorElement } from '../animations/animationAnchors';
   import { replayAnimationScopeExitSettleMs, replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
   import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
@@ -69,6 +74,11 @@
   type TargetAnimation = FixedAnimation | SlotAttachAnimation;
 
   type ActivePlay = Omit<FixedAnimation, 'target' | 'hideContents' | 'kind'>;
+  type ActiveTargetEffect = {
+    target: HTMLElement;
+    effectClaim: AnimationElementEffectClaim;
+    hiddenClaim?: ElementVisibilityClaim;
+  };
 
   let {
     events = [],
@@ -87,9 +97,7 @@
   let reduceMotion = $state(false);
   let previousCardRects = new Map<number, RectSnapshot>();
   let activePlays = $state<ActivePlay[]>([]);
-  const activeTargetCounts = new WeakMap<HTMLElement, number>();
-  const hiddenContentClaims = new WeakMap<HTMLElement, ElementVisibilityClaim[]>();
-  let activeTargets: HTMLElement[] = [];
+  let activeTargets: ActiveTargetEffect[] = [];
 
   onMount(() => {
     if (typeof window.matchMedia !== 'function') {
@@ -209,8 +217,12 @@
       return;
     }
 
-    for (const animation of targetAnimations) {
-      activateTarget(animation);
+    const activated = targetAnimations.map((animation) => ({
+      animation,
+      activeTarget: activateTarget(animation),
+    }));
+
+    for (const { animation, activeTarget } of activated) {
       if (animation.kind === 'fixed') {
         activePlays = [...activePlays, animation];
       }
@@ -228,7 +240,7 @@
           if (animation.kind === 'fixed') {
             removePlays(new Set([animation.id]));
           }
-          deactivateTargets([animation.target]);
+          deactivateTargetEffects([activeTarget]);
         }, cleanupDelayMs);
         timers.push(timer);
       }
@@ -239,8 +251,9 @@
       .filter((time): time is number => time !== undefined);
     if (cleanupTimes.length) {
       const timer = setTimeout(() => {
-        deactivateTargets(targetAnimations.filter((animation) =>
-          !animation.planned || animation.removeMs !== undefined).map((animation) => animation.target));
+        deactivateTargetEffects(activated
+          .filter(({ animation }) => !animation.planned || animation.removeMs !== undefined)
+          .map(({ activeTarget }) => activeTarget));
       }, Math.max(...cleanupTimes) + 120);
       timers.push(timer);
     }
@@ -364,7 +377,7 @@
     }
     timers.length = 0;
     activePlays = [];
-    deactivateTargets(activeTargets);
+    deactivateTargetEffects(activeTargets);
     activeTargets = [];
   }
 
@@ -377,7 +390,7 @@
       delayMs: replayAnimationScopeExitSettleMs,
       removeIds() {
         removePlays(playIds);
-        deactivateTargets(targets);
+        deactivateTargetEffects(targets);
       },
     });
   }
@@ -520,72 +533,55 @@
   }
 
   function activateTarget(animation: TargetAnimation) {
-    const count = activeTargetCounts.get(animation.target) ?? 0;
-    activeTargetCounts.set(animation.target, count + 1);
-    animation.target.dataset.handPlayAnimationActive = 'true';
+    const attributes: Record<string, string> = {
+      'data-hand-play-animation-active': 'true',
+    };
+    const styles: Record<string, string> = {};
     if (animation.kind === 'slotAttach') {
-      animation.target.dataset.handAttachAnimationActive = 'true';
-      animation.target.style.setProperty('--hand-attach-card-image', cssAssetUrl(animation.imageUrl));
-      animation.target.style.setProperty('--hand-attach-start-x', `${(animation.startX * 100).toFixed(1)}%`);
-      animation.target.style.setProperty('--hand-attach-start-y', `${(animation.startY * 100).toFixed(1)}%`);
-      animation.target.style.setProperty('--hand-attach-start-rotation', `${animation.startRotation.toFixed(1)}deg`);
-      animation.target.style.setProperty('--hand-attach-delay', `${animation.delayMs}ms`);
+      attributes['data-hand-attach-animation-active'] = 'true';
+      styles['--hand-attach-card-image'] = cssAssetUrl(animation.imageUrl);
+      styles['--hand-attach-start-x'] = `${(animation.startX * 100).toFixed(1)}%`;
+      styles['--hand-attach-start-y'] = `${(animation.startY * 100).toFixed(1)}%`;
+      styles['--hand-attach-start-rotation'] = `${animation.startRotation.toFixed(1)}deg`;
+      styles['--hand-attach-delay'] = `${animation.delayMs}ms`;
     }
     if (animation.kind === 'fixed' && animation.mode === 'evolve') {
-      animation.target.dataset.handEvolveAnimationActive = 'true';
-      animation.target.style.setProperty('--hand-evolve-delay', `${animation.delayMs}ms`);
-      animation.target.style.setProperty('--hand-evolve-move-ms', `${evolveMoveDurationMs}ms`);
-      animation.target.style.setProperty('--hand-evolve-visible-ms', `${evolveVisibleDurationMs}ms`);
+      attributes['data-hand-evolve-animation-active'] = 'true';
+      styles['--hand-evolve-delay'] = `${animation.delayMs}ms`;
+      styles['--hand-evolve-move-ms'] = `${evolveMoveDurationMs}ms`;
+      styles['--hand-evolve-visible-ms'] = `${evolveVisibleDurationMs}ms`;
     }
-    if (animation.hideContents) {
-      hideTargetContents(animation.target);
-    }
-    activeTargets = [...activeTargets, animation.target];
+    const activeTarget = {
+      target: animation.target,
+      effectClaim: claimAnimationElementEffect({
+        element: animation.target,
+        attributes,
+        styles,
+      }),
+      hiddenClaim: animation.hideContents ? hideTargetContents(animation.target) : undefined,
+    };
+    activeTargets = [...activeTargets, activeTarget];
+    return activeTarget;
   }
 
-  function deactivateTargets(targets: HTMLElement[]) {
-    const nextActiveTargets = new Set(activeTargets);
-    for (const target of targets) {
-      const count = (activeTargetCounts.get(target) ?? 1) - 1;
-      if (count > 0) {
-        activeTargetCounts.set(target, count);
-        continue;
+  function deactivateTargetEffects(targets: ActiveTargetEffect[]) {
+    const targetSet = new Set(targets);
+    for (const target of targetSet) {
+      releaseAnimationElementEffectClaim(target.effectClaim);
+      if (target.hiddenClaim) {
+        releaseElementVisibilityClaim(target.hiddenClaim);
       }
-      activeTargetCounts.delete(target);
-      nextActiveTargets.delete(target);
-      delete target.dataset.handPlayAnimationActive;
-      showTargetContents(target);
-      delete target.dataset.handAttachAnimationActive;
-      delete target.dataset.handEvolveAnimationActive;
-      target.style.removeProperty('--hand-attach-card-image');
-      target.style.removeProperty('--hand-attach-start-x');
-      target.style.removeProperty('--hand-attach-start-y');
-      target.style.removeProperty('--hand-attach-start-rotation');
-      target.style.removeProperty('--hand-attach-delay');
-      target.style.removeProperty('--hand-evolve-delay');
-      target.style.removeProperty('--hand-evolve-move-ms');
-      target.style.removeProperty('--hand-evolve-visible-ms');
     }
-    activeTargets = [...nextActiveTargets];
+    activeTargets = activeTargets.filter((target) => !targetSet.has(target));
   }
 
   function hideTargetContents(target: HTMLElement) {
-    const claims = hiddenContentClaims.get(target) ?? [];
-    claims.push(hideElementForAnimation({
+    return hideElementForAnimation({
       element: target,
       scopeKey,
       role: 'destination',
       fallbackAttribute: 'data-hand-play-animation-hide-contents',
-    }));
-    hiddenContentClaims.set(target, claims);
-  }
-
-  function showTargetContents(target: HTMLElement) {
-    const claims = hiddenContentClaims.get(target) ?? [];
-    for (const claim of claims) {
-      releaseElementVisibilityClaim(claim);
-    }
-    hiddenContentClaims.delete(target);
+    });
   }
 
   function animationTotalMs(animation: TargetAnimation): number {

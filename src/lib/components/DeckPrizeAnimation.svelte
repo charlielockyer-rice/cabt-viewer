@@ -6,6 +6,11 @@
     releaseElementVisibilityClaim,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
+  import {
+    claimAnimationElementEffect,
+    releaseAnimationElementEffectClaim,
+    type AnimationElementEffectClaim,
+  } from '../animations/animationElementEffects';
   import { ReplayAnimationRunState } from '../animations/replayAnimationRunState';
   import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
   import { replayAnimationScopeExitSettleMs, replayAnimationSpriteGroupRemovalMs } from '../animations/replayAnimationHandoff';
@@ -79,6 +84,10 @@
   };
 
   type HiddenPrizeTarget = ElementVisibilityClaim;
+  type ActivePrizeTargetEffect = {
+    target: HTMLElement;
+    effectClaim: AnimationElementEffectClaim;
+  };
 
   let {
     events = [],
@@ -99,9 +108,8 @@
   let nextAnimationId = 1;
   let anchorElement = $state<HTMLElement>();
   let prizeTakes = $state<PrizeTakeAnimation[]>([]);
-  const activeTargetCounts = new WeakMap<HTMLElement, number>();
   let hiddenTargets: HiddenPrizeTarget[] = [];
-  let activeTargets: HTMLElement[] = [];
+  let activeTargets: ActivePrizeTargetEffect[] = [];
 
   onMount(() => {
     if (typeof window.matchMedia !== 'function') {
@@ -237,16 +245,20 @@
       return;
     }
 
-    for (const animation of targetAnimations) {
-      activateTarget(animation);
+    const activated = targetAnimations.map((animation) => ({
+      animation,
+      activeTarget: activateTarget(animation),
+    }));
+
+    for (const { animation, activeTarget } of activated) {
       const timer = setTimeout(() => {
-        deactivateTargets([animation.target]);
+        deactivateTargetEffects([activeTarget]);
       }, animation.delayMs + cardHandoffMs);
       timers.push(timer);
     }
 
     const timer = setTimeout(() => {
-      deactivateTargets(targetAnimations.map((animation) => animation.target));
+      deactivateTargetEffects(activated.map(({ activeTarget }) => activeTarget));
     }, Math.max(...targetAnimations.map((animation) => animation.delayMs)) + cardMoveDurationMs + 120);
     timers.push(timer);
   }
@@ -323,7 +335,7 @@
       clearTimeout(timer);
     }
     timers.length = 0;
-    deactivateTargets(activeTargets);
+    deactivateTargetEffects(activeTargets);
     activeTargets = [];
     clearHiddenTargets();
     prizeTakes = [];
@@ -493,33 +505,29 @@
   }
 
   function activateTarget(animation: PrizeTargetAnimation) {
-    const count = activeTargetCounts.get(animation.target) ?? 0;
-    activeTargetCounts.set(animation.target, count + 1);
-    animation.target.dataset.prizeAnimationActive = 'true';
-    animation.target.style.setProperty('--prize-start-x', `${animation.startX.toFixed(1)}px`);
-    animation.target.style.setProperty('--prize-start-y', `${animation.startY.toFixed(1)}px`);
-    animation.target.style.setProperty('--prize-delay', `${animation.delayMs}ms`);
-    animation.target.style.setProperty('--prize-z-index', `${animation.order}`);
-    activeTargets = [...activeTargets, animation.target];
+    const activeTarget = {
+      target: animation.target,
+      effectClaim: claimAnimationElementEffect({
+        element: animation.target,
+        attributes: { 'data-prize-animation-active': 'true' },
+        styles: {
+          '--prize-start-x': `${animation.startX.toFixed(1)}px`,
+          '--prize-start-y': `${animation.startY.toFixed(1)}px`,
+          '--prize-delay': `${animation.delayMs}ms`,
+          '--prize-z-index': `${animation.order}`,
+        },
+      }),
+    };
+    activeTargets = [...activeTargets, activeTarget];
+    return activeTarget;
   }
 
-  function deactivateTargets(targets: HTMLElement[]) {
-    const nextActiveTargets = new Set(activeTargets);
-    for (const target of targets) {
-      const count = (activeTargetCounts.get(target) ?? 1) - 1;
-      if (count > 0) {
-        activeTargetCounts.set(target, count);
-        continue;
-      }
-      activeTargetCounts.delete(target);
-      nextActiveTargets.delete(target);
-      delete target.dataset.prizeAnimationActive;
-      target.style.removeProperty('--prize-start-x');
-      target.style.removeProperty('--prize-start-y');
-      target.style.removeProperty('--prize-delay');
-      target.style.removeProperty('--prize-z-index');
+  function deactivateTargetEffects(targets: ActivePrizeTargetEffect[]) {
+    const targetSet = new Set(targets);
+    for (const target of targetSet) {
+      releaseAnimationElementEffectClaim(target.effectClaim);
     }
-    activeTargets = [...nextActiveTargets];
+    activeTargets = activeTargets.filter((target) => !targetSet.has(target));
   }
 
   function hideTargets(targets: HTMLElement[]) {
