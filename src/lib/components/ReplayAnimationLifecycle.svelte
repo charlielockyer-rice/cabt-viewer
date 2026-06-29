@@ -89,6 +89,7 @@
           ...claim,
           scopeKey: currentScopeKey,
         });
+        const releaseMs = visibilityClaimReleaseMs(currentPlan, claim);
         planTokens = [...planTokens, token];
         const releaseTimer = setTimeout(() => {
           replayAnimationVisibility.release(token);
@@ -98,7 +99,7 @@
             planTokenReleaseTimers.splice(timerIndex, 1);
           }
           scheduleVisibilityRefresh();
-        }, visibilityClaimReleaseMs(currentPlan, claim));
+        }, releaseMs);
         planTokenReleaseTimers.push(releaseTimer);
       }
     }
@@ -118,9 +119,18 @@
   }
 
   function visibilityClaimReleaseMs(plan: ReplayAnimationPhasePlan, claim: AnimationVisibilityClaim): number {
-    const motion = matchingTargetMotion(plan, claim);
+    const motion = matchingMotionForClaim(plan, claim);
     if (!motion) {
       return Math.min(plan.durationMs, 240);
+    }
+    if (claim.role === 'source') {
+      if (motion.handoffPolicy.hideSourceUntil === 'phase-end') {
+        return plan.durationMs;
+      }
+      if (motion.handoffPolicy.hideSourceUntil === 'snapshot') {
+        return motion.startMs;
+      }
+      return 0;
     }
     if (motion.handoffPolicy.hideDestinationUntil === 'prepaint') {
       return motion.startMs + Math.round(motion.durationMs * 0.88);
@@ -131,11 +141,20 @@
     return 0;
   }
 
-  function matchingTargetMotion(plan: ReplayAnimationPhasePlan, claim: AnimationVisibilityClaim): TargetMotionTiming | undefined {
+  function matchingMotionForClaim(plan: ReplayAnimationPhasePlan, claim: AnimationVisibilityClaim): TargetMotionTiming | undefined {
     const claimAnchorKey = serializeAnimationAnchor(claim.anchor);
     for (const motion of plan.motions) {
       if (
-        'targetAnchor' in motion
+        claim.role === 'source'
+        && 'sourceAnchor' in motion
+        && serializeAnimationAnchor(motion.sourceAnchor) === claimAnchorKey
+        && motionIdentityMatchesClaim(motion.identity, claim)
+      ) {
+        return motion;
+      }
+      if (
+        claim.role !== 'source'
+        && 'targetAnchor' in motion
         && serializeAnimationAnchor(motion.targetAnchor) === claimAnchorKey
         && motionIdentityMatchesClaim(motion.identity, claim)
       ) {
@@ -146,7 +165,22 @@
       }
       for (const step of motion.steps) {
         if (
-          step.targetAnchor
+          claim.role === 'source'
+          && step.sourceAnchor
+          && step.handoffPolicy
+          && serializeAnimationAnchor(step.sourceAnchor) === claimAnchorKey
+          && motionIdentityMatchesClaim(step.identity, claim)
+        ) {
+          return {
+            identity: step.identity,
+            startMs: motion.startMs + step.startMs,
+            durationMs: step.durationMs,
+            handoffPolicy: step.handoffPolicy,
+          };
+        }
+        if (
+          claim.role !== 'source'
+          && step.targetAnchor
           && step.handoffPolicy
           && serializeAnimationAnchor(step.targetAnchor) === claimAnchorKey
           && motionIdentityMatchesClaim(step.identity, claim)

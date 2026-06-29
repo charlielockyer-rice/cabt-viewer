@@ -61,8 +61,9 @@ export function hideElementForAnimation(input: {
   scopeKey: string | number;
   role: AnimationVisibilityRole;
   fallbackAttribute?: string;
+  forceFallback?: boolean;
 }): ElementVisibilityClaim {
-  const anchor = animationAnchorForElement(input.element);
+  const anchor = input.forceFallback ? null : animationAnchorForElement(input.element);
   if (anchor) {
     const scopeKey = String(input.scopeKey);
     const token = replayAnimationVisibility.hide({

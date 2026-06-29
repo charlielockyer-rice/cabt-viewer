@@ -1431,6 +1431,7 @@
         <HandResetAnimation
           events={game.actionTimeline ?? []}
           scopeKey={animationScopeKey}
+          animationPlan={replayAnimationPlan}
           {replayMode}
         />
 

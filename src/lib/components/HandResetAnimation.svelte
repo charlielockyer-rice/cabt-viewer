@@ -6,6 +6,8 @@
     releaseElementVisibilityClaim,
     type ElementVisibilityClaim,
   } from '../animations/animationVisibilityClaims';
+  import { resolveAnimationAnchorElements } from '../animations/animationAnchors';
+  import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import { actionAnimationBatchEvents, actionAnimationStartMs } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -15,6 +17,7 @@
     events?: ActionTimelineEvent[];
     scopeKey?: string | number;
     replayMode?: boolean;
+    animationPlan?: ReplayAnimationPhasePlan;
   };
 
   type RectSnapshot = {
@@ -49,6 +52,7 @@
     moveY: number;
     scale: number;
     delayMs: number;
+    durationMs: number;
     sourceElement: HTMLElement;
   };
 
@@ -68,6 +72,7 @@
     events = [],
     scopeKey = '',
     replayMode = false,
+    animationPlan,
   }: Props = $props();
 
   const timers: ReturnType<typeof setTimeout>[] = [];
@@ -77,6 +82,7 @@
   let seenEventIds = new Set<number>();
   let initialized = false;
   let lastScopeKey: string | number = '';
+  let lastPlanKey = '';
   let reduceMotion = $state(false);
   let nextAnimationId = 1;
   let resets = $state<ResetAnimation[]>([]);
@@ -106,8 +112,31 @@
   $effect(() => {
     const currentEvents = events;
     const currentScopeKey = scopeKey;
+    const plannedMotions = handToDeckPlanMotions(animationPlan);
+    const planKey = handToDeckPlanKey(plannedMotions);
     const scopeChanged = initialized && currentScopeKey !== lastScopeKey;
+    const planChanged = planKey !== lastPlanKey;
     lastScopeKey = currentScopeKey;
+    lastPlanKey = planKey;
+
+    if (plannedMotions.length) {
+      const shouldStartPlan = !initialized || planChanged || scopeChanged;
+      initialized = true;
+      if (shouldStartPlan) {
+        clearResets({ restoreSources: false, restoreConnectedSourcesAfterMs: handOutroSettleMs });
+        if (reduceMotion || startPlannedReset(plannedMotions)) {
+          for (const event of currentEvents) {
+            seenEventIds.add(event.id);
+          }
+          return;
+        }
+      } else {
+        for (const event of currentEvents) {
+          seenEventIds.add(event.id);
+        }
+        return;
+      }
+    }
 
     if (!initialized) {
       for (const event of currentEvents) {
@@ -140,6 +169,43 @@
       startReset(resetEvents, animationEvents);
     }
   });
+
+  function handToDeckPlanMotions(plan: ReplayAnimationPhasePlan | undefined): CardMoveAnimationMotion[] {
+    return (plan?.motions ?? []).filter((motion): motion is CardMoveAnimationMotion =>
+      motion.kind === 'card-move'
+      && motion.coordinateSpace === 'viewport'
+      && motion.sourceAnchor.kind === 'hand-card'
+      && motion.targetAnchor.kind === 'deck-top'
+      && plan?.key.startsWith(`HandToDeck:${motion.sourceAnchor.playerIndex}`),
+    );
+  }
+
+  function handToDeckPlanKey(motions: CardMoveAnimationMotion[]): string {
+    return motions.map((motion) => `${motion.id}:${motion.startMs}:${motion.durationMs}`).join('|');
+  }
+
+  function startPlannedReset(motions: CardMoveAnimationMotion[]): boolean {
+    const sprites = motions.map((motion) => plannedResetSpriteForMotion(motion));
+    if (sprites.some((sprite) => !sprite)) {
+      return false;
+    }
+    const plannedSprites = sprites.filter((sprite): sprite is ResetSprite => !!sprite);
+
+    const animation: ResetAnimation = {
+      id: nextAnimationId++,
+      sprites: plannedSprites,
+    };
+    const animationSources = hideSources(plannedSprites.map((sprite) => sprite.sourceElement));
+    resets = [...resets, animation];
+    const timer = setTimeout(() => {
+      if (!replayMode) {
+        showSources(animationSources);
+      }
+      resets = resets.filter((item) => item.id !== animation.id);
+    }, Math.max(...plannedSprites.map((sprite) => sprite.delayMs + sprite.durationMs)) + 120);
+    timers.push(timer);
+    return true;
+  }
 
   function startReset(resetEvents: ActionTimelineEvent[], animationEvents: ActionTimelineEvent[]) {
     if (reduceMotion) {
@@ -234,8 +300,82 @@
       moveY: deckCenter.y - cardCenter.y,
       scale: Math.max(0.5, Math.min(1.2, deckRect.width / card.width)),
       delayMs: actionAnimationStartMs(animationEvents, event),
+      durationMs: cardMoveDurationMs,
       sourceElement: card.sourceElement,
     }];
+  }
+
+  function plannedResetSpriteForMotion(motion: CardMoveAnimationMotion): ResetSprite | undefined {
+    const sourceElement = animationElementForMotionAnchor(motion.sourceAnchor, motion.identity);
+    const deck = animationElementForMotionAnchor(motion.targetAnchor, motion.identity);
+    if (!sourceElement || !deck) {
+      return undefined;
+    }
+    const visualCard = sourceElement.querySelector('.card-tile');
+    const sourceRect = (visualCard instanceof HTMLElement ? visualCard : sourceElement).getBoundingClientRect();
+    const deckRect = deck.getBoundingClientRect();
+    if (sourceRect.width <= 0 || sourceRect.height <= 0 || deckRect.width <= 0 || deckRect.height <= 0) {
+      return undefined;
+    }
+
+    const deckCenter = centerOf(deckRect);
+    const cardCenter = centerOf(sourceRect);
+    const handElement = sourceElement.closest('.hand');
+    const card = plannedMotionCard(motion);
+    return {
+      id: motion.id,
+      card,
+      concealed: handElement?.classList.contains('concealed') ?? plannedMotionFaceDown(motion),
+      topHand: !!sourceElement.closest('.player-panel.top'),
+      left: sourceRect.left,
+      top: sourceRect.top,
+      width: sourceRect.width,
+      height: sourceRect.height,
+      moveX: deckCenter.x - cardCenter.x,
+      moveY: deckCenter.y - cardCenter.y,
+      scale: Math.max(0.5, Math.min(1.2, deckRect.width / sourceRect.width)),
+      delayMs: motion.startMs,
+      durationMs: motion.durationMs,
+      sourceElement,
+    };
+  }
+
+  function animationElementForMotionAnchor(
+    anchor: CardMoveAnimationMotion['sourceAnchor'],
+    identity: CardMoveAnimationMotion['identity'],
+  ): HTMLElement | undefined {
+    const element = resolveAnimationAnchorElements(anchor, { identity }).at(0)
+      ?? resolveAnimationAnchorElements(anchor).at(0);
+    if (!element) {
+      return undefined;
+    }
+    if (anchor.kind === 'deck-top') {
+      const pile = element.closest('.deck-pile');
+      if (pile instanceof HTMLElement) {
+        const face = pile.querySelector('.deck-card-face');
+        return face instanceof HTMLElement ? face : pile;
+      }
+    }
+    return element;
+  }
+
+  function plannedMotionCard(motion: CardMoveAnimationMotion): CardView | undefined {
+    if (motion.spriteVisual.kind !== 'card') {
+      return undefined;
+    }
+    const cardId = motion.identity?.cardId ?? motion.spriteVisual.card?.id;
+    if (!Number.isFinite(Number(cardId))) {
+      return undefined;
+    }
+    return {
+      ...cabtCardToView(Number(cardId)),
+      ...(motion.spriteVisual.card ?? {}),
+      serial: motion.identity?.serial ?? motion.spriteVisual.card?.serial,
+    };
+  }
+
+  function plannedMotionFaceDown(motion: CardMoveAnimationMotion): boolean {
+    return motion.spriteVisual.kind === 'card' && motion.spriteVisual.faceDown === true;
   }
 
   function isHandToDeckMove(event: ActionTimelineEvent): boolean {
@@ -321,6 +461,7 @@
         scopeKey,
         role: 'source',
         fallbackAttribute: 'data-hand-reset-animation-hidden',
+        forceFallback: true,
       }));
     }
     hiddenSources = [...hiddenSources, ...hidden];
@@ -346,7 +487,7 @@
       `--hand-reset-move-y: ${sprite.moveY.toFixed(1)}px`,
       `--hand-reset-scale: ${sprite.scale.toFixed(3)}`,
       `--hand-reset-delay: ${sprite.delayMs}ms`,
-      `--hand-reset-move-ms: ${cardMoveDurationMs}ms`,
+      `--hand-reset-move-ms: ${sprite.durationMs}ms`,
     ].join('; ');
   }
 </script>

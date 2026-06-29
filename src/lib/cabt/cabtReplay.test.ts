@@ -2214,6 +2214,55 @@ describe('cabtReplayToSnapshot', () => {
     ]);
     expect(step.animationPhases?.[0].view.players[0].hand.map((card) => card.serial)).toEqual([120, 101, 81, 109, 100]);
     expect(step.animationPhases?.[1].view.players[0].hand.map((card) => card.serial)).toEqual([120, 101, 81, 109, 100]);
+    expect(step.animationPhases?.[1].animationPlan?.motions).toMatchObject([
+      {
+        kind: 'card-move',
+        coordinateSpace: 'viewport',
+        sourceAnchor: { kind: 'hand-card', playerIndex: 0, handIndex: 0, serial: 120 },
+        targetAnchor: { kind: 'deck-top', playerIndex: 0 },
+        identity: { kind: 'card', serial: 120, cardId: 3 },
+        startMs: 0,
+        durationMs: 360,
+        handoffPolicy: {
+          hideSourceUntil: 'scope-exit',
+          hideDestinationUntil: 'none',
+          removeSprite: 'phase-end',
+        },
+      },
+      {
+        kind: 'card-move',
+        coordinateSpace: 'viewport',
+        sourceAnchor: { kind: 'hand-card', playerIndex: 0, handIndex: 1, serial: 101 },
+        targetAnchor: { kind: 'deck-top', playerIndex: 0 },
+        identity: { kind: 'card', serial: 101, cardId: 3 },
+        startMs: 60,
+      },
+      {
+        kind: 'card-move',
+        coordinateSpace: 'viewport',
+        sourceAnchor: { kind: 'hand-card', playerIndex: 0, handIndex: 2, serial: 81 },
+        targetAnchor: { kind: 'deck-top', playerIndex: 0 },
+        identity: { kind: 'card', serial: 81, cardId: 1227 },
+        startMs: 120,
+      },
+      {
+        kind: 'card-move',
+        coordinateSpace: 'viewport',
+        sourceAnchor: { kind: 'hand-card', playerIndex: 0, handIndex: 3, serial: 109 },
+        targetAnchor: { kind: 'deck-top', playerIndex: 0 },
+        identity: { kind: 'card', serial: 109, cardId: 3 },
+        startMs: 180,
+      },
+      {
+        kind: 'card-move',
+        coordinateSpace: 'viewport',
+        sourceAnchor: { kind: 'hand-card', playerIndex: 0, handIndex: 4, serial: 100 },
+        targetAnchor: { kind: 'deck-top', playerIndex: 0 },
+        identity: { kind: 'card', serial: 100, cardId: 3 },
+        startMs: 240,
+      },
+    ]);
+    expect(step.animationPhases?.[1].animationPlan?.visibilityClaims).toEqual([]);
     expect(step.animationPhases?.[2].view.players[0].hand).toHaveLength(0);
     expect(step.animationPhases?.[3].view.players[0].hand.map((card) => card.serial)).toEqual([94, 102, 80, 100]);
     expect(step.animationPhases?.map((phase) => phase.view.players[0].playZone.map((card) => card.serial))).toEqual([
