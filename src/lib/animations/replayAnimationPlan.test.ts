@@ -51,10 +51,10 @@ describe('replay animation phase plans', () => {
   });
 
   it('matches animation phase keys through the shared routing helper', () => {
-    expect(replayAnimationPlanHasPhase({ key: 'Draw:0', kind: 'Draw' }, 'Draw', 0)).toBe(true);
-    expect(replayAnimationPlanHasPhase({ key: 'Draw:0', kind: 'Draw' }, 'Draw')).toBe(true);
-    expect(replayAnimationPlanHasPhase({ key: 'Draw:0', kind: 'Draw' }, 'Draw', 1)).toBe(false);
-    expect(replayAnimationPlanHasPhase({ key: 'Draw:0', kind: 'Draw' }, 'Shuffle', 0)).toBe(false);
+    expect(replayAnimationPlanHasPhase({ kind: 'Draw', playerIndex: 0 }, 'Draw', 0)).toBe(true);
+    expect(replayAnimationPlanHasPhase({ kind: 'Draw', playerIndex: 0 }, 'Draw')).toBe(true);
+    expect(replayAnimationPlanHasPhase({ kind: 'Draw', playerIndex: 0 }, 'Draw', 1)).toBe(false);
+    expect(replayAnimationPlanHasPhase({ kind: 'Draw', playerIndex: 0 }, 'Shuffle', 0)).toBe(false);
     expect(replayAnimationPlanHasPhase(undefined, 'Draw', 0)).toBe(false);
   });
 

@@ -8,12 +8,15 @@ import {
   revealStartActionsForSteps,
 } from './revealSessionPlanActions';
 import type { RevealSessionAnimationMotion, ReplayAnimationPhasePlan } from './replayAnimationPlan';
+import type { GameView } from '../game/types';
 
 describe('reveal session plan actions', () => {
   it('filters reveal session motions and builds a stable plan key', () => {
     const revealMotion = revealSessionMotion();
     const plan = {
       key: 'DeckReveal:0',
+      kind: 'DeckReveal',
+      view: {} as GameView,
       durationMs: 1000,
       motions: [
         revealMotion,
@@ -27,7 +30,7 @@ describe('reveal session plan actions', () => {
         },
       ],
       visibilityClaims: [],
-    } as ReplayAnimationPhasePlan;
+    } satisfies ReplayAnimationPhasePlan;
 
     expect(revealSessionMotions(plan)).toEqual([revealMotion]);
     expect(revealSessionPlanKey([revealMotion])).toBe('reveal-session:reveal-66,take-66,return-70');

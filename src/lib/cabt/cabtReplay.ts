@@ -1511,6 +1511,7 @@ function replayAnimationPlanForPhase(
   return createReplayAnimationPhasePlan({
     key: phase.key,
     kind: phase.kind,
+    playerIndex: phase.playerIndex,
     label,
     view,
     durationMs: options.durationMs ?? phase.durationMs,
@@ -2959,6 +2960,7 @@ function boardPokemonDestinationForEvent(
 type AnimationEventPhase = {
   key: string;
   kind: ActionAnimationPhaseKind;
+  playerIndex?: number;
   events: ActionTimelineEvent[];
   durationMs: number;
   usesSourceView: boolean;
@@ -2990,6 +2992,7 @@ function animationEventPhases(events: ActionTimelineEvent[]): AnimationEventPhas
     phases.push({
       key,
       kind,
+      playerIndex: event.playerIndex,
       events: [event],
       durationMs: animationPhaseDurationMs(key, 1),
       usesSourceView: animationPhaseUsesSourceView(key),
@@ -3397,7 +3400,7 @@ function applyKnockOutDiscardTopOrdering(steps: ReplayStep[]): void {
     }
     if (step.animationPhases?.length) {
       step.animationPhases = step.animationPhases.map((phase) => {
-        if (actionAnimationPhaseKind(phase.key) !== 'KnockOut') {
+        if (phase.kind !== 'KnockOut') {
           return phase;
         }
         return {

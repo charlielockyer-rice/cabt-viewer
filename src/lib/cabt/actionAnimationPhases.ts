@@ -432,6 +432,10 @@ export function actionAnimationPhaseCardDurationMs(key: string): number {
   return actionAnimationPhaseConfigForKey(key)?.durationMs ?? actionAnimationTiming.handMoveMs;
 }
 
+export function actionAnimationPhaseKindDurationMs(kind: ActionAnimationPhaseKind): number {
+  return actionAnimationPhaseKindConfig[kind].durationMs;
+}
+
 export function actionAnimationPhaseStepMs(key: string): number {
   return actionAnimationPhaseConfigForKey(key)?.stepMs ?? actionAnimationTiming.handMoveStepMs;
 }

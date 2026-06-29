@@ -232,6 +232,7 @@ describe('cabtReplayToSnapshot', () => {
     });
     expect(step.animationPhases?.map((phase) => phase.key)).toEqual(['Ability:0', 'Draw:0', 'BoardToDeck:0', 'Shuffle:0']);
     expect(step.animationPhases?.every((phase) => phase.kind === actionAnimationPhaseKind(phase.key))).toBe(true);
+    expect(step.animationPhases?.every((phase) => phase.animationPlan?.playerIndex === 0)).toBe(true);
     expect(step.animationPhases?.[0].view.players[0].active.pokemon?.serial).toBe(14);
     expect(step.animationPhases?.[0].animationPlan?.motions).toMatchObject([
       {

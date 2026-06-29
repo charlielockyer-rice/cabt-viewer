@@ -91,6 +91,7 @@ export type AnimationMotion =
 export type ReplayAnimationPhasePlan = {
   key: string;
   kind: ReplayAnimationPhaseKind;
+  playerIndex?: number;
   label?: string;
   view: GameView;
   durationMs: number;
@@ -139,6 +140,7 @@ export type ReplayAnimationMotionTiming = {
 export function createReplayAnimationPhasePlan(input: {
   key: string;
   kind: ReplayAnimationPhaseKind;
+  playerIndex?: number;
   label?: string;
   view: GameView;
   durationMs: number;
@@ -162,6 +164,7 @@ export function createReplayAnimationPhasePlan(input: {
   return {
     key: input.key,
     kind: input.kind,
+    playerIndex: input.playerIndex,
     label: input.label,
     view: input.view,
     durationMs: input.durationMs,
@@ -223,15 +226,14 @@ export function replayAnimationVisibilityClaimsForMotions(
 }
 
 export function replayAnimationPlanHasPhase(
-  plan: Pick<ReplayAnimationPhasePlan, 'key' | 'kind'> | undefined,
+  plan: Pick<ReplayAnimationPhasePlan, 'kind' | 'playerIndex'> | undefined,
   kind: ReplayAnimationPhaseKind,
   playerIndex?: number,
 ): boolean {
   if (!plan) {
     return false;
   }
-  const [, planPlayer] = plan.key.split(':');
-  return plan.kind === kind && (playerIndex === undefined || planPlayer === String(playerIndex));
+  return plan.kind === kind && (playerIndex === undefined || plan.playerIndex === playerIndex);
 }
 
 export function replayAnimationMotionTiming(motion: AnimationMotion): ReplayAnimationMotionTiming {

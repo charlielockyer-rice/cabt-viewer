@@ -12,10 +12,9 @@
   } from '../animations/animationElementEffects';
   import { resolveStrictAnimationAnchorElement } from '../animations/animationAnchors';
   import { replayAnimationScopeExitSettleMs, replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
-  import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
+  import { createReplayPhasePlanRunner, type ReplayPhasePlanRunnerContext } from '../animations/replayPhasePlanRunner.svelte';
   import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
   import type { CardMoveAnimationMotion, ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
-  import { actionAnimationPhaseKind } from '../cabt/actionAnimationPhases';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
@@ -176,8 +175,11 @@
     activateAnimations(targetAnimations);
   }
 
-  function startPlannedPlay(motions: CardMoveAnimationMotion[]) {
-    const targetAnimations = motions.flatMap(targetAnimationForMotion);
+  function startPlannedPlay(
+    motions: CardMoveAnimationMotion[],
+    context: ReplayPhasePlanRunnerContext<CardMoveAnimationMotion>,
+  ) {
+    const targetAnimations = motions.flatMap((motion) => targetAnimationForMotion(motion, context.plan));
     activateAnimations(targetAnimations);
   }
 
@@ -228,7 +230,10 @@
     }
   }
 
-  function targetAnimationForMotion(motion: CardMoveAnimationMotion): TargetAnimation[] {
+  function targetAnimationForMotion(
+    motion: CardMoveAnimationMotion,
+    plan: ReplayAnimationPhasePlan | undefined,
+  ): TargetAnimation[] {
     if (motion.sourceAnchor.kind !== 'hand-card') {
       return [];
     }
@@ -283,7 +288,7 @@
     }
 
     const label = spriteCard?.name ?? metadataCard?.name ?? motion.identity?.name ?? 'Card';
-    const isEvolution = isEvolutionMotion(motion);
+    const isEvolution = plan?.kind === 'Evolve';
     return [{
       kind: 'fixed',
       mode: isEvolution ? 'evolve' : 'play',
@@ -306,10 +311,6 @@
       removeMs: replayAnimationSpriteRemovalMs(motion, animationPlan?.durationMs),
       planned: true,
     }];
-  }
-
-  function isEvolutionMotion(motion: CardMoveAnimationMotion): boolean {
-    return actionAnimationPhaseKind(motion.id) === 'Evolve';
   }
 
   function slotAttachTargetForMotion(motion: CardMoveAnimationMotion, target: HTMLElement): HTMLElement | null {

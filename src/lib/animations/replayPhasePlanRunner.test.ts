@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createReplayPhasePlanRunner } from './replayPhasePlanRunner.svelte';
-import type { AnimationMotion, ReplayAnimationPhasePlan } from './replayAnimationPlan';
+import type { AnimationMotion, ReplayAnimationPhaseKind, ReplayAnimationPhasePlan } from './replayAnimationPlan';
 import type { ActionTimelineEvent, GameView } from '../game/types';
 
 describe('createReplayPhasePlanRunner', () => {
@@ -14,7 +14,7 @@ describe('createReplayPhasePlanRunner', () => {
       },
     });
     const event = timelineEvent(10);
-    const plan = phasePlan('Draw:0', [motion('draw-a')]);
+    const plan = phasePlan('Draw:0', 'Draw', [motion('draw-a')]);
 
     expect(runner.update({ events: [event], scopeKey: 'step-a', replayMode: true, animationPlan: plan }).handled).toBe(true);
     expect(runner.update({ events: [event], scopeKey: 'step-a', replayMode: true, animationPlan: plan }).handled).toBe(true);
@@ -33,9 +33,9 @@ describe('createReplayPhasePlanRunner', () => {
       startPlanned: (motions) => lifecycle.push(`start:${motions[0]?.id}`),
     });
 
-    runner.update({ scopeKey: 'step-a', replayMode: true, animationPlan: phasePlan('Draw:0', [motion('draw-a')]) });
-    runner.update({ scopeKey: 'step-a', replayMode: true, animationPlan: phasePlan('Draw:0', [motion('draw-b')]) });
-    runner.update({ scopeKey: 'step-b', replayMode: true, animationPlan: phasePlan('Draw:0', [motion('draw-b')]) });
+    runner.update({ scopeKey: 'step-a', replayMode: true, animationPlan: phasePlan('Draw:0', 'Draw', [motion('draw-a')]) });
+    runner.update({ scopeKey: 'step-a', replayMode: true, animationPlan: phasePlan('Draw:0', 'Draw', [motion('draw-b')]) });
+    runner.update({ scopeKey: 'step-b', replayMode: true, animationPlan: phasePlan('Draw:0', 'Draw', [motion('draw-b')]) });
 
     expect(lifecycle).toEqual(['start:draw-a', 'plan', 'start:draw-b', 'scope', 'start:draw-b']);
   });
@@ -90,7 +90,7 @@ describe('createReplayPhasePlanRunner', () => {
       selectMotions: (plan) => plan?.motions ?? [],
       startPlanned: (motions) => started.push(...motions.map((motion) => motion.id)),
     });
-    const plan = phasePlan('Draw:0', [motion('draw-a')]);
+    const plan = phasePlan('Draw:0', 'Draw', [motion('draw-a')]);
 
     expect(runner.update({ scopeKey: 'step-a', replayMode: false, animationPlan: plan }).handled).toBe(true);
     expect(runner.update({ scopeKey: 'step-b', replayMode: false, animationPlan: plan }).handled).toBe(false);
@@ -110,7 +110,7 @@ describe('createReplayPhasePlanRunner', () => {
       events: [event],
       scopeKey: 'step-a',
       replayMode: true,
-      animationPlan: phasePlan('Shuffle:0', [motion('shuffle-a')]),
+      animationPlan: phasePlan('Shuffle:0', 'Shuffle', [motion('shuffle-a')]),
     });
 
     expect(result.handled).toBe(true);
@@ -120,9 +120,14 @@ describe('createReplayPhasePlanRunner', () => {
   });
 });
 
-function phasePlan(key: string, motions: AnimationMotion[]): ReplayAnimationPhasePlan {
+function phasePlan(
+  key: string,
+  kind: ReplayAnimationPhaseKind,
+  motions: AnimationMotion[],
+): ReplayAnimationPhasePlan {
   return {
     key,
+    kind,
     view: {} as GameView,
     durationMs: 500,
     motions,

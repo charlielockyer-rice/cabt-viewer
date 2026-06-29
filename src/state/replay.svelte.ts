@@ -1,6 +1,6 @@
 import type { GameView } from '../lib/game/types';
 import { replayAnimationPhaseGapMs, replayStepPlaybackDelayMs, type ReplayAnimationPhase, type ReplaySnapshot, type ReplayStep } from '../lib/game/replay';
-import { actionAnimationPhaseCardDurationMs } from '../lib/cabt/actionAnimationPhases';
+import { actionAnimationPhaseKindDurationMs } from '../lib/cabt/actionAnimationPhases';
 import { cabtReplayToSnapshot } from '../lib/cabt/cabtReplay';
 
 class ReplayStore {
@@ -298,5 +298,5 @@ function replayPhaseDurationMs(phase: ReplayAnimationPhase): number {
   if (Number.isFinite(phase.durationMs) && phase.durationMs > 0) {
     return phase.durationMs;
   }
-  return actionAnimationPhaseCardDurationMs(phase.key);
+  return actionAnimationPhaseKindDurationMs(phase.kind);
 }
