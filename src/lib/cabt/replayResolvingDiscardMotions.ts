@@ -2,8 +2,8 @@ import {
   actionAnimationTiming,
   isKnockOutMove,
 } from './actionAnimationPhases';
-import { isMoveCardKind } from './replayActionGroups';
 import { eventCardMatches } from './replayCardIdentity';
+import { replayEventMoveAreas } from './replayEventAreas';
 import type { ResolvingPlayedCard } from './replayResolvingCards';
 import type {
   AnimationAnchorRef,
@@ -110,7 +110,6 @@ function resolvingDiscardCardMoveMotion(
 }
 
 function isKnockOutEvent(event: ActionTimelineEvent): boolean {
-  const params = event.params as Record<string, unknown> | undefined;
-  return isMoveCardKind(event.kind)
-    && isKnockOutMove(Number(params?.fromArea), Number(params?.toArea));
+  const areas = replayEventMoveAreas(event);
+  return areas !== undefined && isKnockOutMove(areas.fromArea, areas.toArea);
 }

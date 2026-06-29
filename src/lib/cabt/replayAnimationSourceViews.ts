@@ -6,6 +6,7 @@ import { handDestinationAnchorForEvent } from './replayAnimationAnchors';
 import { isMoveCardKind } from './replayActionGroups';
 import { isCabtStadiumCard } from './replayCardData';
 import { sameKnownCard } from './replayCardIdentity';
+import { replayEventMoveAreas } from './replayEventAreas';
 import { finiteNumber } from './replayEventParams';
 import type { AnimationEventPhase } from './replayAnimationPhases';
 import {
@@ -205,8 +206,8 @@ function mergedKnownCards(left: CardView[], right: CardView[]): CardView[] {
 }
 
 function isAttachedToHandMoveEvent(event: ActionTimelineEvent): boolean {
-  const params = event.params as Record<string, unknown> | undefined;
-  return isMoveCardKind(event.kind)
-    && isAttachedCardArea(Number(params?.fromArea))
-    && Number(params?.toArea) === CabtAreaType.HAND;
+  const areas = replayEventMoveAreas(event);
+  return areas !== undefined
+    && isAttachedCardArea(areas.fromArea)
+    && areas.toArea === CabtAreaType.HAND;
 }
