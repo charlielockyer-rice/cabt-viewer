@@ -1,10 +1,22 @@
 import type { Point } from '../dom/planeGeometry';
 import type { CardView } from '../game/types';
+import { cardHeightToWidthRatio } from './viewportCardMotion';
 
 export type HandPlayCardVisual = {
   label: string;
   setLabel: string;
   typeClass: string;
+};
+
+export type RectSnapshot = {
+  x: number;
+  y: number;
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
 };
 
 export function handPlayCardVisual(
@@ -95,6 +107,77 @@ export function cssMatrix3dForQuad(width: number, height: number, quad: Point[])
   ].join('');
 }
 
+export function sourceRectForHand(
+  handElement: HTMLElement,
+  serial: number,
+  previousCardRects: ReadonlyMap<number, RectSnapshot>,
+): DOMRect {
+  const previousRect = previousCardRects.get(serial);
+  if (previousRect) {
+    return rectSnapshotToDomRect(previousRect);
+  }
+
+  if (Number.isFinite(serial)) {
+    const matchingCard = handElement.querySelector(`[data-card-serial="${serial}"]`);
+    if (matchingCard instanceof HTMLElement) {
+      return matchingCard.getBoundingClientRect();
+    }
+  }
+
+  const handRect = handElement.getBoundingClientRect();
+  const cardRect = firstHandCardRect(handElement);
+  const width = cardRect?.width ?? Math.min(handRect.width * 0.16, handRect.height / cardHeightToWidthRatio);
+  const height = cardRect?.height ?? width * cardHeightToWidthRatio;
+  return {
+    left: handRect.left + handRect.width / 2 - width / 2,
+    top: handRect.top + handRect.height / 2 - height / 2,
+    right: handRect.left + handRect.width / 2 + width / 2,
+    bottom: handRect.top + handRect.height / 2 + height / 2,
+    x: handRect.left + handRect.width / 2 - width / 2,
+    y: handRect.top + handRect.height / 2 - height / 2,
+    width,
+    height,
+    toJSON: () => ({}),
+  } as DOMRect;
+}
+
+export function hasKnownHandSource(
+  handElement: HTMLElement,
+  serial: number,
+  previousCardRects: ReadonlyMap<number, RectSnapshot>,
+): boolean {
+  if (!Number.isFinite(serial)) {
+    return false;
+  }
+  if (previousCardRects.has(serial)) {
+    return true;
+  }
+  return handElement.querySelector(`[data-card-serial="${serial}"]`) instanceof HTMLElement;
+}
+
+export function snapshotHandCardRects(root: ParentNode = document): Map<number, RectSnapshot> {
+  const nextRects = new Map<number, RectSnapshot>();
+  for (const element of root.querySelectorAll('[data-card-anchor$=":hand"] [data-card-serial]')) {
+    if (!(element instanceof HTMLElement)) {
+      continue;
+    }
+    const serial = Number(element.dataset.cardSerial);
+    if (!Number.isFinite(serial)) {
+      continue;
+    }
+    const rect = element.getBoundingClientRect();
+    nextRects.set(serial, rectSnapshot(rect));
+  }
+  return nextRects;
+}
+
+export function rectSnapshotToDomRect(rect: RectSnapshot): DOMRect {
+  return {
+    ...rect,
+    toJSON: () => ({}),
+  } as DOMRect;
+}
+
 function handPlayCardTypeClass(card: CardView | undefined): string {
   if (!card) {
     return 'pokemon';
@@ -135,6 +218,24 @@ function rotatedRectQuad(rect: DOMRect): Point[] {
     { x: rect.left, y: rect.top },
     { x: rect.right, y: rect.top },
   ];
+}
+
+function firstHandCardRect(handElement: HTMLElement): DOMRect | null {
+  const card = handElement.querySelector('.card-tile');
+  return card instanceof HTMLElement ? card.getBoundingClientRect() : null;
+}
+
+function rectSnapshot(rect: Pick<DOMRect, 'left' | 'top' | 'right' | 'bottom' | 'width' | 'height'>): RectSnapshot {
+  return {
+    left: rect.left,
+    top: rect.top,
+    right: rect.right,
+    bottom: rect.bottom,
+    x: rect.left,
+    y: rect.top,
+    width: rect.width,
+    height: rect.height,
+  };
 }
 
 function formatMatrixNumber(value: number): string {

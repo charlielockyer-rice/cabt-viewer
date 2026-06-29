@@ -14,8 +14,12 @@
   import {
     cssMatrix3dForQuad,
     handPlayCardVisual,
+    hasKnownHandSource,
+    snapshotHandCardRects,
     slotAttachStartOffset,
+    sourceRectForHand,
     sourceQuadForHandElement,
+    type RectSnapshot,
     visibleCardRectForAnchor,
     visibleElementRect,
     visualTargetForHandPlay,
@@ -42,17 +46,6 @@
     scopeKey?: string | number;
     replayMode?: boolean;
     animationPlan?: ReplayAnimationPhasePlan;
-  };
-
-  type RectSnapshot = {
-    x: number;
-    y: number;
-    left: number;
-    top: number;
-    right: number;
-    bottom: number;
-    width: number;
-    height: number;
   };
 
   type FixedAnimation = {
@@ -111,7 +104,6 @@
   const cardMoveDurationMs = 360;
   const evolveMoveDurationMs = 430;
   const evolveVisibleDurationMs = actionAnimationTiming.evolveMs + replayAnimationPhaseGapMs + 40;
-  const cardHeightToWidthRatio = 88 / 63;
   let nextPlayId = 0;
   let previousCardRects = new Map<number, RectSnapshot>();
   let activePlays = $state<ActivePlay[]>([]);
@@ -392,11 +384,11 @@
     if (!handElement || !target || !planeElement) {
       return [];
     }
-    if (event.kind === 'Attach' && !hasKnownHandSource(handElement, serial)) {
+    if (event.kind === 'Attach' && !hasKnownHandSource(handElement, serial, previousCardRects)) {
       return [];
     }
 
-    const sourceRect = sourceRectForHand(handElement, serial);
+    const sourceRect = sourceRectForHand(handElement, serial, previousCardRects);
     const visualTarget = visualTargetForHandPlay(target);
     const targetRect = visibleElementRect(visualTarget);
     if (sourceRect.width <= 0 || sourceRect.height <= 0 || !targetRect) {
@@ -685,83 +677,6 @@
 
   function handAnchor(playerIndex: number): HTMLElement | null {
     return document.querySelector(`[data-card-anchor="player:${playerIndex}:hand"]`);
-  }
-
-  function sourceRectForHand(handElement: HTMLElement, serial: number): DOMRect {
-    const previousRect = previousCardRects.get(serial);
-    if (previousRect) {
-      return rectSnapshotToDomRect(previousRect);
-    }
-
-    if (Number.isFinite(serial)) {
-      const matchingCard = handElement.querySelector(`[data-card-serial="${serial}"]`);
-      if (matchingCard instanceof HTMLElement) {
-        return matchingCard.getBoundingClientRect();
-      }
-    }
-
-    const handRect = handElement.getBoundingClientRect();
-    const cardRect = firstHandCardRect(handElement);
-    const width = cardRect?.width ?? Math.min(handRect.width * 0.16, handRect.height / cardHeightToWidthRatio);
-    const height = cardRect?.height ?? width * cardHeightToWidthRatio;
-    return {
-      left: handRect.left + handRect.width / 2 - width / 2,
-      top: handRect.top + handRect.height / 2 - height / 2,
-      right: handRect.left + handRect.width / 2 + width / 2,
-      bottom: handRect.top + handRect.height / 2 + height / 2,
-      x: handRect.left + handRect.width / 2 - width / 2,
-      y: handRect.top + handRect.height / 2 - height / 2,
-      width,
-      height,
-      toJSON: () => ({}),
-    } as DOMRect;
-  }
-
-  function hasKnownHandSource(handElement: HTMLElement, serial: number): boolean {
-    if (!Number.isFinite(serial)) {
-      return false;
-    }
-    if (previousCardRects.has(serial)) {
-      return true;
-    }
-    return handElement.querySelector(`[data-card-serial="${serial}"]`) instanceof HTMLElement;
-  }
-
-  function snapshotHandCardRects(): Map<number, RectSnapshot> {
-    const nextRects = new Map<number, RectSnapshot>();
-    for (const element of document.querySelectorAll('[data-card-anchor$=":hand"] [data-card-serial]')) {
-      if (!(element instanceof HTMLElement)) {
-        continue;
-      }
-      const serial = Number(element.dataset.cardSerial);
-      if (!Number.isFinite(serial)) {
-        continue;
-      }
-      const rect = element.getBoundingClientRect();
-      nextRects.set(serial, {
-        left: rect.left,
-        top: rect.top,
-        right: rect.right,
-        bottom: rect.bottom,
-        x: rect.left,
-        y: rect.top,
-        width: rect.width,
-        height: rect.height,
-      });
-    }
-    return nextRects;
-  }
-
-  function rectSnapshotToDomRect(rect: RectSnapshot): DOMRect {
-    return {
-      ...rect,
-      toJSON: () => ({}),
-    } as DOMRect;
-  }
-
-  function firstHandCardRect(handElement: HTMLElement): DOMRect | null {
-    const card = handElement.querySelector('.card-tile');
-    return card instanceof HTMLElement ? card.getBoundingClientRect() : null;
   }
 
 </script>
