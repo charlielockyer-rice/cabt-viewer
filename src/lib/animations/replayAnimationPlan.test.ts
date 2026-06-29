@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createReplayAnimationPhasePlan,
+  replayAnimationPlanHasAnyPhase,
   replayAnimationPlanHasPhase,
   replayAnimationMotionSpanMs,
   replayAnimationMotionTimings,
@@ -56,6 +57,12 @@ describe('replay animation phase plans', () => {
     expect(replayAnimationPlanHasPhase({ kind: 'Draw', playerIndex: 0 }, 'Draw', 1)).toBe(false);
     expect(replayAnimationPlanHasPhase({ kind: 'Draw', playerIndex: 0 }, 'Shuffle', 0)).toBe(false);
     expect(replayAnimationPlanHasPhase(undefined, 'Draw', 0)).toBe(false);
+  });
+
+  it('matches grouped animation phase ownership by kind and player', () => {
+    expect(replayAnimationPlanHasAnyPhase({ kind: 'Damage', playerIndex: 1 }, ['Attack', 'Damage'], 1)).toBe(true);
+    expect(replayAnimationPlanHasAnyPhase({ kind: 'Damage', playerIndex: 1 }, ['Attack', 'Damage'], 0)).toBe(false);
+    expect(replayAnimationPlanHasAnyPhase({ kind: 'Coin', playerIndex: 0 }, ['Attack', 'Damage'], 0)).toBe(false);
   });
 
   it('derives card-move visibility claims from handoff policies by default', () => {

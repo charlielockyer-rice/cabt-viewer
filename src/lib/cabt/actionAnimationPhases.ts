@@ -1,5 +1,4 @@
 import { CabtAreaType } from './types';
-import type { ReplayAnimationPhaseKind } from '../animations/replayAnimationPlan';
 import type { ActionTimelineEvent } from '../game/types';
 
 export const actionAnimationTiming = {
@@ -34,7 +33,13 @@ export type ActionAnimationPhase = {
   stepMs: number;
 };
 
-export type ActionAnimationPhaseKind = ReplayAnimationPhaseKind;
+type ActionAnimationPhaseKindConfig = {
+  durationMs: number;
+  stepMs: number;
+  usesSourceView: boolean;
+  needsDedicatedView: boolean;
+  mayHavePlan: boolean;
+};
 
 const actionAnimationPhaseKindConfig = {
   Ability: {
@@ -240,13 +245,9 @@ const actionAnimationPhaseKindConfig = {
     needsDedicatedView: true,
     mayHavePlan: true,
   },
-} satisfies Record<ActionAnimationPhaseKind, {
-  durationMs: number;
-  stepMs: number;
-  usesSourceView: boolean;
-  needsDedicatedView: boolean;
-  mayHavePlan: boolean;
-}>;
+} satisfies Record<string, ActionAnimationPhaseKindConfig>;
+
+export type ActionAnimationPhaseKind = keyof typeof actionAnimationPhaseKindConfig;
 
 export const actionAnimationPhaseKinds = Object.keys(actionAnimationPhaseKindConfig) as ActionAnimationPhaseKind[];
 

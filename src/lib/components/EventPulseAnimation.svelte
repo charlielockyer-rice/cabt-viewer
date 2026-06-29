@@ -4,7 +4,7 @@
   import { claimAnimationElementEffect } from '../animations/animationElementEffects';
   import { pulseMotionPlanKey, ScheduledAnimationEffectRunner } from '../animations/plannedPulseEffects';
   import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
-  import { replayAnimationPlanHasPhase, type PulseAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
+  import { replayAnimationPlanHasAnyPhase, type PulseAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
 
   type Props = {
     scopeKey?: string | number;
@@ -49,13 +49,13 @@
       motion.kind === 'pulse'
       && motion.spriteVisual.kind === 'pulse'
       && motion.spriteVisual.tone === 'neutral'
-      && (
-        replayAnimationPlanHasPhase(plan, 'Coin', motion.anchor.playerIndex)
-        || replayAnimationPlanHasPhase(plan, 'Change', motion.anchor.playerIndex)
-        || replayAnimationPlanHasPhase(plan, 'Condition', motion.anchor.playerIndex)
-        || replayAnimationPlanHasPhase(plan, 'Devolve', motion.anchor.playerIndex)
-        || replayAnimationPlanHasPhase(plan, 'MoveAttached', motion.anchor.playerIndex)
-      ),
+      && replayAnimationPlanHasAnyPhase(plan, [
+        'Coin',
+        'Change',
+        'Condition',
+        'Devolve',
+        'MoveAttached',
+      ], motion.anchor.playerIndex),
     );
   }
 

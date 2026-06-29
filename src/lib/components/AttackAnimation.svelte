@@ -11,7 +11,7 @@
   import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import { actionAnimationPhaseKind, actionAnimationTimelinePhaseKeyForEvent } from '../cabt/actionAnimationPhases';
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
-  import { replayAnimationPlanHasPhase, type PulseAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
+  import { replayAnimationPlanHasAnyPhase, type PulseAnimationMotion, type ReplayAnimationPhasePlan } from '../animations/replayAnimationPlan';
   import type { ActionTimelineEvent } from '../game/types';
 
   type Props = {
@@ -91,10 +91,7 @@
       && motion.anchor.kind === 'board-slot'
       && motion.spriteVisual.kind === 'pulse'
       && (motion.spriteVisual.tone === 'attack' || motion.spriteVisual.tone === 'damage')
-      && (
-        replayAnimationPlanHasPhase(plan, 'Attack', motion.anchor.playerIndex)
-        || replayAnimationPlanHasPhase(plan, 'Damage', motion.anchor.playerIndex)
-      ),
+      && replayAnimationPlanHasAnyPhase(plan, ['Attack', 'Damage'], motion.anchor.playerIndex),
     );
   }
 

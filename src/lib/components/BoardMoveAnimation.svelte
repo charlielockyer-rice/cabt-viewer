@@ -14,7 +14,7 @@
   import { createReplayPhasePlanRunner } from '../animations/replayPhasePlanRunner.svelte';
   import {
     replayAnimationPhasePlanKey,
-    replayAnimationPlanHasPhase,
+    replayAnimationPlanHasAnyPhase,
     type CardMoveAnimationMotion,
     type ReplayAnimationPhasePlan,
   } from '../animations/replayAnimationPlan';
@@ -143,13 +143,15 @@
 
   function boardMoveOwnsPlannedMotion(plan: ReplayAnimationPhasePlan | undefined, motion: CardMoveAnimationMotion): boolean {
     const playerIndex = playerIndexForMotion(motion);
-    return replayAnimationPlanHasPhase(plan, 'BoardMove', playerIndex)
-      || replayAnimationPlanHasPhase(plan, 'BoardToDeck', playerIndex)
-      || replayAnimationPlanHasPhase(plan, 'DeckBoardPlace', playerIndex)
-      || replayAnimationPlanHasPhase(plan, 'DeckPrizePlace', playerIndex)
-      || replayAnimationPlanHasPhase(plan, 'StadiumMove', playerIndex)
-      || replayAnimationPlanHasPhase(plan, 'DiscardRecover', playerIndex)
-      || replayAnimationPlanHasPhase(plan, 'KnockOut', playerIndex);
+    return replayAnimationPlanHasAnyPhase(plan, [
+      'BoardMove',
+      'BoardToDeck',
+      'DeckBoardPlace',
+      'DeckPrizePlace',
+      'StadiumMove',
+      'DiscardRecover',
+      'KnockOut',
+    ], playerIndex);
   }
 
   function playerIndexForMotion(motion: CardMoveAnimationMotion): number | undefined {

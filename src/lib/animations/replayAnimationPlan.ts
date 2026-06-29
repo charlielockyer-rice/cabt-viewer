@@ -1,4 +1,5 @@
 import type { CardView, GameView } from '../game/types';
+import type { ActionAnimationPhaseKind } from '../cabt/actionAnimationPhases';
 import type { AnimationAnchorRef, AnimationIdentity } from './animationAnchors';
 import type { AnimationVisibilityClaim } from './animationVisibility';
 
@@ -99,36 +100,7 @@ export type ReplayAnimationPhasePlan = {
   visibilityClaims: AnimationVisibilityClaim[];
 };
 
-export type ReplayAnimationPhaseKind =
-  | 'Ability'
-  | 'Attach'
-  | 'Attack'
-  | 'AttachedMove'
-  | 'BoardMove'
-  | 'BoardToDeck'
-  | 'Change'
-  | 'Coin'
-  | 'Condition'
-  | 'Damage'
-  | 'DeckBoardPlace'
-  | 'DeckDiscard'
-  | 'DeckPrizePlace'
-  | 'DeckReveal'
-  | 'DeckRevealReturn'
-  | 'DeckRevealTake'
-  | 'DeckSearchReveal'
-  | 'Devolve'
-  | 'DiscardRecover'
-  | 'Draw'
-  | 'Evolve'
-  | 'HandMove'
-  | 'HandToDeck'
-  | 'KnockOut'
-  | 'MoveAttached'
-  | 'Play'
-  | 'PrizeTake'
-  | 'Shuffle'
-  | 'StadiumMove';
+export type ReplayAnimationPhaseKind = ActionAnimationPhaseKind;
 
 export type ReplayAnimationMotionTiming = {
   id: string;
@@ -234,6 +206,14 @@ export function replayAnimationPlanHasPhase(
     return false;
   }
   return plan.kind === kind && (playerIndex === undefined || plan.playerIndex === playerIndex);
+}
+
+export function replayAnimationPlanHasAnyPhase(
+  plan: Pick<ReplayAnimationPhasePlan, 'kind' | 'playerIndex'> | undefined,
+  kinds: readonly ReplayAnimationPhaseKind[],
+  playerIndex?: number,
+): boolean {
+  return kinds.some((kind) => replayAnimationPlanHasPhase(plan, kind, playerIndex));
 }
 
 export function replayAnimationMotionTiming(motion: AnimationMotion): ReplayAnimationMotionTiming {
