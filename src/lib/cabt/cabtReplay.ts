@@ -9,6 +9,7 @@ import {
   type AnimationIdentity,
   type AnimationMotion,
   type AnimationSpriteVisual,
+  type RevealSessionStep,
   type AnimationVisibilityClaim,
 } from '../animations/replayAnimationPlan';
 import { resolveCardImageUrl } from '../game/cardImages';
@@ -1387,7 +1388,7 @@ function groupedStepAnimationPhases(
     return undefined;
   }
   const eventPhases = animationEventPhases(group.events);
-  if (eventPhases.length <= 1 && !eventPhases.some(animationPhaseNeedsDedicatedView)) {
+  if (eventPhases.length <= 1 && !eventPhases.some(animationPhaseNeedsDedicatedView) && !eventPhases.some(animationPhaseMayHavePlan)) {
     return undefined;
   }
 
@@ -1408,7 +1409,7 @@ function groupedStepAnimationPhases(
       view,
       actionTimeline: phase.events,
       durationMs: phase.durationMs,
-      animationPlan: replayAnimationPlanForPhase(phase, view, label),
+      animationPlan: replayAnimationPlanForPhase(phase, view, label, group.events),
     });
     phaseStartView = projectedViewForEvents(phaseStartView, currentView, phase.events);
   }
@@ -1419,9 +1420,10 @@ function replayAnimationPlanForPhase(
   phase: AnimationEventPhase,
   view: GameView,
   label: string | undefined,
+  stepEvents: ActionTimelineEvent[] = phase.events,
 ) {
   const visibilityClaims = animationPhaseVisibilityClaims(phase, view);
-  const motions = animationPhaseMotions(phase, view);
+  const motions = animationPhaseMotions(phase, view, stepEvents);
   if (!visibilityClaims.length && !motions.length) {
     return undefined;
   }
@@ -1436,7 +1438,11 @@ function replayAnimationPlanForPhase(
   });
 }
 
-function animationPhaseMotions(phase: AnimationEventPhase, view: GameView): AnimationMotion[] {
+function animationPhaseMotions(
+  phase: AnimationEventPhase,
+  view: GameView,
+  stepEvents: ActionTimelineEvent[] = phase.events,
+): AnimationMotion[] {
   if (
     phase.key.startsWith('BoardMove:')
     || phase.key.startsWith('BoardToDeck:')
@@ -1446,7 +1452,223 @@ function animationPhaseMotions(phase: AnimationEventPhase, view: GameView): Anim
   ) {
     return boardCardMoveMotions(phase, view);
   }
+  if (
+    phase.key.startsWith('DeckReveal:')
+    || phase.key.startsWith('DeckSearchReveal:')
+    || phase.key.startsWith('DeckRevealReturn:')
+    || phase.key.startsWith('DeckRevealTake:')
+    || phase.key.startsWith('Attach:')
+  ) {
+    return revealSessionMotions(phase, view, stepEvents);
+  }
   return [];
+}
+
+function revealSessionMotions(
+  phase: AnimationEventPhase,
+  view: GameView,
+  stepEvents: ActionTimelineEvent[],
+): AnimationMotion[] {
+  const playerIndex = phase.events.find((event) => event.playerIndex !== undefined)?.playerIndex;
+  if (playerIndex === undefined) {
+    return [];
+  }
+
+  const revealEvents = stepEvents.filter((event) => isRevealSourceEvent(event, playerIndex));
+  const revealIndexes = revealIndexBySerial(revealEvents);
+  const steps = revealSessionStepsForPhase(phase, view, playerIndex, stepEvents, revealIndexes);
+  if (!steps.length) {
+    return [];
+  }
+
+  return [{
+    id: `${phase.key}:reveal-session:${playerIndex}`,
+    kind: 'reveal-session',
+    playerIndex,
+    coordinateSpace: 'viewport',
+    startMs: 0,
+    durationMs: phase.durationMs,
+    steps,
+    handoffPolicy: {
+      hideSourceUntil: 'none',
+      hideDestinationUntil: 'prepaint',
+      removeSprite: 'prepaint',
+      prepaintFrames: 2,
+    },
+  }];
+}
+
+function revealSessionStepsForPhase(
+  phase: AnimationEventPhase,
+  view: GameView,
+  playerIndex: number,
+  stepEvents: ActionTimelineEvent[],
+  revealIndexes: ReadonlyMap<number, number>,
+): RevealSessionStep[] {
+  if (phase.key.startsWith('DeckReveal:')) {
+    return phase.events
+      .filter((event) => isRevealSourceEvent(event, playerIndex))
+      .map((event) => revealSessionStep(event, phase, 'reveal', {
+        sourceAnchor: { kind: 'deck-top', playerIndex },
+        targetAnchor: revealCardAnchor(playerIndex, event, revealIndexes),
+        durationMs: actionAnimationTiming.deckRevealMs,
+      }));
+  }
+
+  if (phase.key.startsWith('DeckSearchReveal:')) {
+    return phase.events
+      .filter((event) => isDeckToHandSearchEvent(event, playerIndex))
+      .map((event) => revealSessionStep(event, phase, 'take', {
+        sourceAnchor: { kind: 'deck-top', playerIndex },
+        targetAnchor: handDestinationAnchorForEvent(view, event),
+        durationMs: actionAnimationTiming.deckRevealMs,
+      }));
+  }
+
+  if (phase.key.startsWith('DeckRevealReturn:')) {
+    const returningSerials = new Set(
+      phase.events
+        .filter((event) => isRevealReturnEvent(event, playerIndex))
+        .map((event) => finiteNumber((event.params as Record<string, unknown> | undefined)?.serial))
+        .filter((serial): serial is number => serial !== undefined),
+    );
+    const selectSteps = stepEvents
+      .filter((event) => isRevealTakeEvent(event, playerIndex))
+      .filter((event) => {
+        const serial = finiteNumber((event.params as Record<string, unknown> | undefined)?.serial);
+        return serial !== undefined && !returningSerials.has(serial);
+      })
+      .map((event) => revealSessionStep(event, phase, 'select', {
+        sourceAnchor: revealCardAnchor(playerIndex, event, revealIndexes),
+        targetAnchor: revealCardAnchor(playerIndex, event, revealIndexes),
+        startMs: 0,
+        durationMs: actionAnimationTiming.deckRevealReturnMs,
+      }));
+    const returnSteps = phase.events
+      .filter((event) => isRevealReturnEvent(event, playerIndex))
+      .map((event) => revealSessionStep(event, phase, 'return', {
+        sourceAnchor: revealCardAnchor(playerIndex, event, revealIndexes),
+        targetAnchor: { kind: 'deck-top', playerIndex },
+        durationMs: actionAnimationTiming.deckRevealReturnMs,
+      }));
+    return [...selectSteps, ...returnSteps];
+  }
+
+  if (phase.key.startsWith('DeckRevealTake:')) {
+    return phase.events
+      .filter((event) => isRevealTakeEvent(event, playerIndex))
+      .map((event) => revealSessionStep(event, phase, 'take', {
+        sourceAnchor: revealCardAnchor(playerIndex, event, revealIndexes),
+        targetAnchor: handDestinationAnchorForEvent(view, event),
+        durationMs: actionAnimationTiming.handMoveMs,
+      }));
+  }
+
+  if (phase.key.startsWith('Attach:')) {
+    return phase.events
+      .filter((event) => isRevealAttachEvent(event, playerIndex, revealIndexes))
+      .map((event) => revealSessionStep(event, phase, 'attach', {
+        sourceAnchor: revealCardAnchor(playerIndex, event, revealIndexes),
+        targetAnchor: revealAttachTargetAnchorForEvent(view, event),
+        durationMs: actionAnimationTiming.handMoveMs,
+      }));
+  }
+
+  return [];
+}
+
+function revealSessionStep(
+  event: ActionTimelineEvent,
+  phase: AnimationEventPhase,
+  kind: RevealSessionStep['kind'],
+  options: {
+    sourceAnchor?: AnimationAnchorRef;
+    targetAnchor?: AnimationAnchorRef;
+    startMs?: number;
+    durationMs: number;
+  },
+): RevealSessionStep {
+  const params = event.params as Record<string, unknown> | undefined;
+  const serial = finiteNumber(params?.serial);
+  const cardId = finiteNumber(params?.cardId);
+  const resolvesToVisibleDestination = kind === 'take' || kind === 'attach';
+  return {
+    id: `${phase.key}:${kind}:${event.id}:${serial ?? cardId ?? 'unknown'}`,
+    kind,
+    identity: {
+      kind: 'card',
+      serial,
+      cardId,
+      name: stringValue(params?.cardName),
+    },
+    sourceAnchor: options.sourceAnchor,
+    targetAnchor: options.targetAnchor,
+    spriteVisual: {
+      kind: 'card',
+      card: cardViewFromEvent(event),
+    },
+    startMs: options.startMs ?? actionAnimationStartMs(phase.events, event),
+    durationMs: options.durationMs,
+    handoffPolicy: {
+      hideSourceUntil: 'none',
+      hideDestinationUntil: resolvesToVisibleDestination ? 'prepaint' : 'none',
+      removeSprite: resolvesToVisibleDestination ? 'prepaint' : 'phase-end',
+      prepaintFrames: 2,
+    },
+  };
+}
+
+function revealIndexBySerial(revealEvents: ActionTimelineEvent[]): Map<number, number> {
+  const indexes = new Map<number, number>();
+  for (const [index, event] of revealEvents.entries()) {
+    const serial = finiteNumber((event.params as Record<string, unknown> | undefined)?.serial);
+    if (serial !== undefined) {
+      indexes.set(serial, index);
+    }
+  }
+  return indexes;
+}
+
+function revealCardAnchor(
+  playerIndex: number,
+  event: ActionTimelineEvent,
+  revealIndexes: ReadonlyMap<number, number>,
+): AnimationAnchorRef | undefined {
+  const serial = finiteNumber((event.params as Record<string, unknown> | undefined)?.serial);
+  if (serial === undefined) {
+    return undefined;
+  }
+  const revealIndex = revealIndexes.get(serial);
+  return revealIndex === undefined
+    ? undefined
+    : { kind: 'reveal-card', playerIndex, revealIndex, serial };
+}
+
+function handDestinationAnchorForEvent(view: GameView, event: ActionTimelineEvent): AnimationAnchorRef | undefined {
+  const playerIndex = event.playerIndex;
+  if (playerIndex === undefined) {
+    return undefined;
+  }
+  const hand = view.players[playerIndex]?.hand ?? [];
+  const handIndex = hand.findIndex((card) => eventCardMatches(card, event));
+  const card = hand[handIndex];
+  return handIndex < 0 || !card
+    ? undefined
+    : {
+        kind: 'hand-card',
+        playerIndex,
+        handIndex,
+        serial: card.serial,
+      };
+}
+
+function revealAttachTargetAnchorForEvent(view: GameView, event: ActionTimelineEvent): AnimationAnchorRef | undefined {
+  const playerIndex = event.playerIndex;
+  if (playerIndex === undefined) {
+    return undefined;
+  }
+  return attachedSourceAnchorForEvent(view.players[playerIndex], event, CabtAreaType.ENERGY)
+    ?? attachedSourceAnchorForEvent(view.players[playerIndex], event, CabtAreaType.TOOL);
 }
 
 function boardCardMoveMotions(phase: AnimationEventPhase, view: GameView): AnimationMotion[] {
@@ -1979,7 +2201,7 @@ function animationPhaseLabel(phase: AnimationEventPhase): string | undefined {
   }
   if (phase.key.startsWith('DeckRevealTake:')) {
     return cardEventCount === 1
-      ? event.message
+      ? `${actor} put a revealed card into their hand.`
       : `${actor} put ${cardEventCount} revealed cards into their hand.`;
   }
   if (phase.key.startsWith('DeckSearchReveal:')) {
@@ -2100,6 +2322,14 @@ function animationPhaseNeedsDedicatedView(phase: AnimationEventPhase): boolean {
     || phase.key.startsWith('BoardMove:')
     || phase.key.startsWith('AttachedMove:')
     || phase.key.startsWith('StadiumMove:');
+}
+
+function animationPhaseMayHavePlan(phase: AnimationEventPhase): boolean {
+  return phase.key.startsWith('DeckBoardPlace:')
+    || phase.key.startsWith('DeckReveal:')
+    || phase.key.startsWith('DeckSearchReveal:')
+    || phase.key.startsWith('DeckRevealReturn:')
+    || phase.key.startsWith('DeckRevealTake:');
 }
 
 function animationSourceViewForPhase(
@@ -2658,6 +2888,53 @@ function isBoardPositionMove(fromArea: number, toArea: number): boolean {
 function isBoardToDeckMove(fromArea: number, toArea: number): boolean {
   return toArea === CabtAreaType.DECK
     && (fromArea === CabtAreaType.ACTIVE || fromArea === CabtAreaType.BENCH);
+}
+
+function isRevealSourceEvent(event: ActionTimelineEvent, playerIndex: number): boolean {
+  const params = event.params as Record<string, unknown> | undefined;
+  return event.playerIndex === playerIndex
+    && isMoveCardKind(event.kind)
+    && Number(params?.fromArea) === CabtAreaType.DECK
+    && (
+      Number(params?.toArea) === CabtAreaType.LOOKING
+      || Number(params?.toArea) === CabtAreaType.HAND
+    );
+}
+
+function isDeckToHandSearchEvent(event: ActionTimelineEvent, playerIndex: number): boolean {
+  const params = event.params as Record<string, unknown> | undefined;
+  return event.playerIndex === playerIndex
+    && isMoveCardKind(event.kind)
+    && Number(params?.fromArea) === CabtAreaType.DECK
+    && Number(params?.toArea) === CabtAreaType.HAND;
+}
+
+function isRevealReturnEvent(event: ActionTimelineEvent, playerIndex: number): boolean {
+  const params = event.params as Record<string, unknown> | undefined;
+  return event.playerIndex === playerIndex
+    && isMoveCardKind(event.kind)
+    && Number(params?.fromArea) === CabtAreaType.LOOKING
+    && Number(params?.toArea) === CabtAreaType.DECK;
+}
+
+function isRevealTakeEvent(event: ActionTimelineEvent, playerIndex: number): boolean {
+  const params = event.params as Record<string, unknown> | undefined;
+  return event.playerIndex === playerIndex
+    && isMoveCardKind(event.kind)
+    && Number(params?.fromArea) === CabtAreaType.LOOKING
+    && Number(params?.toArea) === CabtAreaType.HAND;
+}
+
+function isRevealAttachEvent(
+  event: ActionTimelineEvent,
+  playerIndex: number,
+  revealIndexes: ReadonlyMap<number, number>,
+): boolean {
+  const serial = finiteNumber((event.params as Record<string, unknown> | undefined)?.serial);
+  return event.playerIndex === playerIndex
+    && event.kind === 'Attach'
+    && serial !== undefined
+    && revealIndexes.has(serial);
 }
 
 function isAttachedCardArea(area: number): boolean {

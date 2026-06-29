@@ -709,10 +709,98 @@ describe('cabtReplayToSnapshot', () => {
     expect(step.animationPhases?.[1].view.players[0].hand.map((card) => card.serial)).toEqual([46, 13]);
     expect(step.animationPhases?.[1].view.players[0].playZone.map((card) => card.serial)).toEqual([14]);
     expect(step.animationPhases?.[1].view.players[0].discard).toHaveLength(0);
+    expect(step.animationPhases?.[1].animationPlan?.motions).toEqual([
+      expect.objectContaining({
+        kind: 'reveal-session',
+        playerIndex: 0,
+        coordinateSpace: 'viewport',
+        steps: [
+          expect.objectContaining({
+            kind: 'take',
+            sourceAnchor: { kind: 'deck-top', playerIndex: 0 },
+            targetAnchor: { kind: 'hand-card', playerIndex: 0, handIndex: 1, serial: 13 },
+            identity: expect.objectContaining({ kind: 'card', serial: 13, cardId: 723 }),
+          }),
+        ],
+      }),
+    ]);
     expect(step.displayView?.players[0].hand.map((card) => card.serial)).toEqual([46, 13]);
     expect(step.displayView?.players[0].playZone).toHaveLength(0);
     expect(step.displayView?.players[0].discard.map((card) => card.serial)).toEqual([14]);
     expect(snapshot.views[step.stateIndex].players[0].discard.map((card) => card.serial)).toEqual([14]);
+  });
+
+  it('emits a reveal-session plan for a standalone deck-to-hand search phase', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [],
+            benchMax: 5,
+            hand: [{ id: 3, serial: 46 }],
+            deckCount: 46,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 53,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'MoveCard', playerIndex: 0, cardId: 723, serial: 13, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.HAND },
+        ],
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [],
+            benchMax: 5,
+            hand: [
+              { id: 3, serial: 46 },
+              { id: 723, serial: 13 },
+            ],
+            deckCount: 45,
+            discard: [],
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 53,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    const step = snapshot.steps[1];
+    expect(step.animationPhases?.map((phase) => phase.key)).toEqual(['DeckSearchReveal:0']);
+    expect(step.animationPhases?.[0].animationPlan?.motions).toEqual([
+      expect.objectContaining({
+        kind: 'reveal-session',
+        playerIndex: 0,
+        steps: [
+          expect.objectContaining({
+            kind: 'take',
+            sourceAnchor: { kind: 'deck-top', playerIndex: 0 },
+            targetAnchor: { kind: 'hand-card', playerIndex: 0, handIndex: 1, serial: 13 },
+            identity: expect.objectContaining({ kind: 'card', serial: 13, cardId: 723 }),
+          }),
+        ],
+      }),
+    ]);
   });
 
   it('keeps a played trainer in the resolving zone during the follow-up board move animation', () => {
@@ -2360,6 +2448,21 @@ describe('cabtReplayToSnapshot', () => {
       'Player 1 returned 2 revealed cards to their deck.',
       'Player 1 shuffled their deck.',
     ]);
+    expect(step.animationPhases?.[2].animationPlan?.motions).toEqual([
+      expect.objectContaining({
+        kind: 'reveal-session',
+        playerIndex: 0,
+        coordinateSpace: 'viewport',
+        steps: [
+          expect.objectContaining({
+            kind: 'attach',
+            sourceAnchor: { kind: 'reveal-card', playerIndex: 0, revealIndex: 0, serial: 32 },
+            targetAnchor: { kind: 'attached-energy', playerIndex: 0, slot: 'active', slotIndex: 0, serial: 32 },
+            identity: expect.objectContaining({ kind: 'card', serial: 32, cardId: 3 }),
+          }),
+        ],
+      }),
+    ]);
   });
 
   it('coalesces reveal selection, return, take, and shuffle into one replay step', () => {
@@ -2521,6 +2624,42 @@ describe('cabtReplayToSnapshot', () => {
       'DeckRevealTake',
       'Shuffle',
     ]);
+    expect(step.animationPhases?.map((phase) => phase.label)).toEqual([
+      expect.stringMatching(/^Player 2 played Pok.gear 3\.0\.$/),
+      'Player 2 revealed the top 7 cards of their deck.',
+      'Player 2 returned 6 revealed cards to their deck.',
+      'Player 2 put a revealed card into their hand.',
+      'Player 2 shuffled their deck.',
+    ]);
+    expect(step.animationPhases?.[1].actionTimeline.map((event) => {
+      const params = event.params as Record<string, unknown>;
+      return [params?.serial, params?.toArea];
+    })).toEqual([
+      [71, CabtAreaType.LOOKING],
+      [102, CabtAreaType.LOOKING],
+      [90, CabtAreaType.LOOKING],
+      [76, CabtAreaType.LOOKING],
+      [117, CabtAreaType.LOOKING],
+      [121, CabtAreaType.LOOKING],
+      [82, CabtAreaType.LOOKING],
+    ]);
+    expect(step.animationPhases?.[2].actionTimeline.map((event) => {
+      const params = event.params as Record<string, unknown>;
+      return [params?.serial, params?.toArea];
+    })).toEqual([
+      [71, CabtAreaType.DECK],
+      [102, CabtAreaType.DECK],
+      [90, CabtAreaType.DECK],
+      [76, CabtAreaType.DECK],
+      [121, CabtAreaType.DECK],
+      [82, CabtAreaType.DECK],
+    ]);
+    expect(step.animationPhases?.[3].actionTimeline.map((event) => {
+      const params = event.params as Record<string, unknown>;
+      return [params?.serial, params?.toArea];
+    })).toEqual([
+      [117, CabtAreaType.HAND],
+    ]);
     expect(step.animationPhases?.[2].view.players[1].hand.map((card) => card.serial)).toEqual([]);
     expect(step.animationPhases?.[3].view.players[1].hand.map((card) => card.serial)).toEqual([117]);
     expect(step.animationPhases?.[3].view.players[1].hand[0]).not.toHaveProperty('animationHidden');
@@ -2539,12 +2678,82 @@ describe('cabtReplayToSnapshot', () => {
         }),
       }),
     ]);
+    expect(step.animationPhases?.[1].animationPlan?.motions).toEqual([
+      expect.objectContaining({
+        kind: 'reveal-session',
+        playerIndex: 1,
+        coordinateSpace: 'viewport',
+        steps: [
+          expect.objectContaining({
+            kind: 'reveal',
+            startMs: 0,
+            sourceAnchor: { kind: 'deck-top', playerIndex: 1 },
+            targetAnchor: { kind: 'reveal-card', playerIndex: 1, revealIndex: 0, serial: 71 },
+            identity: expect.objectContaining({ kind: 'card', serial: 71, cardId: 19 }),
+          }),
+          expect.objectContaining({
+            kind: 'reveal',
+            startMs: 45,
+            sourceAnchor: { kind: 'deck-top', playerIndex: 1 },
+            targetAnchor: { kind: 'reveal-card', playerIndex: 1, revealIndex: 1, serial: 102 },
+            identity: expect.objectContaining({ kind: 'card', serial: 102, cardId: 1152 }),
+          }),
+          expect.objectContaining({ kind: 'reveal', identity: expect.objectContaining({ kind: 'card', serial: 90, cardId: 1086 }) }),
+          expect.objectContaining({ kind: 'reveal', identity: expect.objectContaining({ kind: 'card', serial: 76, cardId: 66 }) }),
+          expect.objectContaining({ kind: 'reveal', identity: expect.objectContaining({ kind: 'card', serial: 117, cardId: 1227 }) }),
+          expect.objectContaining({ kind: 'reveal', identity: expect.objectContaining({ kind: 'card', serial: 121, cardId: 1255 }) }),
+          expect.objectContaining({ kind: 'reveal', identity: expect.objectContaining({ kind: 'card', serial: 82, cardId: 878 }) }),
+        ],
+      }),
+    ]);
+    expect(step.animationPhases?.[2].animationPlan?.motions).toEqual([
+      expect.objectContaining({
+        kind: 'reveal-session',
+        playerIndex: 1,
+        coordinateSpace: 'viewport',
+        steps: [
+          expect.objectContaining({ kind: 'select', identity: expect.objectContaining({ kind: 'card', serial: 117, cardId: 1227 }) }),
+          expect.objectContaining({
+            kind: 'return',
+            sourceAnchor: { kind: 'reveal-card', playerIndex: 1, revealIndex: 0, serial: 71 },
+            targetAnchor: { kind: 'deck-top', playerIndex: 1 },
+            identity: expect.objectContaining({ kind: 'card', serial: 71, cardId: 19 }),
+          }),
+          expect.objectContaining({ kind: 'return', identity: expect.objectContaining({ kind: 'card', serial: 102, cardId: 1152 }) }),
+          expect.objectContaining({ kind: 'return', identity: expect.objectContaining({ kind: 'card', serial: 90, cardId: 1086 }) }),
+          expect.objectContaining({ kind: 'return', identity: expect.objectContaining({ kind: 'card', serial: 76, cardId: 66 }) }),
+          expect.objectContaining({ kind: 'return', identity: expect.objectContaining({ kind: 'card', serial: 121, cardId: 1255 }) }),
+          expect.objectContaining({ kind: 'return', identity: expect.objectContaining({ kind: 'card', serial: 82, cardId: 878 }) }),
+        ],
+      }),
+    ]);
+    expect(step.animationPhases?.[3].animationPlan?.motions).toEqual([
+      expect.objectContaining({
+        kind: 'reveal-session',
+        playerIndex: 1,
+        coordinateSpace: 'viewport',
+        steps: [
+          expect.objectContaining({
+            kind: 'take',
+            identity: expect.objectContaining({ kind: 'card', serial: 117, cardId: 1227 }),
+            targetAnchor: { kind: 'hand-card', playerIndex: 1, handIndex: 0, serial: 117 },
+          }),
+        ],
+      }),
+    ]);
     expect(step.animationPhases?.map((phase) => phase.view.players[1].playZone.map((card) => card.serial))).toEqual([
       [99],
       [99],
       [99],
       [99],
       [99],
+    ]);
+    expect(step.animationPhases?.map((phase) => phase.view.players[1].discard.map((card) => card.serial))).toEqual([
+      [],
+      [],
+      [],
+      [],
+      [],
     ]);
     expect(step.displayView?.players[1].discard.map((card) => card.serial)).toEqual([99]);
   });
