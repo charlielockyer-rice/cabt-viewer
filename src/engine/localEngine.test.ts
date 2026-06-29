@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { LocalEngineController } from './localEngine';
 import { promptIdForObservation } from '../lib/cabt/demoEngine';
@@ -23,6 +25,26 @@ describe('LocalEngineController', () => {
     expect(res.view.phaseLabel).toBe('Player turn');
     expect(res.view.players[0]?.active.pokemon?.name).toBe('Charmander');
     expect(res.view.players[0]?.availableActions?.active?.attacks[0]?.name).toBe('Ember');
+  });
+
+  it('auto-enumerates game log files that are not listed in the manifest', () => {
+    const logsDir = path.resolve('public/game-logs');
+    const file = `local-vitest-${process.pid}.json`;
+    const fullPath = path.join(logsDir, file);
+    fs.writeFileSync(fullPath, '{}\n');
+    try {
+      const engine = new LocalEngineController();
+      expect(engine.listReplays().replays).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: file.replace(/\.json$/, ''),
+            file,
+          }),
+        ]),
+      );
+    } finally {
+      fs.unlinkSync(fullPath);
+    }
   });
 
   it('accepts existing UI commands through the CABT adapter scaffold', async () => {

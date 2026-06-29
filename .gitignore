@@ -9,3 +9,5 @@ sample_submission
 data
 public/local-card-images
 public/local-replays
+public/game-logs/*.json
+!public/game-logs/logs.json

@@ -66,6 +66,15 @@ type AgentManifest = {
   }>;
 };
 
+type GameLogManifestEntry = {
+  id: string;
+  name?: string;
+  file?: string;
+  createdAt?: string;
+  players?: string[];
+  description?: string;
+};
+
 const CARD_ROWS = rawCardRows as Array<{
   id: number;
   name: string;
@@ -154,7 +163,7 @@ export class LocalEngineController {
   listReplays() {
     return {
       ok: true,
-      replays: [],
+      replays: enumerateGameLogs(),
     };
   }
 
@@ -190,14 +199,6 @@ export class LocalEngineController {
 
     fs.mkdirSync(GAME_LOGS_DIR, { recursive: true });
     fs.writeFileSync(path.join(GAME_LOGS_DIR, file), `${JSON.stringify(replay)}\n`);
-    writeGameLogManifest({
-      id,
-      name,
-      file,
-      createdAt: created.toISOString(),
-      players: this.replayPlayerLabels,
-      description: `Saved local ${this.replayModeLabel} match${typeof winner === 'number' && winner >= 0 ? `, result ${winner}` : ''}.`,
-    });
     return { ok: true, id, file };
   }
 
@@ -828,18 +829,42 @@ function compactIsoTimestamp(date: Date): string {
   return date.toISOString().replace(/\D/g, '').slice(0, 14);
 }
 
-function writeGameLogManifest(entry: {
-  id: string;
-  name: string;
-  file: string;
-  createdAt: string;
-  players: string[];
-  description: string;
-}): void {
+function enumerateGameLogs(): GameLogManifestEntry[] {
+  if (!fs.existsSync(GAME_LOGS_DIR)) {
+    return [];
+  }
+  const metadata = gameLogManifestMetadata();
+  return fs.readdirSync(GAME_LOGS_DIR, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.json') && entry.name !== 'logs.json')
+    .map((entry) => gameLogEntryForFile(entry.name, metadata.get(entry.name)))
+    .sort(compareGameLogEntries);
+}
+
+function gameLogEntryForFile(file: string, manifestEntry: GameLogManifestEntry | undefined): GameLogManifestEntry {
+  const id = manifestEntry?.id || file.replace(/\.json$/i, '');
+  const stat = fs.statSync(path.join(GAME_LOGS_DIR, file));
+  return {
+    id,
+    name: manifestEntry?.name || titleForGameLogFile(file),
+    file,
+    createdAt: manifestEntry?.createdAt || stat.mtime.toISOString(),
+    players: manifestEntry?.players,
+    description: manifestEntry?.description,
+  };
+}
+
+function gameLogManifestMetadata(): Map<string, GameLogManifestEntry> {
   const manifest = readGameLogManifest();
-  const logs = Array.isArray(manifest.logs) ? manifest.logs.filter((item: any) => item?.id !== entry.id) : [];
-  manifest.logs = [entry, ...logs];
-  fs.writeFileSync(GAME_LOGS_MANIFEST, `${JSON.stringify(manifest, null, 2)}\n`);
+  return new Map(
+    manifest.logs
+      .filter((entry): entry is GameLogManifestEntry =>
+        !!entry
+        && typeof entry === 'object'
+        && typeof (entry as GameLogManifestEntry).id === 'string'
+        && typeof (entry as GameLogManifestEntry).file === 'string',
+      )
+      .map((entry) => [entry.file!, entry]),
+  );
 }
 
 function readGameLogManifest(): { logs: unknown[] } {
@@ -852,6 +877,22 @@ function readGameLogManifest(): { logs: unknown[] } {
   } catch {
     return { logs: [] };
   }
+}
+
+function compareGameLogEntries(left: GameLogManifestEntry, right: GameLogManifestEntry): number {
+  const leftTime = Date.parse(left.createdAt ?? '');
+  const rightTime = Date.parse(right.createdAt ?? '');
+  if (Number.isFinite(leftTime) && Number.isFinite(rightTime) && leftTime !== rightTime) {
+    return rightTime - leftTime;
+  }
+  return (left.name ?? left.file ?? left.id).localeCompare(right.name ?? right.file ?? right.id);
+}
+
+function titleForGameLogFile(file: string): string {
+  return file
+    .replace(/\.json$/i, '')
+    .replace(/[-_]+/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function resolveDeck(cards: unknown[], label: string): number[] {

@@ -27,7 +27,8 @@ export async function loadAgentOptions(): Promise<AgentOption[]> {
 }
 
 export async function loadGameLogs(): Promise<GameLogEntry[]> {
-  return loadJsonList<GameLogEntry>('/game-logs/logs.json', 'logs');
+  const localLogs = await loadLocalGameLogs();
+  return localLogs.length ? localLogs : loadJsonList<GameLogEntry>('/game-logs/logs.json', 'logs');
 }
 
 async function loadJsonList<T extends { id?: unknown }>(url: string, key: string): Promise<T[]> {
@@ -45,4 +46,23 @@ async function loadJsonList<T extends { id?: unknown }>(url: string, key: string
     throw new Error(`${url}: expected an array or { "${key}": [...] }`);
   }
   return list.filter((item): item is T => !!item && typeof item === 'object' && typeof item.id === 'string');
+}
+
+async function loadLocalGameLogs(): Promise<GameLogEntry[]> {
+  try {
+    const response = await fetch('/local-engine/replays');
+    if (!response.ok) {
+      return [];
+    }
+    const json = await response.json() as { replays?: unknown };
+    const list = Array.isArray(json.replays) ? json.replays : [];
+    return list.filter((item): item is GameLogEntry =>
+      !!item
+      && typeof item === 'object'
+      && typeof item.id === 'string'
+      && typeof item.file === 'string',
+    );
+  } catch {
+    return [];
+  }
 }

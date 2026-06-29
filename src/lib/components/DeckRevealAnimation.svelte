@@ -162,16 +162,16 @@
     replay.markEventsSeen(currentEvents);
 
     if (revealActions.length) {
-      startReveal(revealActions);
+      startLiveReveal(revealActions);
     }
     if (attachActions.length) {
-      attachRevealedCards(attachActions);
+      attachLiveRevealedCards(attachActions);
     }
     if (takeActions.length) {
-      takeRevealedCards(takeActions);
+      takeLiveRevealedCards(takeActions);
     }
     if (returnActions.length) {
-      returnRevealedCards(returnActions, 'planned');
+      returnLiveRevealedCards(returnActions);
     }
   });
 
@@ -185,18 +185,18 @@
     );
     const returnActions = revealCardActionsForSteps(planSteps, 'return', phaseDurationMs);
     if (revealActions.length) {
-      startReveal(revealActions, 'planned');
+      startPlannedReveal(revealActions);
     } else {
       seedHeldRevealSprites(currentPlanMotions);
     }
     if (attachActions.length) {
-      attachRevealedCards(attachActions, 'planned');
+      attachPlannedRevealedCards(attachActions);
     }
     if (takeActions.length) {
-      takeRevealedCards(takeActions, 'planned');
+      takePlannedRevealedCards(takeActions);
     }
     if (returnActions.length) {
-      returnRevealedCards(returnActions);
+      returnPlannedRevealedCards(returnActions);
     }
   }
 
@@ -223,18 +223,12 @@
     step: RevealSessionStep,
     anchor: RevealCardAnchor,
   ): RevealSprite | undefined {
-    const deckElement = plannedDeckElementForRevealMotion(motion, step.sourceAnchor);
-    const deckRect = deckElement?.getBoundingClientRect();
-    if (!deckRect || deckRect.width <= 0 || deckRect.height <= 0) {
-      return undefined;
-    }
     const card = cardViewForRevealStep(motion, step, anchor);
     if (!card) {
       return undefined;
     }
     const revealCount = revealCountForMotion(motion);
     const layout = revealLayout(revealCount);
-    const deckCenter = centerOf(deckRect);
     const target = layout.target(anchor.revealIndex);
     return {
       id: `planned-held-${motion.playerIndex}-${anchor.revealIndex}-${anchor.serial ?? card.id}`,
@@ -243,13 +237,13 @@
       order: anchor.revealIndex + 1,
       mode: 'held',
       delayMs: 0,
-      left: deckCenter.x - layout.cardWidth / 2,
-      top: deckCenter.y - layout.cardHeight / 2,
+      left: target.x - layout.cardWidth / 2,
+      top: target.y - layout.cardHeight / 2,
       width: layout.cardWidth,
       height: layout.cardHeight,
-      revealX: target.x - deckCenter.x,
-      revealY: target.y - deckCenter.y,
-      deckScale: Math.max(0.32, Math.min(0.9, deckRect.width / layout.cardWidth)),
+      revealX: 0,
+      revealY: 0,
+      deckScale: 1,
       takeX: 0,
       takeY: 0,
       takeScale: 1,
@@ -347,9 +341,17 @@
     };
   }
 
+  function startLiveReveal(revealActions: RevealStartAction[]) {
+    startReveal(revealActions, 'live');
+  }
+
+  function startPlannedReveal(revealActions: RevealStartAction[]) {
+    startReveal(revealActions, 'planned');
+  }
+
   function startReveal(
     revealActions: RevealStartAction[],
-    execution: RevealExecution = 'live',
+    execution: RevealExecution,
   ) {
     const actionsByPlayer = new Map<number, RevealStartAction[]>();
     for (const action of revealActions) {
@@ -405,15 +407,24 @@
     timers.push(timer);
   }
 
+  function attachLiveRevealedCards(attachActions: LiveRevealCardAction[]) {
+    attachRevealedCards(attachActions, 'live');
+  }
+
+  function attachPlannedRevealedCards(attachActions: RevealCardAction[]) {
+    attachRevealedCards(attachActions, 'planned');
+  }
+
   function attachRevealedCards(
-    attachActions: LiveRevealCardAction[],
-    execution: RevealExecution = 'live',
+    attachActions: RevealCardAction[],
+    execution: RevealExecution,
   ) {
     for (const action of attachActions) {
       const sprite = revealSprite(action.serial);
+      const liveAction = action as LiveRevealCardAction;
       const target = execution === 'planned'
         ? plannedAttachTargetForAction(action)
-        : boardSlotByPokemonIdentity(action.serialTarget, action.cardIdTarget, action.playerIndex)
+        : boardSlotByPokemonIdentity(liveAction.serialTarget, liveAction.cardIdTarget, action.playerIndex)
           ?? boardSlotForRevealTargetAnchor(action.targetAnchor);
       const targetRect = visualTargetForAnimation(target)?.getBoundingClientRect();
       if (!sprite || !targetRect || targetRect.width <= 0 || targetRect.height <= 0) {
@@ -444,9 +455,17 @@
     }
   }
 
+  function takeLiveRevealedCards(takeActions: RevealCardAction[]) {
+    takeRevealedCards(takeActions, 'live');
+  }
+
+  function takePlannedRevealedCards(takeActions: RevealCardAction[]) {
+    takeRevealedCards(takeActions, 'planned');
+  }
+
   function takeRevealedCards(
     takeActions: RevealCardAction[],
-    execution: RevealExecution = 'live',
+    execution: RevealExecution,
   ) {
     for (const action of takeActions) {
       const sprite = revealSprite(action.serial);
@@ -486,9 +505,17 @@
     }
   }
 
+  function returnLiveRevealedCards(returnActions: RevealCardAction[]) {
+    returnRevealedCards(returnActions, 'live');
+  }
+
+  function returnPlannedRevealedCards(returnActions: RevealCardAction[]) {
+    returnRevealedCards(returnActions, 'planned');
+  }
+
   function returnRevealedCards(
     returnActions: RevealCardAction[],
-    execution: RevealExecution = 'live',
+    execution: RevealExecution,
   ) {
     const actionsByPlayer = new Map<number, RevealCardAction[]>();
     for (const action of returnActions) {
@@ -498,23 +525,28 @@
     }
 
     for (const [playerIndex, playerActions] of actionsByPlayer.entries()) {
-      const deckElement = execution === 'planned'
-        ? plannedDeckElementForRevealActions(playerActions)
-        : deckTopElement(playerIndex);
-      const deckRect = deckElement?.getBoundingClientRect();
-      if (!deckRect || deckRect.width <= 0 || deckRect.height <= 0) {
+      const actionTargets = playerActions.flatMap((action) => {
+        const deckElement = execution === 'planned'
+          ? plannedDeckElementForAnchor(action.targetAnchor)
+          : deckTopElement(playerIndex);
+        const deckRect = deckElement?.getBoundingClientRect();
+        return deckRect && deckRect.width > 0 && deckRect.height > 0
+          ? [{ action, deckRect }]
+          : [];
+      });
+      if (!actionTargets.length) {
         continue;
       }
       const returningSerials = new Set(
-        playerActions.map((action) => action.serial),
+        actionTargets.map(({ action }) => action.serial),
       );
       moveSelectedSpritesToReveal(playerIndex, returningSerials);
-      const deckCenter = centerOf(deckRect);
-      for (const action of playerActions) {
+      for (const { action, deckRect } of actionTargets) {
         const sprite = revealSprite(action.serial);
         if (!sprite) {
           continue;
         }
+        const deckCenter = centerOf(deckRect);
         const sourceCenter = spriteCenter(sprite);
         const delayMs = action.startMs;
         updateSprites((item) => item.serial === action.serial
@@ -681,45 +713,6 @@
     };
   }
 
-  function plannedDeckElementForRevealStartActions(actions: RevealStartAction[]): HTMLElement | null {
-    for (const action of actions) {
-      const element = plannedDeckElementForAnchor(action.sourceAnchor);
-      if (element) {
-        return element;
-      }
-    }
-    return null;
-  }
-
-  function plannedDeckElementForRevealActions(actions: RevealCardAction[]): HTMLElement | null {
-    for (const action of actions) {
-      const element = plannedDeckElementForAnchor(action.targetAnchor)
-        ?? plannedDeckElementForAnchor(action.sourceAnchor);
-      if (element) {
-        return element;
-      }
-    }
-    return null;
-  }
-
-  function plannedDeckElementForRevealMotion(
-    motion: RevealSessionAnimationMotion,
-    preferredAnchor: RevealSessionStep['sourceAnchor'] | RevealSessionStep['targetAnchor'],
-  ): HTMLElement | null {
-    const preferred = plannedDeckElementForAnchor(preferredAnchor);
-    if (preferred) {
-      return preferred;
-    }
-    for (const step of motion.steps) {
-      const element = plannedDeckElementForAnchor(step.sourceAnchor)
-        ?? plannedDeckElementForAnchor(step.targetAnchor);
-      if (element) {
-        return element;
-      }
-    }
-    return null;
-  }
-
   function plannedDeckElementForAnchor(
     anchor: RevealSessionStep['sourceAnchor'] | RevealSessionStep['targetAnchor'],
   ): HTMLElement | null {
@@ -830,17 +823,17 @@
     playerActions: RevealStartAction[],
     execution: RevealExecution,
   ): RevealSprite[] {
-    const deckElement = execution === 'planned'
-      ? plannedDeckElementForRevealStartActions(playerActions)
-      : deckTopElement(playerIndex);
-    const deckRect = deckElement?.getBoundingClientRect();
-    if (!deckRect || deckRect.width <= 0 || deckRect.height <= 0) {
-      return [];
-    }
-
     const layout = revealLayout(playerActions.length);
-    const deckCenter = centerOf(deckRect);
+    const liveDeckElement = execution === 'live' ? deckTopElement(playerIndex) : null;
     return playerActions.flatMap((action, index) => {
+      const deckElement = execution === 'planned'
+        ? plannedDeckElementForAnchor(action.sourceAnchor)
+        : liveDeckElement;
+      const deckRect = deckElement?.getBoundingClientRect();
+      if (!deckRect || deckRect.width <= 0 || deckRect.height <= 0) {
+        return [];
+      }
+      const deckCenter = centerOf(deckRect);
       const target = layout.target(index);
       const takeTarget = action.toHand
         ? execution === 'planned'

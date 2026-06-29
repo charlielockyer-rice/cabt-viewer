@@ -1,13 +1,4 @@
-import cardRows from './cardData.generated.json';
-import attackRows from './attackData.generated.json';
 import {
-  actionAnimationPhaseKind,
-  actionAnimationPhaseDurationMs as animationPhaseDurationMs,
-  actionAnimationPhaseKey as animationPhaseKey,
-  actionAnimationPhaseMayHavePlan,
-  actionAnimationPhaseNeedsDedicatedView,
-  actionAnimationTimelinePhaseKey,
-  actionAnimationPhaseUsesSourceView as animationPhaseUsesSourceView,
   actionAnimationTiming,
   isAttachedCardArea,
   isAttachedCardMoveDestination,
@@ -15,11 +6,60 @@ import {
   isBoardToDeckMove,
   isKnockOutMove,
   isSpecialConditionEvent,
-  type ActionAnimationPhaseKind,
 } from './actionAnimationPhases';
 import { actionAnimationStartMs } from './actionAnimationSchedule';
-import { cabtLogsToTimeline } from './logFormat';
-import { CabtAreaType, CabtOptionType, CabtSelectContext } from './types';
+import { cabtLogsToTimeline, formatCabtLog } from './logFormat';
+import {
+  isMoveCardKind,
+  persistentActionLabel,
+  replayActionGroups,
+  type ReplayActionGroup,
+} from './replayActionGroups';
+import { cardViewFromEvent, eventCardMatches, sameKnownCard } from './replayCardIdentity';
+import {
+  cardEffectContinuation,
+  type ReplayFrameEntry,
+} from './replayContinuations';
+import {
+  gameViewWithResolvingCards,
+  gameViewWithResolvingDiscardDestinations,
+  resolvingContextForStep,
+  resolvingDisplayView,
+  resolvingFinalizerCardsForGroup,
+  resolvingPlayedCardsForEvents,
+  type ResolvingPlayedCard,
+  type ResolvingPlayedCardContext,
+} from './replayResolvingCards';
+import {
+  cabtAbilityNameForCardId,
+  cabtCardName,
+  cabtCardNames,
+  cabtCardToView,
+  cabtDisplayName,
+  cabtEvolutionTriggeredDrawSkill,
+  cabtFaceDownCard,
+  isCabtPokemonCard,
+  isCabtResolvingTrainerCard,
+  isCabtStadiumCard,
+  isCabtToolCard,
+} from './replayCardData';
+import {
+  extractVisualizeFrames,
+  replayEnvironment,
+  replayPlayerNames,
+  type CabtPokemonRef,
+  type CabtVisualizeFrame,
+} from './replayInput';
+import {
+  animationEventPhases,
+  animationPhaseLabel,
+  animationPhaseMayHavePlan,
+  animationPhaseNeedsDedicatedView,
+  type AnimationEventPhase,
+} from './replayAnimationPhases';
+import { cabtReplayStepLabel } from './replayStepLabels';
+import { frameToGameView } from './replayView';
+import { CabtAreaType, CabtOptionType } from './types';
 import {
   createReplayAnimationPhasePlan,
   replayAnimationMotionSpanMs,
@@ -30,114 +70,8 @@ import {
   type AnimationSpriteVisual,
   type RevealSessionStep,
 } from '../animations/replayAnimationPlan';
-import { resolveCardImageUrl } from '../game/cardImages';
-import { SlotType, targetFor, type ActionTimelineEvent, type CardView, type GameView, type LogView, type PlayerView, type PokemonSlotView } from '../game/types';
+import { type ActionTimelineEvent, type CardView, type GameView, type LogView, type PlayerView, type PokemonSlotView } from '../game/types';
 import type { ReplayAnimationPhase, ReplaySnapshot, ReplayStep } from '../game/replay';
-
-type CardRow = {
-  id: number;
-  name: string;
-  set: string;
-  setNumber: string;
-  kind: string;
-  rule: string;
-  evolvesFrom: string;
-  hp: number | null;
-  type: string;
-  retreat: number | null;
-  attackName: string;
-  attackCost: string;
-  attackDamage: string;
-  attackText: string;
-  retreatCost?: number;
-  skills?: Array<{ name: string; text?: string }>;
-  attacks?: number[];
-};
-
-type AttackRow = {
-  attackId: number;
-  name: string;
-  text?: string;
-  damage?: number;
-  energies?: number[];
-};
-
-type CabtCardRef = {
-  id: number;
-  serial?: number;
-  playerIndex?: number;
-  name?: string;
-};
-
-type CabtPokemonRef = CabtCardRef & {
-  hp?: number;
-  maxHp?: number;
-  energies?: number[];
-  energyCards?: CabtCardRef[];
-  tools?: CabtCardRef[];
-  preEvolution?: CabtCardRef[];
-};
-
-type CabtPlayerFrame = {
-  active?: CabtPokemonRef[];
-  bench?: CabtPokemonRef[];
-  benchMax?: number;
-  deckCount?: number;
-  discard?: CabtCardRef[];
-  hand?: CabtCardRef[];
-  handCount?: number;
-  prize?: Array<CabtCardRef | null>;
-  poisoned?: boolean;
-  burned?: boolean;
-  asleep?: boolean;
-  paralyzed?: boolean;
-  confused?: boolean;
-};
-
-type CabtVisualizeFrame = {
-  logs?: Array<Record<string, unknown>>;
-  select?: Record<string, unknown> | null;
-  selected?: unknown;
-  action?: unknown;
-  obs?: unknown;
-  current: {
-    turn: number;
-    yourIndex: number;
-    result: number;
-    stadium?: CabtCardRef[];
-    players: CabtPlayerFrame[];
-  };
-};
-
-type KaggleEnvironment = {
-  id?: string;
-  title?: string;
-  rewards?: number[];
-  statuses?: string[];
-  steps?: Array<Array<{
-    action?: unknown;
-    observation?: Record<string, unknown>;
-    status?: string;
-    reward?: number;
-    visualize?: unknown;
-  }>>;
-  info?: {
-    TeamNames?: string[];
-    EpisodeId?: string | number;
-  };
-};
-
-type KaggleContext = {
-  environment?: KaggleEnvironment;
-};
-
-type CabtRunnerJson = {
-  visualize?: CabtVisualizeFrame[];
-  steps?: Array<{ index?: number; action?: unknown; observation?: unknown }>;
-};
-
-const cardDatabase = new Map<number, CardRow>((cardRows as CardRow[]).map((card) => [card.id, card]));
-const attackDatabase = new Map<number, AttackRow>((attackRows as AttackRow[]).map((attack) => [attack.attackId, attack]));
 
 export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
   const visualFrames = extractVisualizeFrames(input);
@@ -146,7 +80,7 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
   }
 
   const environment = replayEnvironment(input);
-  const players = playerNames(input);
+  const players = replayPlayerNames(input);
   const views: GameView[] = [];
   const steps: ReplayStep[] = [];
   const logs: LogView[] = [];
@@ -160,7 +94,7 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
     const timeline = cabtLogsToTimeline(frameLogs, { nextId: timelineId });
     timelineId = timeline.nextId;
     for (const entry of frameLogs) {
-      logs.push({ id: logId++, message: formatLog(entry), params: entry });
+      logs.push({ id: logId++, message: formatCabtLog(entry), params: entry });
     }
     const view = frameToGameView(frame, players, logs, timeline.events);
     views.push(view);
@@ -240,7 +174,7 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
       steps.push(replayStepForFrame({
         view,
         stateIndex: index,
-        label: stepLabel(frame, index),
+        label: cabtReplayStepLabel(frame, index),
         type: String(frame.select?.type ?? 'frame'),
         displayView: resolvingDisplayView(view, resolvingContext),
         payload: {
@@ -270,30 +204,11 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
     stateCount: views.length,
     actionCount: Math.max(0, steps.length - 1),
     turnCount: Math.max(...views.map((view) => view.turn), 0),
-    cardNames: [...new Set([...cardDatabase.values()].map((card) => card.name))],
+    cardNames: cabtCardNames(),
     views,
     steps,
   };
 }
-
-type ReplayActionGroup = {
-  label: string;
-  type: string;
-  events: ActionTimelineEvent[];
-  turn: number;
-};
-
-type ReplayFrameEntry = {
-  frame: CabtVisualizeFrame;
-  view: GameView;
-  groups: ReplayActionGroup[];
-};
-
-type CardEffectContinuation = {
-  endIndex: number;
-  group: ReplayActionGroup;
-  resolvingPlayEvent?: ActionTimelineEvent;
-};
 
 function logsWithSynthesizedAbility(
   previousFrame: CabtVisualizeFrame | undefined,
@@ -328,8 +243,7 @@ function abilityLogForSelectedOption(
   if (cardId === undefined) {
     return null;
   }
-  const data = cardDatabase.get(cardId);
-  const abilityName = abilityNameForCard(data);
+  const abilityName = cabtAbilityNameForCardId(cardId);
   return {
     type: 'Ability',
     playerIndex,
@@ -378,7 +292,7 @@ function triggeredEvolutionAbility(frame: CabtVisualizeFrame): TriggeredEvolutio
   if (playerIndex === undefined || !Number.isFinite(cardId)) {
     return null;
   }
-  const skill = evolutionTriggeredDrawSkill(cardDatabase.get(cardId));
+  const skill = cabtEvolutionTriggeredDrawSkill(cardId);
   if (!skill) {
     return null;
   }
@@ -388,33 +302,11 @@ function triggeredEvolutionAbility(frame: CabtVisualizeFrame): TriggeredEvolutio
     playerIndex,
     cardId,
     serial,
-    abilityName: displayName(skill.name.trim()),
+    abilityName: cabtDisplayName(skill.name.trim()),
     drawCount: skill.drawCount,
     area: source?.area,
     index: source?.index,
   };
-}
-
-function evolutionTriggeredDrawSkill(data: CardRow | undefined): { name: string; drawCount: number } | null {
-  for (const skill of data?.skills ?? []) {
-    const text = normalizedAbilityText(skill.text);
-    if (!text.includes('when you play this pokemon from your hand to evolve')) {
-      continue;
-    }
-    const drawCount = Number(text.match(/\bdraw\s+(\d+)\s+cards?\b/)?.[1]);
-    if (Number.isFinite(drawCount) && drawCount > 0 && skill.name.trim()) {
-      return { name: skill.name, drawCount };
-    }
-  }
-  return null;
-}
-
-function normalizedAbilityText(text: string | undefined): string {
-  return (text ?? '')
-    .toLowerCase()
-    .replaceAll('é', 'e')
-    .replaceAll(/\s+/g, ' ')
-    .trim();
 }
 
 function evolvedPokemonSource(
@@ -519,732 +411,6 @@ function numberField(value: unknown): number | undefined {
   return Number.isFinite(number) ? number : undefined;
 }
 
-function cardEffectContinuation(entries: ReplayFrameEntry[], startIndex: number): CardEffectContinuation | null {
-  const firstGroup = entries[startIndex].groups[0];
-  if (!firstGroup || entries[startIndex].groups.length !== 1) {
-    return null;
-  }
-  const triggeredEvolutionContinuation = triggeredEvolutionAbilityContinuationFrom(entries, startIndex, firstGroup);
-  if (triggeredEvolutionContinuation) {
-    return triggeredEvolutionContinuation;
-  }
-  if (!isCardEffectStartGroup(firstGroup)) {
-    return null;
-  }
-  const playEvent = resolvingTrainerPlayEvent(firstGroup);
-  const playerIndex = playEvent?.playerIndex;
-  if (!playEvent || playerIndex === undefined) {
-    return null;
-  }
-
-  if (startGroupHasTerminalResolvingEffect(firstGroup)) {
-    return null;
-  }
-
-  if (isCompleteDeckSearchEffect(firstGroup.events, playerIndex)) {
-    return { endIndex: startIndex, group: firstGroup, resolvingPlayEvent: playEvent };
-  }
-
-  const deckSearchContinuation = deckSearchContinuationFrom(entries, startIndex, firstGroup, playerIndex);
-  if (deckSearchContinuation) {
-    return withResolvingPlayEvent(deckSearchContinuation, playEvent);
-  }
-
-  const deckRevealContinuation = deckRevealContinuationFrom(entries, startIndex, firstGroup, playerIndex);
-  if (deckRevealContinuation) {
-    return withResolvingPlayEvent(deckRevealContinuation, playEvent);
-  }
-
-  const resolvingContinuation = resolvingTrainerContinuationFrom(entries, startIndex, firstGroup, playEvent);
-  if (resolvingContinuation) {
-    return withResolvingPlayEvent(
-      triggeredEvolutionAbilityContinuationFrom(entries, resolvingContinuation.endIndex, resolvingContinuation.group)
-        ?? resolvingContinuation,
-      playEvent,
-    );
-  }
-
-  for (let index = startIndex + 1; index < entries.length; index += 1) {
-    const groups = entries[index].groups;
-    if (!groups.length) {
-      continue;
-    }
-    if (groups.length === 1 && isCardEffectContinuationGroup(groups[0], playerIndex, firstGroup)) {
-      return {
-        endIndex: index,
-        resolvingPlayEvent: playEvent,
-        group: {
-          ...firstGroup,
-          events: [...firstGroup.events, ...groups[0].events],
-        },
-      };
-    }
-    return null;
-  }
-  return null;
-}
-
-function withResolvingPlayEvent(continuation: CardEffectContinuation, resolvingPlayEvent: ActionTimelineEvent): CardEffectContinuation {
-  return {
-    ...continuation,
-    resolvingPlayEvent,
-  };
-}
-
-function triggeredEvolutionAbilityContinuationFrom(
-  entries: ReplayFrameEntry[],
-  startIndex: number,
-  startGroup: ReplayActionGroup,
-): CardEffectContinuation | null {
-  const evolveEvent = [...startGroup.events].reverse().find(isTriggeredAbilityEvolveEvent);
-  if (!evolveEvent || evolveEvent.playerIndex === undefined) {
-    return null;
-  }
-  for (let index = startIndex + 1; index < entries.length; index += 1) {
-    const groups = entries[index].groups;
-    if (!groups.length) {
-      continue;
-    }
-    if (groups.length !== 1 || !isTriggeredEvolutionAbilityGroup(groups[0], evolveEvent)) {
-      return null;
-    }
-    return {
-      endIndex: index,
-      group: {
-        ...startGroup,
-        events: [...startGroup.events, ...groups[0].events],
-      },
-    };
-  }
-  return null;
-}
-
-function isTriggeredAbilityEvolveEvent(event: ActionTimelineEvent): boolean {
-  const params = event.params as Record<string, unknown> | undefined;
-  const cardId = Number(params?.cardId);
-  return event.kind === 'Evolve'
-    && event.playerIndex !== undefined
-    && Number.isFinite(cardId)
-    && !!evolutionTriggeredDrawSkill(cardDatabase.get(cardId));
-}
-
-function isTriggeredEvolutionAbilityGroup(group: ReplayActionGroup, evolveEvent: ActionTimelineEvent): boolean {
-  const ability = group.events[0];
-  const abilityParams = ability?.params as Record<string, unknown> | undefined;
-  const evolveParams = evolveEvent.params as Record<string, unknown> | undefined;
-  const expectedSerial = Number(evolveParams?.serial);
-  return ability?.kind === 'Ability'
-    && ability.playerIndex === evolveEvent.playerIndex
-    && abilityParams?.trigger === 'Evolve'
-    && Number(abilityParams?.cardId) === Number(evolveParams?.cardId)
-    && (!Number.isFinite(expectedSerial) || Number(abilityParams?.serial) === expectedSerial)
-    && group.events.slice(1).length > 0
-    && group.events.slice(1).every((event) =>
-      (event.kind === 'Draw' || event.kind === 'DrawReverse')
-      && event.playerIndex === evolveEvent.playerIndex);
-}
-
-function isCardEffectStartGroup(group: ReplayActionGroup): boolean {
-  return !!resolvingTrainerPlayEvent(group);
-}
-
-function resolvingTrainerPlayEvent(group: ReplayActionGroup): ActionTimelineEvent | undefined {
-  return group.events.find((event) => {
-    const params = event.params as Record<string, unknown> | undefined;
-    const cardId = Number(params?.cardId);
-    return event.kind === 'Play'
-      && event.playerIndex !== undefined
-      && Number.isFinite(cardId)
-      && isResolvingTrainerCard(cardId);
-  });
-}
-
-function resolvingTrainerContinuationFrom(
-  entries: ReplayFrameEntry[],
-  startIndex: number,
-  startGroup: ReplayActionGroup,
-  playEvent: ActionTimelineEvent,
-): CardEffectContinuation | null {
-  // Archive hardening: add negative samples before widening this heuristic. A trainer
-  // that is already discarded in its Play frame should not swallow the next unrelated action.
-  const playerIndex = playEvent.playerIndex;
-  if (playerIndex === undefined) {
-    return null;
-  }
-
-  const continuationEvents: ActionTimelineEvent[] = [];
-  for (let index = startIndex + 1; index < entries.length; index += 1) {
-    const groups = entries[index].groups;
-    if (!groups.length) {
-      continue;
-    }
-    const cardIsDiscardedInView = viewHasEventCardInDiscard(entries[index].view, playEvent);
-    if (groups.length !== 1 || !isResolvingTrainerContinuationGroup(groups[0])) {
-      return null;
-    }
-
-    const nextEvents = [...continuationEvents, ...groups[0].events];
-    if (
-      groupHasDeckSearchStyleMove(groups[0])
-      && !cardIsDiscardedInView
-      && !isResolvingTrainerTerminalGroup(groups[0], nextEvents)
-    ) {
-      return null;
-    }
-
-    continuationEvents.push(...groups[0].events);
-    if (cardIsDiscardedInView || isResolvingTrainerTerminalGroup(groups[0], continuationEvents)) {
-      return {
-        endIndex: index,
-        group: {
-          ...startGroup,
-          events: [...startGroup.events, ...continuationEvents],
-        },
-      };
-    }
-  }
-  return null;
-}
-
-function startGroupHasTerminalResolvingEffect(group: ReplayActionGroup): boolean {
-  return group.events.some((event) => event.kind !== 'Play')
-    && isResolvingTrainerTerminalGroup(group, group.events);
-}
-
-function isResolvingTrainerTerminalGroup(group: ReplayActionGroup, continuationEvents: ActionTimelineEvent[]): boolean {
-  if (group.events.some((event) => ['Draw', 'DrawReverse', 'Switch', 'Evolve', 'Devolve', 'MoveAttached', 'Attach'].includes(event.kind ?? ''))) {
-    return true;
-  }
-  if (group.events.some((event) => ['HpChange', 'HPChange', 'Poisoned', 'Burned', 'Asleep', 'Paralyzed', 'Confused', 'Coin'].includes(event.kind ?? ''))) {
-    return true;
-  }
-  if (group.events.some(isTerminalResolvingMoveEvent)) {
-    return true;
-  }
-  if (group.events.some((event) => event.kind === 'Shuffle')) {
-    return !continuationEvents.some((event) => isMoveBetween(event, CabtAreaType.HAND, CabtAreaType.DECK));
-  }
-  return false;
-}
-
-function isTerminalResolvingMoveEvent(event: ActionTimelineEvent): boolean {
-  const params = event.params as Record<string, unknown> | undefined;
-  const fromArea = Number(params?.fromArea);
-  const toArea = Number(params?.toArea);
-  return isMoveCardKind(event.kind)
-    && (
-      toArea === CabtAreaType.DISCARD
-      || isBoardPositionMove(fromArea, toArea)
-      || isAttachedCardArea(fromArea)
-    );
-}
-
-function isResolvingTrainerContinuationGroup(group: ReplayActionGroup): boolean {
-  return group.events.length > 0
-    && group.events.every(isResolvingTrainerContinuationEvent);
-}
-
-function isResolvingTrainerContinuationEvent(event: ActionTimelineEvent): boolean {
-  if (isMoveCardKind(event.kind)) {
-    return true;
-  }
-  return [
-    'Attach',
-    'Evolve',
-    'Devolve',
-    'MoveAttached',
-    'Switch',
-    'Draw',
-    'DrawReverse',
-    'Shuffle',
-    'HpChange',
-    'HPChange',
-    'Poisoned',
-    'Burned',
-    'Asleep',
-    'Paralyzed',
-    'Confused',
-    'Coin',
-  ].includes(event.kind ?? '');
-}
-
-function groupHasDeckSearchStyleMove(group: ReplayActionGroup): boolean {
-  return group.events.some(isDeckSearchStyleMove);
-}
-
-function isDeckSearchStyleMove(event: ActionTimelineEvent): boolean {
-  if (!isMoveCardKind(event.kind)) {
-    return false;
-  }
-  const params = event.params as Record<string, unknown> | undefined;
-  const fromArea = Number(params?.fromArea);
-  const toArea = Number(params?.toArea);
-  return (fromArea === CabtAreaType.DECK && (
-    toArea === CabtAreaType.HAND
-    || toArea === CabtAreaType.ACTIVE
-    || toArea === CabtAreaType.BENCH
-    || toArea === CabtAreaType.LOOKING
-  ))
-    || (fromArea === CabtAreaType.LOOKING && (
-      toArea === CabtAreaType.HAND
-      || toArea === CabtAreaType.DECK
-    ));
-}
-
-function viewHasEventCardInDiscard(view: GameView, event: ActionTimelineEvent): boolean {
-  const playerIndex = event.playerIndex;
-  if (playerIndex === undefined) {
-    return false;
-  }
-  return view.players[playerIndex]?.discard.some((card) => eventCardMatches(card, event)) ?? false;
-}
-
-function deckSearchContinuationFrom(
-  entries: ReplayFrameEntry[],
-  startIndex: number,
-  startGroup: ReplayActionGroup,
-  playerIndex: number,
-): CardEffectContinuation | null {
-  if (startGroup.events.some((event) => isMoveBetween(event, CabtAreaType.DECK, CabtAreaType.LOOKING))) {
-    return null;
-  }
-
-  const continuationEvents: ActionTimelineEvent[] = [];
-  let sawDeckSearchPrompt = isDeckSearchPrompt(entries[startIndex].frame);
-  let sawDeckToHand = false;
-  for (let index = startIndex + 1; index < entries.length; index += 1) {
-    const groups = entries[index].groups;
-    if (!groups.length) {
-      sawDeckSearchPrompt ||= isDeckSearchPrompt(entries[index].frame);
-      continue;
-    }
-    if (!sawDeckSearchPrompt) {
-      return null;
-    }
-    if (groups.length !== 1 || !isDeckSearchContinuationGroup(groups[0], playerIndex)) {
-      return null;
-    }
-    if (!deckSearchContinuationOrderIsValid(groups[0].events, sawDeckToHand)) {
-      return null;
-    }
-
-    continuationEvents.push(...groups[0].events);
-    sawDeckToHand ||= groups[0].events.some((event) => isMoveBetween(event, CabtAreaType.DECK, CabtAreaType.HAND));
-    const events = [...startGroup.events, ...continuationEvents];
-    if (isCompleteDeckSearchEffect(events, playerIndex)) {
-      return {
-        endIndex: index,
-        group: {
-          ...startGroup,
-          events,
-        },
-      };
-    }
-  }
-  return null;
-}
-
-function deckRevealContinuationFrom(
-  entries: ReplayFrameEntry[],
-  startIndex: number,
-  startGroup: ReplayActionGroup,
-  playerIndex: number,
-): CardEffectContinuation | null {
-  if (!startGroup.events.some((event) => isMoveBetween(event, CabtAreaType.DECK, CabtAreaType.LOOKING))) {
-    return null;
-  }
-
-  const revealedSerials = new Set(
-    startGroup.events
-      .filter((event) => isMoveBetween(event, CabtAreaType.DECK, CabtAreaType.LOOKING))
-      .map(eventSerial)
-      .filter((serial): serial is number => Number.isFinite(serial)),
-  );
-  if (!revealedSerials.size) {
-    return null;
-  }
-
-  const continuationEvents: ActionTimelineEvent[] = [];
-  for (let index = startIndex + 1; index < entries.length; index += 1) {
-    const groups = entries[index].groups;
-    if (!groups.length) {
-      continue;
-    }
-    if (!groups.every((group) => isDeckRevealContinuationGroup(group, playerIndex, revealedSerials))) {
-      return null;
-    }
-
-    continuationEvents.push(...groups.flatMap((group) => group.events));
-    const events = [...startGroup.events, ...continuationEvents];
-    if (isCompleteDeckRevealEffect(events, revealedSerials)) {
-      const orderedEvents = orderedDeckRevealResolutionEvents(startGroup.events, continuationEvents);
-      return {
-        endIndex: index,
-        group: {
-          ...startGroup,
-          events: orderedEvents,
-        },
-      };
-    }
-  }
-  return null;
-}
-
-function orderedDeckRevealResolutionEvents(
-  revealEvents: ActionTimelineEvent[],
-  continuationEvents: ActionTimelineEvent[],
-): ActionTimelineEvent[] {
-  const takeEvents = continuationEvents.filter((event) => isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.HAND));
-  if (!takeEvents.length || !continuationEvents.some((event) => isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.DECK))) {
-    return [...revealEvents, ...continuationEvents];
-  }
-
-  const shuffleEvents = continuationEvents.filter((event) => event.kind === 'Shuffle');
-  const beforeTakeEvents = continuationEvents.filter((event) =>
-    event.kind !== 'Shuffle' && !isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.HAND));
-  return [...revealEvents, ...beforeTakeEvents, ...takeEvents, ...shuffleEvents];
-}
-
-function isDeckRevealContinuationGroup(
-  group: ReplayActionGroup,
-  playerIndex: number,
-  revealedSerials: ReadonlySet<number>,
-): boolean {
-  return group.events.length > 0
-    && group.events.every((event) => {
-      if (event.playerIndex !== undefined && event.playerIndex !== playerIndex) {
-        return false;
-      }
-      if (event.kind === 'Shuffle') {
-        return true;
-      }
-      if (event.kind === 'Attach') {
-        const serial = eventSerial(event);
-        return serial !== undefined && revealedSerials.has(serial);
-      }
-      return isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.HAND)
-        || isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.DECK);
-    });
-}
-
-function isCompleteDeckRevealEffect(events: ActionTimelineEvent[], revealedSerials: ReadonlySet<number>): boolean {
-  const resolvedSerials = new Set<number>();
-  let returnedToDeck = false;
-  let shuffled = false;
-
-  for (const event of events) {
-    const serial = eventSerial(event);
-    if (event.kind === 'Shuffle') {
-      shuffled = true;
-      continue;
-    }
-    if (serial === undefined || !revealedSerials.has(serial)) {
-      continue;
-    }
-    if (event.kind === 'Attach'
-      || isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.HAND)
-      || isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.DECK)) {
-      resolvedSerials.add(serial);
-    }
-    if (isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.DECK)) {
-      returnedToDeck = true;
-    }
-  }
-
-  return resolvedSerials.size === revealedSerials.size && (!returnedToDeck || shuffled);
-}
-
-function eventSerial(event: ActionTimelineEvent): number | undefined {
-  const params = event.params as Record<string, unknown> | undefined;
-  const serial = Number(params?.serial);
-  return Number.isFinite(serial) ? serial : undefined;
-}
-
-function deckSearchContinuationOrderIsValid(events: ActionTimelineEvent[], sawDeckToHand: boolean): boolean {
-  let hasSeenDeckToHand = sawDeckToHand;
-  for (const event of events) {
-    if (isMoveBetween(event, CabtAreaType.DECK, CabtAreaType.HAND)) {
-      hasSeenDeckToHand = true;
-      continue;
-    }
-    if (event.kind === 'Shuffle' && !hasSeenDeckToHand) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function isDeckSearchPrompt(frame: CabtVisualizeFrame): boolean {
-  const context = frame.select?.context;
-  if (context === CabtSelectContext.TO_HAND || context === CabtSelectContext.TO_HAND_ENERGY) {
-    return true;
-  }
-  const normalizedContext = String(context ?? '').toLowerCase().replace(/[_\s-]+/g, '');
-  return normalizedContext.includes('searchdeck') || normalizedContext.includes('tohand');
-}
-
-function isDeckSearchContinuationGroup(group: ReplayActionGroup, playerIndex: number): boolean {
-  return group.events.every((event) =>
-    (event.playerIndex === undefined || event.playerIndex === playerIndex)
-    && (
-      event.kind === 'Shuffle'
-      || isMoveBetween(event, CabtAreaType.DECK, CabtAreaType.HAND)
-    ));
-}
-
-function isCompleteDeckSearchEffect(events: ActionTimelineEvent[], playerIndex: number): boolean {
-  return events.every((event) => event.playerIndex === undefined || event.playerIndex === playerIndex)
-    && events.some((event) => event.kind === 'Play')
-    && events.some((event) => isMoveBetween(event, CabtAreaType.DECK, CabtAreaType.HAND))
-    && events.some((event) => event.kind === 'Shuffle');
-}
-
-function isCardEffectContinuationGroup(
-  group: ReplayActionGroup,
-  playerIndex: number,
-  startGroup: ReplayActionGroup,
-): boolean {
-  if (startGroup.events.some((event) => isMoveBetween(event, CabtAreaType.DECK, CabtAreaType.LOOKING))) {
-    return isDeckRevealResolutionGroup(group, playerIndex);
-  }
-  return false;
-}
-
-function isDeckRevealResolutionGroup(group: ReplayActionGroup, playerIndex: number): boolean {
-  return group.events.every((event) => event.playerIndex === undefined || event.playerIndex === playerIndex)
-    && group.events.some((event) => event.kind === 'Attach')
-    && group.events.some((event) => isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.DECK))
-    && group.events.some((event) => event.kind === 'Shuffle');
-}
-
-function isMoveBetween(event: ActionTimelineEvent, fromArea: number, toArea: number): boolean {
-  const params = event.params as Record<string, unknown> | undefined;
-  return isMoveCardKind(event.kind)
-    && Number(params?.fromArea) === fromArea
-    && Number(params?.toArea) === toArea;
-}
-
-function replayActionGroups(events: ActionTimelineEvent[], turn: number): ReplayActionGroup[] {
-  const groups: ReplayActionGroup[] = [];
-  let current: ReplayActionGroup | null = null;
-
-  for (const event of events) {
-    if (!current || startsReplayGroup(event, current)) {
-      current = groupForEvent(event, current, turn);
-      groups.push(current);
-      continue;
-    }
-    current.events.push(event);
-    current.label = labelForGroup(current);
-  }
-
-  return groups;
-}
-
-function startsReplayGroup(event: ActionTimelineEvent, current: ReplayActionGroup): boolean {
-  const kind = event.kind ?? 'Event';
-  if (isChoiceOrPhaseKind(kind)) {
-    return true;
-  }
-  if (isCheckupKind(kind) && current.type === 'TurnEnd') {
-    return true;
-  }
-  if (kind === 'Draw') {
-    return current.type !== 'TurnStart'
-      && current.type !== 'Draw'
-      && !isChoiceConsequenceGroup(current.type);
-  }
-  if (isMoveCardKind(kind)) {
-    return isMoveCardKind(current.type)
-      && !sameMoveCardBatch(current.events.at(-1), event)
-      && !sameBoardPositionMoveBatch(current.events.at(-1), event);
-  }
-  if (kind === 'HasBasicPokemon') {
-    return current.type !== 'Draw' && current.type !== 'HasBasicPokemon';
-  }
-  return false;
-}
-
-function groupForEvent(event: ActionTimelineEvent, previous: ReplayActionGroup | null, turn: number): ReplayActionGroup {
-  const type = isCheckupKind(event.kind) && previous?.type === 'TurnEnd' ? 'PokemonCheckup' : (event.kind ?? 'Event');
-  const group = {
-    label: event.message,
-    type,
-    events: [event],
-    turn,
-  };
-  group.label = labelForGroup(group);
-  return group;
-}
-
-function labelForGroup(group: ReplayActionGroup): string {
-  if (group.type === 'PokemonCheckup') {
-    return 'Pokemon Checkup.';
-  }
-  if (group.type === 'Draw') {
-    return drawGroupLabel(group.events);
-  }
-  if (isMoveCardKind(group.type)) {
-    return moveCardGroupLabel(group.events, group.turn);
-  }
-  return group.events[0]?.message ?? 'Event';
-}
-
-function isChoiceOrPhaseKind(kind: string): boolean {
-  return [
-    'Play',
-    'Attach',
-    'Evolve',
-    'Devolve',
-    'MoveAttached',
-    'Ability',
-    'Attack',
-    'TurnEnd',
-    'TurnStart',
-    'Result',
-  ].includes(kind);
-}
-
-function isChoiceConsequenceGroup(type: string): boolean {
-  return ['Play', 'Attach', 'Evolve', 'Devolve', 'MoveAttached', 'Ability', 'Attack'].includes(type);
-}
-
-function isCheckupKind(kind: string | undefined): boolean {
-  return [
-    'HPChange',
-    'HpChange',
-    'Poisoned',
-    'Burned',
-    'Asleep',
-    'Paralyzed',
-    'Confused',
-    'Coin',
-  ].includes(kind ?? '');
-}
-
-function isMoveCardKind(kind: string | undefined): boolean {
-  return kind === 'MoveCard' || kind === 'MoveCardReverse';
-}
-
-function sameMoveCardBatch(previous: ActionTimelineEvent | undefined, next: ActionTimelineEvent): boolean {
-  const previousParams = previous?.params as Record<string, unknown> | undefined;
-  const nextParams = next.params as Record<string, unknown> | undefined;
-  const fromArea = Number(nextParams?.fromArea);
-  const toArea = Number(nextParams?.toArea);
-  return previous?.playerIndex === next.playerIndex
-    && Number(previousParams?.fromArea) === fromArea
-    && Number(previousParams?.toArea) === toArea
-    && isBatchedMoveDestination(fromArea, toArea);
-}
-
-function isBatchedMoveDestination(fromArea: number, toArea: number): boolean {
-  if (toArea === CabtAreaType.ACTIVE || toArea === CabtAreaType.BENCH) {
-    return fromArea === CabtAreaType.DECK;
-  }
-  return !isBoardPositionMove(fromArea, toArea);
-}
-
-function sameBoardPositionMoveBatch(previous: ActionTimelineEvent | undefined, next: ActionTimelineEvent): boolean {
-  return previous?.playerIndex === next.playerIndex
-    && isBoardPositionMoveEvent(previous)
-    && isBoardPositionMoveEvent(next);
-}
-
-function isBoardPositionMoveEvent(event: ActionTimelineEvent | undefined): boolean {
-  const params = event?.params as Record<string, unknown> | undefined;
-  return isMoveCardKind(event?.kind) && isBoardPositionMove(Number(params?.fromArea), Number(params?.toArea));
-}
-
-function drawGroupLabel(events: ActionTimelineEvent[]): string {
-  const drawEvents = events.filter((event) => event.kind === 'Draw');
-  if (drawEvents.length === 0) {
-    return events[0]?.message ?? 'Draw.';
-  }
-  if (drawEvents.length === 1 && events.length === 1) {
-    return events[0].message;
-  }
-
-  const playerIndex = drawEvents[0].playerIndex;
-  const samePlayer = drawEvents.every((event) => event.playerIndex === playerIndex);
-  if (isMulliganRedrawGroup(events)) {
-    if (!samePlayer || playerIndex === undefined) {
-      return 'Players redrew opening hands.';
-    }
-    return `Player ${playerIndex + 1} redrew their opening hand.`;
-  }
-  if (isOpeningHandGroup(events)) {
-    if (!samePlayer || playerIndex === undefined) {
-      return 'Players drew opening hands.';
-    }
-    return `Player ${playerIndex + 1} drew an opening hand.`;
-  }
-  if (!samePlayer || playerIndex === undefined) {
-    return `Players drew ${drawEvents.length} cards.`;
-  }
-  return `Player ${playerIndex + 1} drew ${drawEvents.length} cards.`;
-}
-
-function isOpeningHandGroup(events: ActionTimelineEvent[]): boolean {
-  return events.some((event) => event.kind === 'HasBasicPokemon');
-}
-
-function isMulliganRedrawGroup(events: ActionTimelineEvent[]): boolean {
-  return events.some((event) => event.kind === 'HasBasicPokemon' && (event.params as Record<string, unknown> | undefined)?.hasBasicPokemon === false)
-    && events.some((event) => event.kind === 'Shuffle')
-    && events.some((event) => {
-      const params = event.params as Record<string, unknown> | undefined;
-      return event.kind === 'MoveCard'
-        && Number(params?.fromArea) === CabtAreaType.HAND
-        && Number(params?.toArea) === CabtAreaType.DECK;
-    });
-}
-
-function moveCardGroupLabel(events: ActionTimelineEvent[], turn: number): string {
-  if (events.length === 1) {
-    return events[0].message;
-  }
-  const moveEvents = events.filter((event) => isMoveCardKind(event.kind));
-  const firstParams = moveEvents[0]?.params as Record<string, unknown> | undefined;
-  const playerIndex = moveEvents[0]?.playerIndex;
-  const samePlayer = moveEvents.every((event) => event.playerIndex === playerIndex);
-  const allSameMove = moveEvents.every((event) => sameMoveCardBatch(moveEvents[0], event));
-  if (
-    samePlayer
-    && playerIndex !== undefined
-    && allSameMove
-    && Number(firstParams?.fromArea) === CabtAreaType.DECK
-    && Number(firstParams?.toArea) === CabtAreaType.PRIZE
-  ) {
-    if (turn === 0) {
-      return `Player ${playerIndex + 1} set ${moveEvents.length} Prize cards.`;
-    }
-    return `Player ${playerIndex + 1} put ${moveEvents.length} cards from deck into their Prize cards.`;
-  }
-  if (
-    samePlayer
-    && playerIndex !== undefined
-    && allSameMove
-    && Number(firstParams?.fromArea) === CabtAreaType.HAND
-    && Number(firstParams?.toArea) === CabtAreaType.DECK
-    && events.some((event) => event.kind === 'Shuffle')
-  ) {
-    if (turn === 0) {
-      return `Player ${playerIndex + 1} shuffled their opening hand into their deck.`;
-    }
-    return `Player ${playerIndex + 1} shuffled ${moveEvents.length} cards from hand into their deck.`;
-  }
-  if (
-    samePlayer
-    && playerIndex !== undefined
-    && allSameMove
-    && Number(firstParams?.fromArea) === CabtAreaType.PRIZE
-    && Number(firstParams?.toArea) === CabtAreaType.HAND
-  ) {
-    return `Player ${playerIndex + 1} took ${moveEvents.length} Prize cards.`;
-  }
-  return events[0].message;
-}
-
 function replayStepForFrame({
   view,
   stateIndex,
@@ -1280,114 +446,6 @@ function replayStepForFrame({
     displayView,
     animationPhases,
   };
-}
-
-function persistentActionLabel(label: string, events: ReplayStep['actionTimeline']): string {
-  if (!events || events.length < 2) {
-    return label;
-  }
-  const playEvent = events.find((event) => event.kind === 'Play');
-  if (!playEvent) {
-    return label;
-  }
-  const phases = animationEventPhases(events);
-  const hasEffectPhase = phases.some((phase) =>
-    phase.kind === 'HandToDeck'
-    || phase.kind === 'DeckDiscard'
-    || phase.kind === 'DeckReveal'
-    || phase.kind === 'DeckSearchReveal'
-    || phase.kind === 'DeckBoardPlace'
-    || phase.kind === 'DeckRevealReturn'
-    || phase.kind === 'DeckRevealTake'
-    || phase.kind === 'Draw',
-  );
-  if (!hasEffectPhase) {
-    return label;
-  }
-
-  const playerIndex = playEvent.playerIndex;
-  const actor = playerLabel(playerIndex);
-  const playedCard = eventCardName(playEvent);
-  const clauses = [`played ${playedCard}`];
-  let handToDeckWasSummarized = false;
-
-  for (const phase of phases) {
-    if (phase.kind === 'Play') {
-      continue;
-    }
-    const count = phase.events.filter((event) => animationPhaseKey(event) === phase.key).length;
-    if (phase.kind === 'HandToDeck') {
-      clauses.push(`shuffled ${count} ${plural(count, 'card')} from hand into their deck`);
-      handToDeckWasSummarized = true;
-      continue;
-    }
-    if (phase.kind === 'Draw') {
-      clauses.push(`drew ${count} ${plural(count, 'card')}`);
-      continue;
-    }
-    if (phase.kind === 'DeckSearchReveal') {
-      clauses.push(count === 1
-        ? 'revealed a card from their deck and put it into their hand'
-        : `revealed ${count} cards from their deck and put them into their hand`);
-      continue;
-    }
-    if (phase.kind === 'DeckBoardPlace') {
-      clauses.push(count === 1
-        ? 'put a Pokemon from their deck onto the board'
-        : `put ${count} Pokemon from their deck onto the board`);
-      continue;
-    }
-    if (phase.kind === 'DeckRevealReturn') {
-      clauses.push(`returned ${count} revealed ${plural(count, 'card')} to their deck`);
-      continue;
-    }
-    if (phase.kind === 'DeckRevealTake') {
-      clauses.push(count === 1
-        ? 'put a revealed card into their hand'
-        : `put ${count} revealed cards into their hand`);
-      continue;
-    }
-    if (phase.kind === 'DeckReveal') {
-      clauses.push(`revealed the top ${count} ${plural(count, 'card')} of their deck`);
-      continue;
-    }
-    if (phase.kind === 'DeckDiscard') {
-      clauses.push(`discarded ${count} ${plural(count, 'card')} from their deck`);
-      continue;
-    }
-    if (phase.kind === 'Attach') {
-      clauses.push(...phase.events
-        .filter((event) => animationPhaseKey(event) === phase.key)
-        .map((event) => eventMessageWithoutActor(event, actor)));
-      continue;
-    }
-    if (phase.kind === 'Shuffle' && !handToDeckWasSummarized) {
-      clauses.push('shuffled their deck');
-    }
-  }
-
-  return `${actor} ${joinClauses(clauses)}.`;
-}
-
-function eventCardName(event: ActionTimelineEvent): string {
-  const params = event.params as Record<string, unknown> | undefined;
-  return cardName(Number(params?.cardId));
-}
-
-function eventMessageWithoutActor(event: ActionTimelineEvent, actor: string): string {
-  const text = event.message.replace(/\.$/, '');
-  const withoutActor = text.startsWith(`${actor} `) ? text.slice(actor.length + 1) : text;
-  return withoutActor.charAt(0).toLowerCase() + withoutActor.slice(1);
-}
-
-function joinClauses(clauses: string[]): string {
-  if (clauses.length <= 1) {
-    return clauses[0] ?? '';
-  }
-  if (clauses.length === 2) {
-    return `${clauses[0]} and ${clauses[1]}`;
-  }
-  return `${clauses.slice(0, -1).join(', ')}, and ${clauses.at(-1)}`;
 }
 
 function groupedStepDisplayView(
@@ -1772,7 +830,7 @@ function changePulseLabel(event: ActionTimelineEvent): string {
   const params = event.params as Record<string, unknown> | undefined;
   const cardIdAfter = finiteNumber(params?.cardIdAfter);
   if (cardIdAfter !== undefined) {
-    return `Changed to ${cardName(cardIdAfter)}`;
+    return `Changed to ${cabtCardName(cardIdAfter)}`;
   }
   return 'Changed';
 }
@@ -2163,7 +1221,7 @@ function handPlayTargetAnchorForEvent(view: GameView, event: ActionTimelineEvent
   const serial = finiteNumber(params?.serial);
   const cardId = finiteNumber(params?.cardId);
   if (event.kind === 'Play') {
-    if (cardId !== undefined && isStadiumCardId(cardId)) {
+    if (cardId !== undefined && isCabtStadiumCard(cardId)) {
       return { kind: 'stadium-card', playerIndex, serial };
     }
     const boardDestination = boardPokemonDestinationForEvent(view.players[playerIndex], event);
@@ -2176,7 +1234,7 @@ function handPlayTargetAnchorForEvent(view: GameView, event: ActionTimelineEvent
         serial: boardDestination.slot.pokemon.serial,
       };
     }
-    if (cardId !== undefined && isResolvingTrainerCard(cardId)) {
+    if (cardId !== undefined && isCabtResolvingTrainerCard(cardId)) {
       return { kind: 'play-zone-card', playerIndex, serial };
     }
     return attachedSourceAnchorForEvent(view.players[playerIndex], event, CabtAreaType.TOOL)
@@ -2217,35 +1275,26 @@ function handPlayTargetAnchorForEvent(view: GameView, event: ActionTimelineEvent
 function handPlayIdentityKind(event: ActionTimelineEvent): AnimationIdentity['kind'] {
   const params = event.params as Record<string, unknown> | undefined;
   const cardId = finiteNumber(params?.cardId);
-  if (event.kind === 'Play' && cardId !== undefined && isStadiumCardId(cardId)) {
+  if (event.kind === 'Play' && cardId !== undefined && isCabtStadiumCard(cardId)) {
     return 'stadium';
   }
-  if (event.kind === 'Play' && cardId !== undefined && isPokemonCardId(cardId)) {
+  if (event.kind === 'Play' && cardId !== undefined && isCabtPokemonCard(cardId)) {
     return 'pokemon';
   }
   const toArea = Number(params?.toArea);
   if (toArea === CabtAreaType.ACTIVE || toArea === CabtAreaType.BENCH) {
     return 'pokemon';
   }
-  if (event.kind === 'Play' && cardId !== undefined && cardDatabase.get(cardId)?.kind === 'Tool') {
+  if (event.kind === 'Play' && cardId !== undefined && isCabtToolCard(cardId)) {
     return 'tool';
   }
   if (event.kind === 'Attach' && cardId !== undefined) {
-    return cardDatabase.get(cardId)?.kind === 'Tool' ? 'tool' : 'energy';
+    return isCabtToolCard(cardId) ? 'tool' : 'energy';
   }
   if (event.kind === 'Evolve') {
     return 'pokemon';
   }
   return 'card';
-}
-
-function isStadiumCardId(cardId: number): boolean {
-  return cardDatabase.get(cardId)?.kind === 'Stadium';
-}
-
-function isPokemonCardId(cardId: number): boolean {
-  const card = cardDatabase.get(cardId);
-  return !!card && (card.kind.includes('Pokémon') || card.hp !== null);
 }
 
 function revealSessionMotions(
@@ -2642,7 +1691,7 @@ function cardMoveSpriteVisual(input: {
   if (cardId !== undefined) {
     return {
       kind: 'card',
-      card: cardToView({
+      card: cabtCardToView({
         id: cardId,
         serial: input.identity.serial,
         playerIndex: input.event.playerIndex,
@@ -2957,129 +2006,7 @@ function boardPokemonDestinationForEvent(
   return benchSlot ? { kind: 'bench', slot: benchSlot } : undefined;
 }
 
-type AnimationEventPhase = {
-  key: string;
-  kind: ActionAnimationPhaseKind;
-  playerIndex?: number;
-  events: ActionTimelineEvent[];
-  durationMs: number;
-  usesSourceView: boolean;
-};
-
 type MaybeAnimationMotionGroup = AnimationMotion | AnimationMotion[] | null | undefined;
-
-function animationEventPhases(events: ActionTimelineEvent[]): AnimationEventPhase[] {
-  const phases: AnimationEventPhase[] = [];
-  for (const event of events) {
-    const key = animationPhaseKeyForReplayEvent(event, phases);
-    if (!key) {
-      const last = phases.at(-1);
-      if (last) {
-        last.events.push(event);
-      }
-      continue;
-    }
-    const kind = actionAnimationPhaseKind(key);
-    if (!kind) {
-      continue;
-    }
-    const last = phases.at(-1);
-    if (last && last.key === key) {
-      last.events.push(event);
-      last.durationMs = animationPhaseDurationMs(key, last.events.length);
-      continue;
-    }
-    phases.push({
-      key,
-      kind,
-      playerIndex: event.playerIndex,
-      events: [event],
-      durationMs: animationPhaseDurationMs(key, 1),
-      usesSourceView: animationPhaseUsesSourceView(key),
-    });
-  }
-  return phases.filter((phase) => phase.events.some((event) => animationPhaseKey(event)));
-}
-
-function animationPhaseKeyForReplayEvent(event: ActionTimelineEvent, phases: AnimationEventPhase[]): string | null {
-  return actionAnimationTimelinePhaseKey(event, phases.map((phase) => phase.key));
-}
-
-function animationPhaseLabel(phase: AnimationEventPhase): string | undefined {
-  const event = phase.events.find((candidate) => animationPhaseKey(candidate));
-  if (!event) {
-    return undefined;
-  }
-  const actor = playerLabel(event.playerIndex);
-  const cardEventCount = phase.events.filter((candidate) => animationPhaseKey(candidate) === phase.key).length;
-
-  switch (phase.kind) {
-    case 'Ability':
-    case 'Play':
-    case 'Attach':
-    case 'Evolve':
-    case 'Shuffle':
-    case 'Attack':
-    case 'AttachedMove':
-    case 'BoardMove':
-    case 'BoardToDeck':
-    case 'Coin':
-    case 'Condition':
-    case 'Damage':
-    case 'Change':
-    case 'Devolve':
-    case 'DiscardRecover':
-    case 'HandMove':
-    case 'KnockOut':
-    case 'MoveAttached':
-    case 'PrizeTake':
-    case 'StadiumMove':
-      return event.message;
-    case 'HandToDeck':
-      return `${actor} put ${cardEventCount} ${plural(cardEventCount, 'card')} from hand into their deck.`;
-    case 'Draw':
-      return cardEventCount === 1 ? event.message : `${actor} drew ${cardEventCount} cards.`;
-    case 'DeckDiscard':
-      return cardEventCount === 1 ? event.message : `${actor} discarded ${cardEventCount} cards from the deck.`;
-    case 'DeckRevealReturn':
-      return `${actor} returned ${cardEventCount} revealed ${plural(cardEventCount, 'card')} to their deck.`;
-    case 'DeckRevealTake':
-      return cardEventCount === 1
-        ? `${actor} put a revealed card into their hand.`
-        : `${actor} put ${cardEventCount} revealed cards into their hand.`;
-    case 'DeckSearchReveal':
-      return cardEventCount === 1
-        ? `${actor} revealed a card from their deck and put it into their hand.`
-        : `${actor} revealed ${cardEventCount} cards from their deck and put them into their hand.`;
-    case 'DeckBoardPlace':
-      return cardEventCount === 1
-        ? event.message
-        : `${actor} put ${cardEventCount} Pokemon from their deck onto the board.`;
-    case 'DeckPrizePlace':
-      return cardEventCount === 1
-        ? event.message
-        : `${actor} set ${cardEventCount} Prize cards.`;
-    case 'DeckReveal':
-      return `${actor} revealed the top ${cardEventCount} ${plural(cardEventCount, 'card')} of their deck.`;
-  }
-  return assertUnhandledActionAnimationPhaseKind(phase.kind);
-}
-
-function playerLabel(playerIndex: number | undefined): string {
-  return playerIndex === undefined ? 'Game' : `Player ${playerIndex + 1}`;
-}
-
-function plural(count: number, singular: string): string {
-  return count === 1 ? singular : `${singular}s`;
-}
-
-function animationPhaseNeedsDedicatedView(phase: AnimationEventPhase): boolean {
-  return actionAnimationPhaseNeedsDedicatedView(phase.key);
-}
-
-function animationPhaseMayHavePlan(phase: AnimationEventPhase): boolean {
-  return actionAnimationPhaseMayHavePlan(phase.key);
-}
 
 function animationSourceViewForPhase(
   phaseStartView: GameView,
@@ -3185,7 +2112,7 @@ function handPlaySourceView(
 function applyHandPlayDestination(player: PlayerView, currentPlayer: PlayerView, event: ActionTimelineEvent): PlayerView {
   const params = event.params as Record<string, unknown> | undefined;
   const cardId = finiteNumber(params?.cardId);
-  if (cardId !== undefined && isStadiumCardId(cardId)) {
+  if (cardId !== undefined && isCabtStadiumCard(cardId)) {
     return {
       ...player,
       stadium: currentPlayer.stadium,
@@ -3300,93 +2227,7 @@ function projectedViewForEvents(
   return view;
 }
 
-type ResolvingPlayedCard = {
-  playerIndex: number;
-  card: CardView;
-};
-
-type ResolvingPlayedCardContext = {
-  displayResolved: ResolvingPlayedCard[];
-  displayResolving: ResolvingPlayedCard[];
-  phaseResolving: ResolvingPlayedCard[];
-  nextResolving: ResolvingPlayedCard[];
-};
-
 const resolvingDiscardHandoffGapMs = 24;
-
-function resolvingContextForStep(
-  input: {
-    baseView: GameView | undefined;
-    actionTimeline: ReplayStep['actionTimeline'];
-    hasAnimationPhases: boolean;
-    resolvingFinalizers: ResolvingPlayedCard[];
-    resolving: ResolvingPlayedCard[];
-  },
-): ResolvingPlayedCardContext {
-  const { baseView, actionTimeline, hasAnimationPhases, resolvingFinalizers, resolving: currentResolving } = input;
-  if (!baseView) {
-    return emptyResolvingPlayedCardContext(currentResolving);
-  }
-
-  let resolving = currentResolving;
-  for (const event of actionTimeline ?? []) {
-    const resolvingCard = resolvingPlayedCardForEvent(baseView, event);
-    if (resolvingCard && !resolving.some((entry) => entry.playerIndex === resolvingCard.playerIndex && sameKnownCard(entry.card, resolvingCard.card))) {
-      resolving = [...resolving, resolvingCard];
-    }
-  }
-
-  const displayResolved = resolving.filter((entry) => shouldResolveCardInDisplay(hasAnimationPhases, resolvingFinalizers, entry));
-  const displayResolving = resolving.filter((entry) =>
-    !displayResolved.some((resolvedEntry) => sameResolvingCard(resolvedEntry, entry))
-    && shouldShowResolvingCardInDisplay(actionTimeline, baseView, entry));
-  const phaseResolving = resolving.filter((entry) => shouldShowResolvingCardInPhase(actionTimeline, hasAnimationPhases, resolvingFinalizers, baseView, entry));
-  const visibleResolving = [...displayResolving, ...phaseResolving];
-  const nextResolving = resolving.flatMap((entry) => {
-    if (!visibleResolving.some((visibleEntry) => sameResolvingCard(visibleEntry, entry))) {
-      return [];
-    }
-    if (playerHasDiscardCard(baseView.players[entry.playerIndex], entry.card)) {
-      return [];
-    }
-    if (displayResolved.some((resolvedEntry) => sameResolvingCard(resolvedEntry, entry))) {
-      return [];
-    }
-    return [entry];
-  });
-  return {
-    displayResolved,
-    displayResolving,
-    phaseResolving,
-    nextResolving,
-  };
-}
-
-function emptyResolvingPlayedCardContext(nextResolving: ResolvingPlayedCard[] = []): ResolvingPlayedCardContext {
-  return {
-    displayResolved: [],
-    displayResolving: [],
-    phaseResolving: [],
-    nextResolving,
-  };
-}
-
-function resolvingDisplayView(
-  baseView: GameView | undefined,
-  context: ResolvingPlayedCardContext | undefined,
-): GameView | undefined {
-  if (!baseView || (!context?.displayResolved.length && !context?.displayResolving.length)) {
-    return undefined;
-  }
-  let view = baseView;
-  if (context.displayResolved.length) {
-    view = gameViewWithResolvedDiscards(view, context.displayResolved);
-  }
-  if (context.displayResolving.length) {
-    view = gameViewWithResolvingCards(view, context.displayResolving);
-  }
-  return view;
-}
 
 function applyKnockOutDiscardTopOrdering(steps: ReplayStep[]): void {
   for (const step of steps) {
@@ -3438,134 +2279,6 @@ function promoteDiscardCardToTop(player: PlayerView, event: ActionTimelineEvent)
   };
 }
 
-function resolvingPlayedCardForEvent(view: GameView, event: ActionTimelineEvent): ResolvingPlayedCard | undefined {
-  if (event.kind !== 'Play' || event.playerIndex === undefined) {
-    return undefined;
-  }
-  const player = view.players[event.playerIndex];
-  const card = cardViewFromEvent(event);
-  if (!player || !card || card.id === undefined || playerHasCardInPlay(player, event) || !isResolvingTrainerCard(card.id)) {
-    return undefined;
-  }
-  return { playerIndex: event.playerIndex, card };
-}
-
-function resolvingPlayedCardsForEvents(events: Array<ActionTimelineEvent | undefined>): ResolvingPlayedCard[] {
-  return events.flatMap((event) => {
-    const card = event ? resolvingPlayedCardFromPlayEvent(event) : undefined;
-    return card ? [card] : [];
-  });
-}
-
-function resolvingPlayedCardFromPlayEvent(event: ActionTimelineEvent): ResolvingPlayedCard | undefined {
-  if (event.kind !== 'Play' || event.playerIndex === undefined) {
-    return undefined;
-  }
-  const card = cardViewFromEvent(event);
-  if (!card || card.id === undefined || !isResolvingTrainerCard(card.id)) {
-    return undefined;
-  }
-  return { playerIndex: event.playerIndex, card };
-}
-
-function resolvingFinalizerCardsForGroup(group: ReplayActionGroup, view: GameView): ResolvingPlayedCard[] {
-  const playEvent = resolvingTrainerPlayEvent(group);
-  const playerIndex = playEvent?.playerIndex;
-  if (!playEvent || playerIndex === undefined) {
-    return [];
-  }
-  if (
-    !startGroupHasTerminalResolvingEffect(group)
-    && !isCompleteDeckSearchEffect(group.events, playerIndex)
-    && !viewHasEventCardInDiscard(view, playEvent)
-  ) {
-    return [];
-  }
-  return resolvingPlayedCardsForEvents([playEvent]);
-}
-
-function isResolvingTrainerCard(cardId: number): boolean {
-  const kind = cardDatabase.get(cardId)?.kind ?? '';
-  return kind === 'Item' || kind === 'Supporter';
-}
-
-function gameViewWithResolvingCards(view: GameView, resolving: ResolvingPlayedCard[]): GameView {
-  const cardsByPlayer = new Map<number, CardView[]>();
-  for (const entry of resolving) {
-    const cards = cardsByPlayer.get(entry.playerIndex) ?? [];
-    cardsByPlayer.set(entry.playerIndex, [...cards, entry.card]);
-  }
-
-  return {
-    ...view,
-    players: view.players.map((player, playerIndex) => {
-      const pendingCards = cardsByPlayer.get(playerIndex) ?? [];
-      if (!pendingCards.length) {
-        return player;
-      }
-      return {
-        ...player,
-        discard: player.discard.filter((discardCard) => !pendingCards.some((card) => sameKnownCard(discardCard, card))),
-        playZone: [
-          ...player.playZone.filter((playZoneCard) => !pendingCards.some((card) => sameKnownCard(playZoneCard, card))),
-          ...pendingCards,
-        ],
-      };
-    }),
-  };
-}
-
-function gameViewWithResolvedDiscards(view: GameView, resolving: ResolvingPlayedCard[]): GameView {
-  const cardsByPlayer = new Map<number, CardView[]>();
-  for (const entry of resolving) {
-    const cards = cardsByPlayer.get(entry.playerIndex) ?? [];
-    cardsByPlayer.set(entry.playerIndex, [...cards, entry.card]);
-  }
-
-  return {
-    ...view,
-    players: view.players.map((player, playerIndex) => {
-      const resolvedCards = cardsByPlayer.get(playerIndex) ?? [];
-      if (!resolvedCards.length) {
-        return player;
-      }
-      return {
-        ...player,
-        playZone: player.playZone.filter((playZoneCard) => !resolvedCards.some((card) => sameKnownCard(playZoneCard, card))),
-        discard: [
-          ...player.discard.filter((discardCard) => !resolvedCards.some((card) => sameKnownCard(discardCard, card))),
-          ...resolvedCards,
-        ],
-      };
-    }),
-  };
-}
-
-function gameViewWithResolvingDiscardDestinations(view: GameView, resolving: ResolvingPlayedCard[]): GameView {
-  const cardsByPlayer = new Map<number, CardView[]>();
-  for (const entry of resolving) {
-    const cards = cardsByPlayer.get(entry.playerIndex) ?? [];
-    cardsByPlayer.set(entry.playerIndex, [...cards, entry.card]);
-  }
-
-  return {
-    ...view,
-    players: view.players.map((player, playerIndex) => {
-      const resolvedCards = cardsByPlayer.get(playerIndex) ?? [];
-      if (!resolvedCards.length) {
-        return player;
-      }
-      return {
-        ...player,
-        discard: [
-          ...player.discard.filter((discardCard) => !resolvedCards.some((card) => sameKnownCard(discardCard, card))),
-          ...resolvedCards,
-        ],
-      };
-    }),
-  };
-}
-
 function resolvingDiscardCardMoveMotions(
   phase: AnimationEventPhase,
   resolving: ResolvingPlayedCard[],
@@ -3609,48 +2322,6 @@ function resolvingDiscardCardMoveMotion(
       prepaintFrames: 2,
     },
   };
-}
-
-function shouldResolveCardInDisplay(
-  hasAnimationPhases: boolean,
-  resolvingFinalizers: ResolvingPlayedCard[],
-  entry: ResolvingPlayedCard,
-): boolean {
-  return hasAnimationPhases && resolvingFinalizers.some((finalizer) => sameResolvingCard(finalizer, entry));
-}
-
-function shouldShowResolvingCardInDisplay(
-  actionTimeline: ReplayStep['actionTimeline'],
-  baseView: GameView,
-  entry: ResolvingPlayedCard,
-): boolean {
-  if (!playerHasDiscardCard(baseView.players[entry.playerIndex], entry.card)) {
-    return true;
-  }
-  return actionTimelineContainsPlayForCard(actionTimeline, entry.card);
-}
-
-function shouldShowResolvingCardInPhase(
-  actionTimeline: ReplayStep['actionTimeline'],
-  hasAnimationPhases: boolean,
-  resolvingFinalizers: ResolvingPlayedCard[],
-  baseView: GameView,
-  entry: ResolvingPlayedCard,
-): boolean {
-  if (!hasAnimationPhases) {
-    return false;
-  }
-  return shouldShowResolvingCardInDisplay(actionTimeline, baseView, entry)
-    || actionTimelineContainsPlayForCard(actionTimeline, entry.card)
-    || resolvingFinalizers.some((finalizer) => sameResolvingCard(finalizer, entry));
-}
-
-function actionTimelineContainsPlayForCard(actionTimeline: ReplayStep['actionTimeline'], card: CardView): boolean {
-  return (actionTimeline ?? []).some((event) => event.kind === 'Play' && eventCardMatches(card, event));
-}
-
-function sameResolvingCard(left: ResolvingPlayedCard, right: ResolvingPlayedCard): boolean {
-  return left.playerIndex === right.playerIndex && sameKnownCard(left.card, right.card);
 }
 
 function shouldProjectSingleGroup(currentView: GameView, group: ReplayActionGroup): boolean {
@@ -4034,14 +2705,14 @@ function removeAt<T>(items: T[], index: number): T[] {
 }
 
 function addCardToHand(player: PlayerView, currentPlayer: PlayerView): CardView[] {
-  const nextCard = currentPlayer.hand[player.hand.length] ?? faceDownCard();
+  const nextCard = currentPlayer.hand[player.hand.length] ?? cabtFaceDownCard();
   return [...player.hand, nextCard];
 }
 
 function addCardToDiscard(player: PlayerView, currentPlayer: PlayerView, event: ActionTimelineEvent): CardView[] {
   const eventCard = cardViewFromEvent(event);
   const currentNewCard = currentPlayer.discard.find((card) => eventCardMatches(card, event));
-  const nextCard = currentNewCard ?? eventCard ?? currentPlayer.discard.at(-1) ?? faceDownCard();
+  const nextCard = currentNewCard ?? eventCard ?? currentPlayer.discard.at(-1) ?? cabtFaceDownCard();
   if (player.discard.some((card) => sameKnownCard(card, nextCard))) {
     return player.discard;
   }
@@ -4076,40 +2747,6 @@ function addCardToBench(player: PlayerView, currentPlayer: PlayerView, event: Ac
   return bench;
 }
 
-function cardViewFromEvent(event: ActionTimelineEvent): CardView | undefined {
-  const params = event.params as Record<string, unknown> | undefined;
-  const cardId = Number(params?.cardId);
-  if (!Number.isFinite(cardId)) {
-    return undefined;
-  }
-  return cardToView({
-    id: cardId,
-    serial: Number.isFinite(Number(params?.serial)) ? Number(params?.serial) : undefined,
-    playerIndex: event.playerIndex,
-  });
-}
-
-function eventCardMatches(card: CardView, event: ActionTimelineEvent): boolean {
-  const params = event.params as Record<string, unknown> | undefined;
-  const serial = Number(params?.serial);
-  if (Number.isFinite(serial)) {
-    return card.serial === serial;
-  }
-  const cardId = Number(params?.cardId);
-  return Number.isFinite(cardId) && card.id === cardId;
-}
-
-function sameKnownCard(left: CardView, right: CardView): boolean {
-  if (left.serial !== undefined && right.serial !== undefined) {
-    return left.serial === right.serial;
-  }
-  return left.id === right.id && left.name === right.name;
-}
-
-function playerHasDiscardCard(player: PlayerView | undefined, card: CardView): boolean {
-  return !!player?.discard.some((discardCard) => sameKnownCard(discardCard, card));
-}
-
 function playerHasCardInPlay(player: PlayerView, event: ActionTimelineEvent): boolean {
   return [
     ...slotCards(player.active),
@@ -4135,420 +2772,6 @@ function resizedHand(hand: CardView[], count: number): CardView[] {
   }
   return [
     ...hand,
-    ...Array.from({ length: nextCount - hand.length }, () => faceDownCard()),
+    ...Array.from({ length: nextCount - hand.length }, () => cabtFaceDownCard()),
   ];
-}
-
-function extractVisualizeFrames(input: unknown): CabtVisualizeFrame[] {
-  const runnerFrames = (input as CabtRunnerJson)?.visualize;
-  if (Array.isArray(runnerFrames)) {
-    return runnerFrames as CabtVisualizeFrame[];
-  }
-
-  const steps = replayEnvironment(input)?.steps;
-  const frames = steps?.[0]?.[0]?.observation?.visualize;
-  if (Array.isArray(frames)) {
-    return frames as CabtVisualizeFrame[];
-  }
-
-  const firstStepFrames = (steps?.[0]?.[0] as { visualize?: unknown } | undefined)?.visualize;
-  if (Array.isArray(firstStepFrames)) {
-    return firstStepFrames as CabtVisualizeFrame[];
-  }
-  return [];
-}
-
-function replayEnvironment(input: unknown): KaggleEnvironment | undefined {
-  const wrapped = (input as KaggleContext)?.environment;
-  if (wrapped?.steps) {
-    return wrapped;
-  }
-  const topLevel = input as KaggleEnvironment;
-  if (Array.isArray(topLevel?.steps)) {
-    return topLevel;
-  }
-  return wrapped;
-}
-
-function frameToGameView(
-  frame: CabtVisualizeFrame,
-  playerNamesForReplay: string[],
-  logs: LogView[],
-  actionTimeline: GameView['actionTimeline'],
-): GameView {
-  const current = frame.current;
-  const activePlayerIndex = clampPlayerIndex(current.yourIndex);
-  const stadium = current.stadium ?? [];
-  const players = current.players.map((player, index) =>
-    buildPlayerView(player, index, activePlayerIndex, playerNamesForReplay[index] ?? `Player ${index + 1}`, stadiumForPlayer(stadium, index)),
-  );
-  return {
-    ready: true,
-    phase: current.result >= 0 ? 7 : 2,
-    phaseLabel: current.result >= 0 ? 'Finished' : 'CABT replay',
-    turn: current.turn,
-    activePlayerIndex,
-    activePlayerId: players[activePlayerIndex]?.id,
-    winner: current.result >= 0 && current.result <= 1 ? current.result : current.result === 2 ? 3 : undefined,
-    players,
-    prompts: [],
-    logs: [...logs],
-    actionTimeline,
-    events: [frame],
-  };
-}
-
-function stadiumForPlayer(stadium: CabtCardRef[], playerIndex: number): CabtCardRef[] {
-  const owned = stadium.filter((card) => card.playerIndex === playerIndex);
-  if (owned.length) {
-    return owned;
-  }
-  return playerIndex === 0
-    ? stadium.filter((card) => card.playerIndex === undefined || card.playerIndex === null)
-    : [];
-}
-
-function buildPlayerView(
-  player: CabtPlayerFrame,
-  index: number,
-  activePlayerIndex: number,
-  name: string,
-  stadium: CabtCardRef[],
-): PlayerView {
-  const hand = player.hand ?? [];
-  return {
-    index,
-    id: index,
-    name,
-    hand: hand.length ? hand.map(cardToView) : Array.from({ length: player.handCount ?? 0 }, () => faceDownCard()),
-    deckCount: player.deckCount ?? 0,
-    discard: (player.discard ?? []).map(cardToView),
-    lostZone: [],
-    stadium: stadium.map(cardToView),
-    playZone: [],
-    prizesLeft: player.prize?.length ?? 0,
-    active: pokemonToSlot(player.active?.[0] ?? null, index, 'active', 0, activePlayerIndex, player),
-    bench: Array.from({ length: Math.max(player.benchMax ?? 5, player.bench?.length ?? 0) }, (_item, benchIndex) =>
-      pokemonToSlot(player.bench?.[benchIndex] ?? null, index, 'bench', benchIndex, activePlayerIndex, player),
-    ),
-    playableCardIds: hand.map((card) => card.id),
-    availableActions: {
-      active: {
-        attacks: [],
-        abilities: [],
-        retreat: { legal: false, targets: [] },
-      },
-      bench: (player.bench ?? []).map((_bench, benchIndex) => ({ index: benchIndex, abilities: [] })),
-    },
-  };
-}
-
-function pokemonToSlot(
-  pokemonCard: CabtPokemonRef | null,
-  ownerIndex: number,
-  slot: 'active' | 'bench',
-  index: number,
-  activePlayerIndex: number,
-  player: CabtPlayerFrame,
-): PokemonSlotView {
-  const slotType = slot === 'active' ? SlotType.ACTIVE : SlotType.BENCH;
-  const pokemonView = pokemonCard ? cardToView(pokemonCard) : undefined;
-  const maxHp = pokemonCard?.maxHp ?? pokemonView?.hp ?? 0;
-  const currentHp = pokemonCard?.hp ?? maxHp;
-  return {
-    ownerIndex,
-    slot,
-    index,
-    target: targetFor(activePlayerIndex, ownerIndex, slotType, index),
-    empty: !pokemonCard,
-    pokemon: pokemonView,
-    cards: pokemonView ? [pokemonView, ...(pokemonCard?.preEvolution ?? []).map(cardToView)] : [],
-    damage: Math.max(0, maxHp - currentHp),
-    hp: maxHp,
-    retreat: Array.from({ length: retreatCostFor(cardDatabase.get(pokemonCard?.id ?? -1)) }, () => 'Colorless'),
-    energy: (pokemonCard?.energyCards ?? []).map(cardToView),
-    tools: (pokemonCard?.tools ?? []).map(cardToView),
-    specialConditions: slot === 'active'
-      ? [
-          player.poisoned ? 'Poisoned' : null,
-          player.burned ? 'Burned' : null,
-          player.asleep ? 'Asleep' : null,
-          player.paralyzed ? 'Paralyzed' : null,
-          player.confused ? 'Confused' : null,
-        ].filter((condition): condition is string => !!condition)
-      : [],
-  };
-}
-
-function cardToView(cardRef: CabtCardRef): CardView {
-  const data = cardDatabase.get(cardRef.id);
-  const rawName = cardRef.name || data?.name || `Card ${cardRef.id}`;
-  const name = displayName(rawName);
-  const kind = data?.kind ?? '';
-  const isPokemon = kind.includes('Pokémon') || !!data?.hp;
-  const isEnergy = kind.includes('Energy') || /Energy\b/.test(rawName);
-  const isTrainer = !isPokemon && !isEnergy;
-  const view: CardView = {
-    id: cardRef.id,
-    serial: cardRef.serial,
-    playerIndex: cardRef.playerIndex,
-    name,
-    fullName: name,
-    set: data?.set || undefined,
-    setNumber: data?.setNumber || undefined,
-    superType: isPokemon ? 'Pokemon' : isEnergy ? 'Energy' : 'Trainer',
-    cardType: isPokemon ? energySymbolToType(data?.type) : undefined,
-    trainerType: isTrainer ? kind : undefined,
-    energyType: isEnergy ? energySymbolToType(data?.type || rawName) : undefined,
-    stage: stageLabel(kind),
-    evolvesFrom: data?.evolvesFrom || undefined,
-    hp: data?.hp ?? undefined,
-    retreat: Array.from({ length: retreatCostFor(data) }, () => 'Colorless'),
-    powers: powersForCard(data),
-    attacks: attacksForCard(data),
-  };
-  return {
-    ...view,
-    imageUrl: resolveCardImageUrl(view),
-  };
-}
-
-function faceDownCard(): CardView {
-  return {
-    name: 'Card',
-    fullName: 'Card',
-  };
-}
-
-function playerNames(input: unknown): string[] {
-  const names = replayEnvironment(input)?.info?.TeamNames;
-  return names?.length ? names : ['Player 1', 'Player 2'];
-}
-
-function stepLabel(frame: CabtVisualizeFrame, index: number): string {
-  const prizeSummary = prizeMoveSummary(frame.logs ?? []);
-  if (prizeSummary) {
-    return prizeSummary;
-  }
-
-  const attackSummary = attackLogSummary(frame.logs ?? []);
-  if (attackSummary) {
-    return attackSummary;
-  }
-
-  const latestLog = frame.logs?.at(-1);
-  if (latestLog) {
-    return formatLog(latestLog);
-  }
-  const selectType = frame.select?.type;
-  const context = frame.select?.context;
-  if (selectType || context) {
-    return [selectType, context].filter(Boolean).join(' · ');
-  }
-  return index === 0 ? 'Initial state' : `Frame ${index}`;
-}
-
-function formatLog(log: Record<string, unknown>): string {
-  const playerIndex = typeof log.playerIndex === 'number' ? log.playerIndex : undefined;
-  const actor = playerIndex === undefined ? 'Game' : `Player ${playerIndex + 1}`;
-  const card = cardName(Number(log.cardId));
-  switch (log.type) {
-    case 'TurnStart':
-      return `${actor} turn started.`;
-    case 'TurnEnd':
-      return `${actor} ended their turn.`;
-    case 'Draw':
-      return `${actor} drew ${card}.`;
-    case 'Play':
-      return `${actor} played ${card}.`;
-    case 'Attach':
-      return `${actor} attached ${card}.`;
-    case 'Attack':
-      return `${actor} used ${attackNameForLog(log)} with ${card}.`;
-    case 'Ability':
-      return `${actor} used ${abilityNameForLog(log)} with ${card}.`;
-    case 'MoveCard':
-      if (Number(log.fromArea) === CabtAreaType.PRIZE && Number(log.toArea) === CabtAreaType.HAND) {
-        return `${actor} took ${card} as a Prize card.`;
-      }
-      if (Number(log.fromArea) === CabtAreaType.DECK && Number(log.toArea) === CabtAreaType.PRIZE) {
-        return `${actor} set a Prize card.`;
-      }
-      if (Number(log.fromArea) === CabtAreaType.HAND && Number(log.toArea) === CabtAreaType.DECK) {
-        return `${actor} moved a card from hand to deck.`;
-      }
-      return `${actor} moved ${card} from ${areaName(log.fromArea)} to ${areaName(log.toArea)}.`;
-    case 'HpChange':
-    case 'HPChange':
-      return `${actor}'s ${card} HP changed.`;
-    case 'Result':
-      return 'The battle finished.';
-    default:
-      return `${actor}: ${String(log.type ?? 'Event')}${Number.isFinite(Number(log.cardId)) ? ` ${card}` : ''}.`;
-  }
-}
-
-function prizeMoveSummary(logs: Array<Record<string, unknown>>): string {
-  const prizeMoves = logs.filter((log) => log.type === 'MoveCard' && Number(log.fromArea) === 6 && Number(log.toArea) === 2);
-  if (!prizeMoves.length) {
-    return '';
-  }
-
-  const playerIndex = typeof prizeMoves[0].playerIndex === 'number' ? prizeMoves[0].playerIndex : undefined;
-  const samePlayer = prizeMoves.every((log) => log.playerIndex === playerIndex);
-  if (!samePlayer || playerIndex === undefined) {
-    return `Players took ${prizeMoves.length} Prize cards.`;
-  }
-
-  const actor = `Player ${playerIndex + 1}`;
-  return prizeMoves.length === 1 ? `${actor} took 1 Prize card.` : `${actor} took ${prizeMoves.length} Prize cards.`;
-}
-
-function attackLogSummary(logs: Array<Record<string, unknown>>): string {
-  const attack = logs.find((log) => log.type === 'Attack');
-  return attack ? formatLog(attack) : '';
-}
-
-function areaName(area: unknown): string {
-  const areaMap: Record<number, string> = {
-    1: 'deck',
-    2: 'hand',
-    3: 'discard',
-    4: 'active',
-    5: 'bench',
-    6: 'prize',
-    7: 'stadium',
-    8: 'energy',
-    9: 'tool',
-    10: 'evolution stack',
-    11: 'player',
-    12: 'selection',
-  };
-  return areaMap[Number(area)] ?? 'zone';
-}
-
-function cardName(id: number): string {
-  return displayName(cardDatabase.get(id)?.name ?? (Number.isFinite(id) ? `Card ${id}` : 'a card'));
-}
-
-function attackNameForLog(log: Record<string, unknown>): string {
-  const attack = attackDatabase.get(Number(log.attackId));
-  if (attack?.name) {
-    return displayName(attack.name);
-  }
-  return Number.isFinite(Number(log.attackId)) ? `attack ${log.attackId}` : 'an attack';
-}
-
-function abilityNameForLog(log: Record<string, unknown>): string {
-  const explicit = typeof log.abilityName === 'string' ? log.abilityName.trim() : '';
-  if (explicit) {
-    return displayName(explicit);
-  }
-  return abilityNameForCard(cardDatabase.get(Number(log.cardId)));
-}
-
-function abilityNameForCard(data: CardRow | undefined): string {
-  const skillName = data?.skills?.find((skill) => skill.name.trim())?.name.trim();
-  return skillName ? displayName(skillName) : 'an Ability';
-}
-
-function powersForCard(data: CardRow | undefined): CardView['powers'] {
-  const skills = data?.skills?.filter((skill) => skill.name.trim());
-  if (!skills?.length) {
-    return undefined;
-  }
-  return skills.map((skill) => ({
-    name: displayName(skill.name.trim()),
-    text: skill.text ?? '',
-  }));
-}
-
-function attacksForCard(data: CardRow | undefined): CardView['attacks'] {
-  if (!data) {
-    return undefined;
-  }
-  const engineAttacks = data.attacks
-    ?.map((attackId) => attackDatabase.get(attackId))
-    .filter((attack): attack is AttackRow => !!attack);
-  if (engineAttacks?.length) {
-    return engineAttacks.map((attack) => ({
-      name: displayName(attack.name),
-      cost: (attack.energies ?? []).map(energyName),
-      damage: attack.damage ? String(attack.damage) : '',
-      text: attack.text ?? '',
-    }));
-  }
-  if (!data.attackName) {
-    return undefined;
-  }
-  return [{
-    name: data.attackName,
-    cost: energyCostLabels(data.attackCost),
-    damage: data.attackDamage,
-    text: data.attackText,
-  }];
-}
-
-function retreatCostFor(data: CardRow | undefined): number {
-  return data?.retreat ?? data?.retreatCost ?? 0;
-}
-
-function displayName(name: string): string {
-  return name
-    .replaceAll('{G}', 'Grass')
-    .replaceAll('{R}', 'Fire')
-    .replaceAll('{W}', 'Water')
-    .replaceAll('{L}', 'Lightning')
-    .replaceAll('{P}', 'Psychic')
-    .replaceAll('{F}', 'Fighting')
-    .replaceAll('{D}', 'Darkness')
-    .replaceAll('{M}', 'Metal')
-    .replaceAll('{C}', 'Colorless');
-}
-
-function energySymbolToType(value: string | undefined): number | undefined {
-  if (!value) {
-    return undefined;
-  }
-  if (value.includes('{G}') || /grass/i.test(value)) return 1;
-  if (value.includes('{R}') || /fire/i.test(value)) return 2;
-  if (value.includes('{W}') || /water/i.test(value)) return 3;
-  if (value.includes('{L}') || /lightning/i.test(value)) return 4;
-  if (value.includes('{P}') || /psychic/i.test(value)) return 5;
-  if (value.includes('{F}') || /fighting/i.test(value)) return 6;
-  if (value.includes('{D}') || /dark/i.test(value)) return 7;
-  if (value.includes('{M}') || /metal/i.test(value)) return 8;
-  return 0;
-}
-
-function energyCostLabels(cost: string): string[] {
-  return [...cost.matchAll(/\{([A-Z])\}/g)].map((match) => displayName(`{${match[1]}}`));
-}
-
-function energyName(energy: number): string {
-  return [
-    'Colorless',
-    'Grass',
-    'Fire',
-    'Water',
-    'Lightning',
-    'Psychic',
-    'Fighting',
-    'Darkness',
-    'Metal',
-    'Dragon',
-    'Rainbow',
-    'Team Rocket',
-  ][energy] ?? 'Colorless';
-}
-
-function stageLabel(kind: string): string | undefined {
-  if (kind.includes('Basic Pokémon')) return 'Basic';
-  if (kind.includes('Stage 1')) return 'Stage 1';
-  if (kind.includes('Stage 2')) return 'Stage 2';
-  return undefined;
-}
-
-function clampPlayerIndex(index: number): number {
-  return index === 1 ? 1 : 0;
 }

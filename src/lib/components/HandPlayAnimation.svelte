@@ -10,8 +10,16 @@
     releaseAnimationElementEffectClaim,
     type AnimationElementEffectClaim,
   } from '../animations/animationElementEffects';
-  import { resolveStrictAnimationAnchorElement } from '../animations/animationAnchors';
   import { strictAnimationVisualElementForAnchor } from '../animations/animationAnchorVisuals';
+  import {
+    cssMatrix3dForQuad,
+    handPlayCardVisual,
+    slotAttachStartOffset,
+    sourceQuadForHandElement,
+    visibleCardRectForAnchor,
+    visibleElementRect,
+    visualTargetForHandPlay,
+  } from '../animations/handPlayAnimationGeometry';
   import { replayAnimationScopeExitSettleMs, replayAnimationSpriteRemovalMs } from '../animations/replayAnimationHandoff';
   import { createReplayPhasePlanRunner, type ReplayPhasePlanRunnerContext } from '../animations/replayPhasePlanRunner.svelte';
   import { scheduleReplayAnimationScopeClear } from '../animations/replayAnimationSpriteLifecycle';
@@ -23,7 +31,7 @@
   import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { cabtCardToView } from '../cabt/cardView';
   import { CabtAreaType } from '../cabt/types';
-  import { viewportQuad, type Point } from '../dom/planeGeometry';
+  import { viewportQuad } from '../dom/planeGeometry';
   import { replayAnimationPhaseGapMs } from '../game/replay';
   import { cardFaceImageUrl, cssAssetUrl } from '../game/cardAssets';
   import type { ActionTimelineEvent } from '../game/types';
@@ -35,7 +43,9 @@
     animationPlan?: ReplayAnimationPhasePlan;
   };
 
-  type RectSnapshot = Point & {
+  type RectSnapshot = {
+    x: number;
+    y: number;
     left: number;
     top: number;
     right: number;
@@ -242,6 +252,7 @@
     }
   }
 
+  // Planned replay path: strict semantic anchors only; visibility is owned by the phase plan.
   function targetAnimationForMotion(
     motion: CardMoveAnimationMotion,
     plan: ReplayAnimationPhasePlan | undefined,
@@ -249,22 +260,16 @@
     if (motion.sourceAnchor.kind !== 'hand-card') {
       return [];
     }
-    const playerIndex = motion.sourceAnchor.playerIndex;
-    const serial = Number(motion.sourceAnchor.serial ?? motion.identity?.serial);
-    const handElement = handAnchor(playerIndex);
-    const target = targetElementForMotion(motion);
+    const source = strictPlannedHandSource(motion);
+    const target = strictPlannedTarget(motion);
     const planeElement = target?.closest('.game-board-plane') as HTMLElement | null;
-    if (!handElement || !target || !planeElement) {
+    if (!source || !target || !planeElement) {
       return [];
     }
 
-    const sourceRect = sourceRectForMotion(motion);
-    if (!sourceRect) {
-      return [];
-    }
-    const visualTarget = visualTargetForAnimation(target);
-    const targetRect = visualTarget.getBoundingClientRect();
-    if (sourceRect.width <= 0 || sourceRect.height <= 0 || targetRect.width <= 0 || targetRect.height <= 0) {
+    const visualTarget = visualTargetForHandPlay(target);
+    const targetRect = visibleElementRect(visualTarget);
+    if (!targetRect) {
       return [];
     }
 
@@ -282,23 +287,23 @@
       }
       return [slotAttachAnimationForEvent(
         attachTarget,
-        sourceRect,
+        source.rect,
         attachRect,
         cardFaceImageUrl(spriteCard ?? metadataCard) ?? '',
         motion.startMs,
-        { kind: 'planned', removeMs: replayAnimationSpriteRemovalMs(motion, animationPlan?.durationMs) },
+        { kind: 'planned', removeMs: replayAnimationSpriteRemovalMs(motion, plan?.durationMs) },
       )];
     }
 
-    const sourceQuad = sourceQuadForHand(handElement, sourceRect);
+    const sourceQuad = sourceQuadForHandElement(source.element, source.rect);
     const targetQuad = viewportQuad(visualTarget);
-    const startTransform = cssMatrix3dForQuad(sourceRect.width, sourceRect.height, sourceQuad);
-    const endTransform = cssMatrix3dForQuad(sourceRect.width, sourceRect.height, targetQuad);
+    const startTransform = cssMatrix3dForQuad(source.rect.width, source.rect.height, sourceQuad);
+    const endTransform = cssMatrix3dForQuad(source.rect.width, source.rect.height, targetQuad);
     if (!startTransform || !endTransform) {
       return [];
     }
 
-    const label = spriteCard?.name ?? metadataCard?.name ?? motion.identity?.name ?? 'Card';
+    const visual = handPlayCardVisual(metadataCard, spriteCard?.name ?? metadataCard?.name ?? motion.identity?.name ?? 'Card');
     const isEvolution = plan?.kind === 'Evolve';
     return [{
       kind: 'fixed',
@@ -306,19 +311,15 @@
       id: nextPlayId++,
       target,
       delayMs: motion.startMs,
-      width: sourceRect.width,
-      height: sourceRect.height,
+      width: source.rect.width,
+      height: source.rect.height,
       startTransform,
       endTransform,
       imageUrl: cardFaceImageUrl(spriteCard ?? metadataCard) ?? '',
-      label,
-      setLabel: metadataCard ? [metadataCard.set, metadataCard.setNumber].filter(Boolean).join(' ') : '',
-      typeClass: metadataCard && (metadataCard.energyType !== undefined || metadataCard.superType === 'Energy' || metadataCard.name.includes('Energy'))
-        ? 'energy'
-        : metadataCard && (metadataCard.trainerType !== undefined || metadataCard.superType === 'Trainer')
-          ? 'trainer'
-          : 'pokemon',
-      lifecycle: { kind: 'planned', removeMs: replayAnimationSpriteRemovalMs(motion, animationPlan?.durationMs) },
+      label: visual.label,
+      setLabel: visual.setLabel,
+      typeClass: visual.typeClass,
+      lifecycle: { kind: 'planned', removeMs: replayAnimationSpriteRemovalMs(motion, plan?.durationMs) },
     }];
   }
 
@@ -326,8 +327,6 @@
     if (
       motion.targetAnchor.kind !== 'attached-energy'
       && motion.targetAnchor.kind !== 'attached-tool'
-      && motion.identity?.kind !== 'energy'
-      && motion.identity?.kind !== 'tool'
     ) {
       return null;
     }
@@ -335,7 +334,16 @@
     return slot instanceof HTMLElement ? slot : null;
   }
 
-  function targetElementForMotion(motion: CardMoveAnimationMotion): HTMLElement | null {
+  function strictPlannedHandSource(motion: CardMoveAnimationMotion): { element: HTMLElement; rect: DOMRect } | undefined {
+    const element = strictAnimationVisualElementForAnchor(motion.sourceAnchor, motion.identity);
+    if (!element) {
+      return undefined;
+    }
+    const rect = visibleCardRectForAnchor(element);
+    return rect ? { element, rect } : undefined;
+  }
+
+  function strictPlannedTarget(motion: CardMoveAnimationMotion): HTMLElement | null {
     return strictAnimationVisualElementForAnchor(motion.targetAnchor, motion.identity) ?? null;
   }
 
@@ -367,6 +375,7 @@
     activePlays = activePlays.filter((play) => !ids.has(play.id));
   }
 
+  // Live event path: keep DOM fallbacks for non-replay state changes.
   function targetAnimationForEvent(event: ActionTimelineEvent, animationEvents: ActionTimelineEvent[]): TargetAnimation[] {
     if (event.playerIndex === undefined) {
       return [];
@@ -389,9 +398,9 @@
     }
 
     const sourceRect = sourceRectForHand(handElement, serial);
-    const visualTarget = visualTargetForAnimation(target);
-    const targetRect = visualTarget.getBoundingClientRect();
-    if (sourceRect.width <= 0 || sourceRect.height <= 0 || targetRect.width <= 0 || targetRect.height <= 0) {
+    const visualTarget = visualTargetForHandPlay(target);
+    const targetRect = visibleElementRect(visualTarget);
+    if (sourceRect.width <= 0 || sourceRect.height <= 0 || !targetRect) {
       return [];
     }
 
@@ -408,7 +417,7 @@
       )];
     }
 
-    const sourceQuad = sourceQuadForHand(handElement, sourceRect);
+    const sourceQuad = sourceQuadForHandElement(handElement, sourceRect);
     const targetQuad = viewportQuad(visualTarget);
     const startTransform = cssMatrix3dForQuad(sourceRect.width, sourceRect.height, sourceQuad);
     const endTransform = cssMatrix3dForQuad(sourceRect.width, sourceRect.height, targetQuad);
@@ -416,6 +425,7 @@
       return [];
     }
     const isEvolution = event.kind === 'Evolve';
+    const visual = handPlayCardVisual(card);
 
     return [{
       kind: 'fixed',
@@ -428,13 +438,9 @@
       startTransform,
       endTransform,
       imageUrl: cardFaceImageUrl(card) ?? '',
-      label: card.name,
-      setLabel: [card.set, card.setNumber].filter(Boolean).join(' '),
-      typeClass: card.energyType !== undefined || card.superType === 'Energy' || card.name.includes('Energy')
-        ? 'energy'
-        : card.trainerType !== undefined || card.superType === 'Trainer'
-          ? 'trainer'
-          : 'pokemon',
+      label: visual.label,
+      setLabel: visual.setLabel,
+      typeClass: visual.typeClass,
       lifecycle: {
         kind: 'live',
         hideContents: isEvolution ? false : shouldHideTargetContents(event, target),
@@ -450,17 +456,14 @@
     delayMs: number,
     lifecycle: HandPlayAnimationLifecycle,
   ): SlotAttachAnimation {
-    const sourceCenter = centerOf(sourceRect);
-    const targetCenter = centerOf(targetRect);
-    const startX = clamp((sourceCenter.x - targetCenter.x) / targetRect.width, -0.72, 0.72);
-    const startY = clamp((sourceCenter.y - targetCenter.y) / targetRect.height, -0.82, 0.82);
+    const offset = slotAttachStartOffset(sourceRect, targetRect);
     return {
       kind: 'slotAttach',
       target,
       delayMs,
       imageUrl,
-      startX,
-      startY,
+      startX: offset.x,
+      startY: offset.y,
       startRotation: target.closest('.top-active-slot, .bench-row.opponent') ? 180 : 0,
       lifecycle,
     };
@@ -686,18 +689,6 @@
     return document.querySelector(`[data-card-anchor="player:${playerIndex}:hand"]`);
   }
 
-  function sourceRectForMotion(motion: CardMoveAnimationMotion): DOMRect | undefined {
-    const source = resolveStrictAnimationAnchorElement(motion.sourceAnchor, { identity: motion.identity });
-    if (!source) {
-      return undefined;
-    }
-    const visual = source.querySelector('.card-tile');
-    const rect = visual instanceof HTMLElement
-      ? visual.getBoundingClientRect()
-      : source.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0 ? rect : undefined;
-  }
-
   function sourceRectForHand(handElement: HTMLElement, serial: number): DOMRect {
     const previousRect = previousCardRects.get(serial);
     if (previousRect) {
@@ -773,157 +764,6 @@
   function firstHandCardRect(handElement: HTMLElement): DOMRect | null {
     const card = handElement.querySelector('.card-tile');
     return card instanceof HTMLElement ? card.getBoundingClientRect() : null;
-  }
-
-  function centerOf(rect: DOMRect): Point {
-    return {
-      x: rect.left + rect.width / 2,
-      y: rect.top + rect.height / 2,
-    };
-  }
-
-  function clamp(value: number, min: number, max: number): number {
-    return Math.min(max, Math.max(min, value));
-  }
-
-  function visualTargetForAnimation(target: HTMLElement): HTMLElement {
-    if (target.classList.contains('card-tile')) {
-      return target;
-    }
-    const cardTile = target.querySelector('.card-tile');
-    return cardTile instanceof HTMLElement ? cardTile : target;
-  }
-
-  function rectQuad(rect: DOMRect): Point[] {
-    return [
-      { x: rect.left, y: rect.top },
-      { x: rect.right, y: rect.top },
-      { x: rect.right, y: rect.bottom },
-      { x: rect.left, y: rect.bottom },
-    ];
-  }
-
-  function sourceQuadForHand(handElement: HTMLElement, rect: DOMRect): Point[] {
-    if (handElement.closest('.player-panel.top')) {
-      return rotatedRectQuad(rect);
-    }
-    return rectQuad(rect);
-  }
-
-  function rotatedRectQuad(rect: DOMRect): Point[] {
-    return [
-      { x: rect.right, y: rect.bottom },
-      { x: rect.left, y: rect.bottom },
-      { x: rect.left, y: rect.top },
-      { x: rect.right, y: rect.top },
-    ];
-  }
-
-  function cssMatrix3dForQuad(width: number, height: number, quad: Point[]): string | null {
-    if (
-      width <= 0
-      || height <= 0
-      || quad.length !== 4
-      || quad.some((point) => !Number.isFinite(point.x) || !Number.isFinite(point.y))
-    ) {
-      return null;
-    }
-
-    const homography = solveHomography(
-      [
-        { x: 0, y: 0 },
-        { x: width, y: 0 },
-        { x: width, y: height },
-        { x: 0, y: height },
-      ],
-      quad,
-    );
-
-    if (!homography || homography.some((value) => !Number.isFinite(value))) {
-      return null;
-    }
-
-    return [
-      'matrix3d(',
-      formatMatrixNumber(homography[0]), ', ',
-      formatMatrixNumber(homography[3]), ', ',
-      '0, ',
-      formatMatrixNumber(homography[6]), ', ',
-      formatMatrixNumber(homography[1]), ', ',
-      formatMatrixNumber(homography[4]), ', ',
-      '0, ',
-      formatMatrixNumber(homography[7]), ', ',
-      '0, 0, 1, 0, ',
-      formatMatrixNumber(homography[2]), ', ',
-      formatMatrixNumber(homography[5]), ', ',
-      '0, ',
-      formatMatrixNumber(homography[8]),
-      ')',
-    ].join('');
-  }
-
-  function formatMatrixNumber(value: number): string {
-    return Number.isFinite(value) ? value.toFixed(6).replace(/\.?0+$/, '') : '0';
-  }
-
-  function solveHomography(from: Point[], to: Point[]): number[] | null {
-    const matrix: number[][] = [];
-    for (let index = 0; index < 4; index += 1) {
-      const source = from[index];
-      const target = to[index];
-      matrix.push([
-        source.x,
-        source.y,
-        1,
-        0,
-        0,
-        0,
-        -target.x * source.x,
-        -target.x * source.y,
-        target.x,
-      ]);
-      matrix.push([
-        0,
-        0,
-        0,
-        source.x,
-        source.y,
-        1,
-        -target.y * source.x,
-        -target.y * source.y,
-        target.y,
-      ]);
-    }
-
-    for (let column = 0; column < 8; column += 1) {
-      let pivotRow = column;
-      for (let row = column + 1; row < 8; row += 1) {
-        if (Math.abs(matrix[row][column]) > Math.abs(matrix[pivotRow][column])) {
-          pivotRow = row;
-        }
-      }
-      if (Math.abs(matrix[pivotRow][column]) < 1e-8) {
-        return null;
-      }
-      [matrix[column], matrix[pivotRow]] = [matrix[pivotRow], matrix[column]];
-
-      const pivot = matrix[column][column];
-      for (let col = column; col < 9; col += 1) {
-        matrix[column][col] /= pivot;
-      }
-
-      for (let row = 0; row < 8; row += 1) {
-        if (row === column) {
-          continue;
-        }
-        const factor = matrix[row][column];
-        for (let col = column; col < 9; col += 1) {
-          matrix[row][col] -= factor * matrix[column][col];
-        }
-      }
-    }
-
-    return [...matrix.map((row) => row[8]), 1];
   }
 
 </script>
