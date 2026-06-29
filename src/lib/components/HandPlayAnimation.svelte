@@ -58,9 +58,7 @@
     label: string;
     setLabel: string;
     typeClass: string;
-    hideContents: boolean;
-    removeMs?: number;
-    planned: boolean;
+    lifecycle: HandPlayAnimationLifecycle;
   };
 
   type SlotAttachAnimation = {
@@ -71,14 +69,20 @@
     startX: number;
     startY: number;
     startRotation: number;
-    hideContents: false;
+    lifecycle: HandPlayAnimationLifecycle;
+  };
+
+  type HandPlayAnimationLifecycle = {
+    kind: 'planned';
     removeMs?: number;
-    planned: boolean;
+  } | {
+    kind: 'live';
+    hideContents: boolean;
   };
 
   type TargetAnimation = FixedAnimation | SlotAttachAnimation;
 
-  type ActivePlay = Omit<FixedAnimation, 'target' | 'hideContents' | 'kind'>;
+  type ActivePlay = Omit<FixedAnimation, 'target' | 'lifecycle' | 'kind'>;
   type ActiveTargetEffect = {
     target: HTMLElement;
     effectClaim: AnimationElementEffectClaim;
@@ -209,8 +213,8 @@
       const animationVisibleMs = animation.kind === 'fixed' && animation.mode === 'evolve'
         ? evolveVisibleDurationMs
         : animationMoveMs;
-      const cleanupDelayMs = animation.planned
-        ? animation.removeMs
+      const cleanupDelayMs = animation.lifecycle.kind === 'planned'
+        ? animation.lifecycle.removeMs
         : animation.delayMs + animationVisibleMs + 24;
       if (cleanupDelayMs !== undefined) {
         const timer = setTimeout(() => {
@@ -224,12 +228,14 @@
     }
 
     const cleanupTimes = targetAnimations
-      .map((animation) => animation.planned ? animation.removeMs : animation.delayMs + animationTotalMs(animation))
+      .map((animation) => animation.lifecycle.kind === 'planned'
+        ? animation.lifecycle.removeMs
+        : animation.delayMs + animationTotalMs(animation))
       .filter((time): time is number => time !== undefined);
     if (cleanupTimes.length) {
       const timer = setTimeout(() => {
         deactivateTargetEffects(activated
-          .filter(({ animation }) => !animation.planned || animation.removeMs !== undefined)
+          .filter(({ animation }) => animation.lifecycle.kind === 'live' || animation.lifecycle.removeMs !== undefined)
           .map(({ activeTarget }) => activeTarget));
       }, Math.max(...cleanupTimes) + 120);
       timers.push(timer);
@@ -280,8 +286,7 @@
         attachRect,
         cardFaceImageUrl(spriteCard ?? metadataCard) ?? '',
         motion.startMs,
-        replayAnimationSpriteRemovalMs(motion, animationPlan?.durationMs),
-        true,
+        { kind: 'planned', removeMs: replayAnimationSpriteRemovalMs(motion, animationPlan?.durationMs) },
       )];
     }
 
@@ -313,9 +318,7 @@
         : metadataCard && (metadataCard.trainerType !== undefined || metadataCard.superType === 'Trainer')
           ? 'trainer'
           : 'pokemon',
-      hideContents: false,
-      removeMs: replayAnimationSpriteRemovalMs(motion, animationPlan?.durationMs),
-      planned: true,
+      lifecycle: { kind: 'planned', removeMs: replayAnimationSpriteRemovalMs(motion, animationPlan?.durationMs) },
     }];
   }
 
@@ -395,7 +398,14 @@
     const card = cabtCardToView(cardId);
     const delayMs = actionAnimationStartMs(animationEvents, event);
     if (event.kind === 'Attach') {
-      return [slotAttachAnimationForEvent(target, sourceRect, targetRect, cardFaceImageUrl(card) ?? '', delayMs)];
+      return [slotAttachAnimationForEvent(
+        target,
+        sourceRect,
+        targetRect,
+        cardFaceImageUrl(card) ?? '',
+        delayMs,
+        { kind: 'live', hideContents: false },
+      )];
     }
 
     const sourceQuad = sourceQuadForHand(handElement, sourceRect);
@@ -425,8 +435,10 @@
         : card.trainerType !== undefined || card.superType === 'Trainer'
           ? 'trainer'
           : 'pokemon',
-      hideContents: isEvolution ? false : shouldHideTargetContents(event, target),
-      planned: false,
+      lifecycle: {
+        kind: 'live',
+        hideContents: isEvolution ? false : shouldHideTargetContents(event, target),
+      },
     }];
   }
 
@@ -436,8 +448,7 @@
     targetRect: DOMRect,
     imageUrl: string,
     delayMs: number,
-    removeMs?: number,
-    planned = false,
+    lifecycle: HandPlayAnimationLifecycle,
   ): SlotAttachAnimation {
     const sourceCenter = centerOf(sourceRect);
     const targetCenter = centerOf(targetRect);
@@ -451,9 +462,7 @@
       startX,
       startY,
       startRotation: target.closest('.top-active-slot, .bench-row.opponent') ? 180 : 0,
-      hideContents: false,
-      removeMs,
-      planned,
+      lifecycle,
     };
   }
 
@@ -523,7 +532,9 @@
         attributes,
         styles,
       }),
-      liveHiddenClaim: animation.hideContents ? hideLiveTargetContents(animation.target) : undefined,
+      liveHiddenClaim: animation.lifecycle.kind === 'live' && animation.lifecycle.hideContents
+        ? hideLiveTargetContents(animation.target)
+        : undefined,
     };
     activeTargets = [...activeTargets, activeTarget];
     return activeTarget;
