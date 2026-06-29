@@ -2,7 +2,6 @@ import { cabtLogsToTimeline, formatCabtLog } from './logFormat';
 import {
   persistentActionLabel,
   replayActionGroups,
-  type ReplayActionGroup,
 } from './replayActionGroups';
 import {
   cardEffectContinuation,
@@ -14,12 +13,7 @@ import {
   resolvingFinalizerCardsForGroup,
   resolvingPlayedCardsForEvents,
   type ResolvingPlayedCard,
-  type ResolvingPlayedCardContext,
 } from './replayResolvingCards';
-import {
-  applyReplayEvent,
-  shouldProjectSingleGroup,
-} from './replayProjection';
 import { cabtCardNames } from './replayCardData';
 import {
   extractVisualizeFrames,
@@ -32,10 +26,11 @@ import {
   groupedStepAnimationPhases,
   shouldBuildGroupedStepAnimationPhases,
 } from './replayGroupedAnimationPhases';
+import { groupedStepDisplayView } from './replayGroupedDisplayView';
 import { cabtReplayStepLabel } from './replayStepLabels';
 import { frameToGameView } from './replayView';
 import { applyKnockOutDiscardTopOrdering } from './replayResolvingDiscardMotions';
-import { type ActionTimelineEvent, type GameView, type LogView, type PokemonSlotView } from '../game/types';
+import { type GameView, type LogView } from '../game/types';
 import type { ReplaySnapshot, ReplayStep } from '../game/replay';
 
 export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
@@ -210,50 +205,4 @@ function replayStepForFrame({
     displayView,
     animationPhases,
   };
-}
-
-function groupedStepDisplayView(
-  previousView: GameView | undefined,
-  currentView: GameView,
-  groups: ReplayActionGroup[],
-  groupIndex: number,
-  resolvingContext?: ResolvingPlayedCardContext,
-): GameView | undefined {
-  const group = groups[groupIndex];
-  if (!previousView || !group) {
-    return resolvingDisplayView(currentView, resolvingContext);
-  }
-  const needsProjection = groups.length >= 2 || shouldProjectSingleGroup(currentView, group);
-  if (!needsProjection) {
-    return resolvingDisplayView(currentView, resolvingContext);
-  }
-
-  const players = currentView.players.map((currentPlayer, playerIndex) => {
-    const previousPlayer = previousView.players[playerIndex];
-    if (!previousPlayer) {
-      return currentPlayer;
-    }
-    return {
-      ...currentPlayer,
-      hand: [...previousPlayer.hand],
-      deckCount: previousPlayer.deckCount,
-      prizesLeft: previousPlayer.prizesLeft,
-      active: previousPlayer.active,
-      bench: previousPlayer.bench,
-      discard: previousPlayer.discard,
-      playZone: previousPlayer.playZone,
-    };
-  });
-  const view: GameView = {
-    ...currentView,
-    players,
-  };
-
-  for (const group of groups.slice(0, groupIndex + 1)) {
-    for (const event of group.events) {
-      applyReplayEvent(view, currentView, event);
-    }
-  }
-
-  return resolvingDisplayView(view, resolvingContext) ?? view;
 }
