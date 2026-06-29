@@ -9,6 +9,7 @@ import {
   boardMoveTargetAnchor,
   boardSlotAnchorForPokemon,
 } from './replayAnimationAnchors';
+import { compactAnimationMotions } from './replayAnimationMotionUtils';
 import { isMoveCardKind } from './replayActionGroups';
 import { cabtCardToView } from './replayCardData';
 import { cardViewFromEvent } from './replayCardIdentity';
@@ -27,10 +28,6 @@ import type { ActionTimelineEvent, GameView } from '../game/types';
 export function boardCardMoveMotions(phase: AnimationEventPhase, view: GameView): AnimationMotion[] {
   const motionGroups = phase.events.map((event) => boardCardMoveMotionsForEvent(phase, view, event));
   return compactAnimationMotions(motionGroups);
-}
-
-function compactAnimationMotions(groups: MaybeAnimationMotionGroup[]): AnimationMotion[] {
-  return groups.flatMap((group) => group ?? []);
 }
 
 function boardCardMoveMotionsForEvent(
@@ -229,5 +226,3 @@ function attachedIdentityKind(fromArea: number): AnimationIdentity['kind'] | und
   }
   return undefined;
 }
-
-type MaybeAnimationMotionGroup = AnimationMotion | AnimationMotion[] | null | undefined;

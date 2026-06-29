@@ -5,6 +5,7 @@ import {
   handPlayTargetAnchorForEvent,
   prizeSourceAnchorForEvent,
 } from './replayAnimationAnchors';
+import { compactAnimationMotions } from './replayAnimationMotionUtils';
 import { isMoveCardKind } from './replayActionGroups';
 import {
   isCabtPokemonCard,
@@ -316,10 +317,4 @@ export function isPrizeToHandMoveEvent(event: ActionTimelineEvent): boolean {
   return isMoveCardKind(event.kind)
     && Number(params?.fromArea) === CabtAreaType.PRIZE
     && Number(params?.toArea) === CabtAreaType.HAND;
-}
-
-type MaybeAnimationMotionGroup = AnimationMotion | AnimationMotion[] | null | undefined;
-
-function compactAnimationMotions(groups: MaybeAnimationMotionGroup[]): AnimationMotion[] {
-  return groups.flatMap((group) => group ?? []);
 }

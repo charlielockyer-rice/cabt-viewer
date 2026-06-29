@@ -4,6 +4,7 @@ import {
   boardSlotAnchorForEvent,
   boardSlotAnchorForPokemon,
 } from './replayAnimationAnchors';
+import { compactAnimationMotions } from './replayAnimationMotionUtils';
 import { cabtCardName } from './replayCardData';
 import { finiteNumber, stringValue } from './replayEventParams';
 import { CabtAreaType } from './types';
@@ -369,10 +370,4 @@ function conditionPulseLabel(event: ActionTimelineEvent): string {
     return event.kind === 'Asleep' ? 'Awake' : 'Recovered';
   }
   return event.kind ?? 'Condition';
-}
-
-type MaybeAnimationMotionGroup = AnimationMotion | AnimationMotion[] | null | undefined;
-
-function compactAnimationMotions(groups: MaybeAnimationMotionGroup[]): AnimationMotion[] {
-  return groups.flatMap((group) => group ?? []);
 }
