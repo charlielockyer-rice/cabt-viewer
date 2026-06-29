@@ -13,7 +13,6 @@ import {
   type RevealSessionStep,
   type AnimationVisibilityClaim,
 } from '../animations/replayAnimationPlan';
-import { serializeAnimationAnchor } from '../animations/animationAnchors';
 import { resolveCardImageUrl } from '../game/cardImages';
 import { SlotType, targetFor, type ActionTimelineEvent, type CardView, type GameView, type LogView, type PlayerView, type PokemonSlotView } from '../game/types';
 import type { ReplayAnimationPhase, ReplaySnapshot, ReplayStep } from '../game/replay';
@@ -1424,8 +1423,8 @@ function replayAnimationPlanForPhase(
   label: string | undefined,
   stepEvents: ActionTimelineEvent[] = phase.events,
 ) {
-  const visibilityClaims = animationPhaseVisibilityClaims(phase, view, stepEvents);
   const motions = animationPhaseMotions(phase, view, stepEvents);
+  const visibilityClaims = animationMotionVisibilityClaims(phase.key, motions);
   if (!visibilityClaims.length && !motions.length) {
     return undefined;
   }
@@ -2593,281 +2592,48 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
-function animationPhaseVisibilityClaims(
-  phase: AnimationEventPhase,
-  view: GameView,
-  stepEvents: ActionTimelineEvent[] = phase.events,
+function animationMotionVisibilityClaims(
+  scopeKey: string,
+  motions: AnimationMotion[],
 ): AnimationVisibilityClaim[] {
-  if (phase.key.startsWith('Attach:')) {
-    return [
-      ...handPlayDestinationVisibilityClaims(phase, view),
-      ...revealSessionVisibilityClaims(phase, view, stepEvents),
-    ];
-  }
-  if (phase.key.startsWith('HandToDeck:')) {
-    return handToDeckVisibilityClaims(phase, view);
-  }
-  if (phase.key.startsWith('Play:') || phase.key.startsWith('HandMove:') || phase.key.startsWith('Evolve:')) {
-    return handPlayDestinationVisibilityClaims(phase, view);
-  }
-  if (phase.key.startsWith('Draw:')) {
-    return drawDestinationVisibilityClaims(phase, view);
-  }
-  if (
-    phase.key.startsWith('BoardMove:')
-    || phase.key.startsWith('BoardToDeck:')
-    || phase.key.startsWith('DeckDiscard:')
-    || phase.key.startsWith('DeckBoardPlace:')
-    || phase.key.startsWith('DeckPrizePlace:')
-    || phase.key.startsWith('StadiumMove:')
-    || phase.key.startsWith('KnockOut:')
-  ) {
-    return boardCardMoveVisibilityClaims(phase, view);
-  }
-  if (
-    phase.key.startsWith('DeckReveal:')
-    || phase.key.startsWith('DeckSearchReveal:')
-    || phase.key.startsWith('DeckRevealReturn:')
-    || phase.key.startsWith('DeckRevealTake:')
-  ) {
-    return revealSessionVisibilityClaims(phase, view, stepEvents);
-  }
-  if (phase.key.startsWith('PrizeTake:')) {
-    return prizeTakeDestinationVisibilityClaims(phase, view);
-  }
-  if (phase.key.startsWith('AttachedMove:')) {
-    return [
-      ...boardCardMoveVisibilityClaims(phase, view),
-      ...attachedHandDestinationVisibilityClaims(phase, view),
-    ];
-  }
-  return [];
-}
-
-function handToDeckVisibilityClaims(phase: AnimationEventPhase, view: GameView): AnimationVisibilityClaim[] {
   const claims: AnimationVisibilityClaim[] = [];
-  for (const motion of handToDeckCardMoveMotions(phase, view)) {
-    if (motion.kind !== 'card-move') {
+  for (const motion of motions) {
+    if (motion.kind === 'card-move') {
+      appendMotionClaim(claims, scopeKey, motion.sourceAnchor, motion.identity, 'source', motion.handoffPolicy.hideSourceUntil);
+      appendMotionClaim(claims, scopeKey, motion.targetAnchor, motion.identity, 'destination', motion.handoffPolicy.hideDestinationUntil);
       continue;
     }
-    if (motion.handoffPolicy.hideSourceUntil !== 'none') {
-      claims.push({
-        scopeKey: phase.key,
-        anchor: motion.sourceAnchor,
-        identity: motion.identity,
-        role: 'source',
-      });
-    }
-    if (motion.handoffPolicy.hideDestinationUntil !== 'none') {
-      claims.push({
-        scopeKey: phase.key,
-        anchor: motion.targetAnchor,
-        identity: motion.identity,
-        role: 'destination',
-      });
-    }
-  }
-  return claims;
-}
-
-function revealSessionVisibilityClaims(
-  phase: AnimationEventPhase,
-  view: GameView,
-  stepEvents: ActionTimelineEvent[],
-): AnimationVisibilityClaim[] {
-  const claims: AnimationVisibilityClaim[] = [];
-  for (const motion of revealSessionMotions(phase, view, stepEvents)) {
     if (motion.kind !== 'reveal-session') {
       continue;
     }
     for (const step of motion.steps) {
-      if (step.sourceAnchor && step.handoffPolicy?.hideSourceUntil !== 'none') {
-        claims.push({
-          scopeKey: phase.key,
-          anchor: step.sourceAnchor,
-          identity: step.identity,
-          role: 'source',
-        });
-      }
-      if (step.targetAnchor && step.handoffPolicy?.hideDestinationUntil !== 'none') {
-        claims.push({
-          scopeKey: phase.key,
-          anchor: step.targetAnchor,
-          identity: step.identity,
-          role: 'destination',
-        });
-      }
+      appendMotionClaim(claims, scopeKey, step.sourceAnchor, step.identity, 'source', step.handoffPolicy?.hideSourceUntil);
+      appendMotionClaim(claims, scopeKey, step.targetAnchor, step.identity, 'destination', step.handoffPolicy?.hideDestinationUntil);
     }
   }
   return claims;
 }
 
-function boardCardMoveVisibilityClaims(phase: AnimationEventPhase, view: GameView): AnimationVisibilityClaim[] {
-  const claims: AnimationVisibilityClaim[] = [];
-  for (const motion of boardCardMoveMotions(phase, view)) {
-    if (motion.kind !== 'card-move') {
-      continue;
-    }
-    if (motion.handoffPolicy.hideSourceUntil !== 'none' && motion.sourceAnchor.kind !== 'deck-top') {
-      claims.push({
-        scopeKey: phase.key,
-        anchor: motion.sourceAnchor,
-        identity: motion.identity,
-        role: 'source',
-      });
-    }
-    if (motion.handoffPolicy.hideDestinationUntil !== 'none') {
-      claims.push({
-        scopeKey: phase.key,
-        anchor: motion.targetAnchor,
-        identity: motion.identity,
-        role: 'destination',
-      });
-    }
+function appendMotionClaim(
+  claims: AnimationVisibilityClaim[],
+  scopeKey: string,
+  anchor: AnimationAnchorRef | undefined,
+  identity: AnimationIdentity | undefined,
+  role: AnimationVisibilityClaim['role'],
+  policy: 'none' | 'snapshot' | 'phase-end' | 'scope-exit' | 'arrival' | 'prepaint' | undefined,
+) {
+  if (!anchor || !policy || policy === 'none') {
+    return;
   }
-  return claims;
-}
-
-function handPlayDestinationVisibilityClaims(phase: AnimationEventPhase, view: GameView): AnimationVisibilityClaim[] {
-  const claims: AnimationVisibilityClaim[] = [];
-  for (const event of phase.events) {
-    if (!isPlannedHandPlayMoveEvent(event) || event.playerIndex === undefined) {
-      continue;
-    }
-    const sourceAnchor = handDestinationAnchorForEvent(view, event);
-    const anchor = handPlayTargetAnchorForEvent(view, event);
-    if (!sourceAnchor || !anchor) {
-      continue;
-    }
-    const params = event.params as Record<string, unknown> | undefined;
-    const card = cardViewFromEvent(event);
-    const identity = {
-      kind: handPlayIdentityKind(event),
-      serial: finiteNumber(params?.serial) ?? card?.serial,
-      cardId: finiteNumber(params?.cardId) ?? card?.id,
-      name: stringValue(params?.cardName) ?? card?.name,
-    };
-    claims.push({
-      scopeKey: phase.key,
-      anchor: sourceAnchor,
-      identity,
-      role: 'source',
-    });
-    if (event.kind === 'Evolve') {
-      continue;
-    }
-    claims.push({
-      scopeKey: phase.key,
-      anchor,
-      identity,
-      role: 'destination',
-    });
+  if (role === 'source' && anchor.kind === 'deck-top') {
+    return;
   }
-  return claims;
-}
-
-function drawDestinationVisibilityClaims(phase: AnimationEventPhase, view: GameView): AnimationVisibilityClaim[] {
-  const claims: AnimationVisibilityClaim[] = [];
-  for (const event of phase.events) {
-    if ((event.kind !== 'Draw' && event.kind !== 'DrawReverse') || event.playerIndex === undefined) {
-      continue;
-    }
-    const targetAnchor = handDestinationAnchorForEvent(view, event);
-    if (!targetAnchor || targetAnchor.kind !== 'hand-card') {
-      continue;
-    }
-    const params = event.params as Record<string, unknown> | undefined;
-    const card = view.players[event.playerIndex]?.hand[targetAnchor.handIndex ?? -1];
-    claims.push({
-      scopeKey: phase.key,
-      anchor: targetAnchor,
-      identity: {
-        kind: 'card',
-        serial: targetAnchor.serial,
-        cardId: card?.id ?? finiteNumber(params?.cardId),
-        name: card?.name ?? stringValue(params?.cardName),
-      },
-      role: 'destination',
-    });
-  }
-  return claims;
-}
-
-function attachedHandDestinationVisibilityClaims(phase: AnimationEventPhase, view: GameView): AnimationVisibilityClaim[] {
-  const claimedDestinations = new Set(
-    boardCardMoveVisibilityClaims(phase, view)
-      .filter((claim) => claim.role === 'destination')
-      .map((claim) => serializeAnimationAnchor(claim.anchor)),
-  );
-  const claims: AnimationVisibilityClaim[] = [];
-  for (const event of phase.events) {
-    if (!isAttachedToHandMoveEvent(event) || event.playerIndex === undefined) {
-      continue;
-    }
-    const params = event.params as Record<string, unknown> | undefined;
-    const playerIndex = event.playerIndex;
-    const hand = view.players[playerIndex]?.hand ?? [];
-    const handIndex = hand.findIndex((card) => eventCardMatches(card, event));
-    const card = hand[handIndex];
-    if (handIndex < 0 || !card) {
-      continue;
-    }
-    const anchor: AnimationAnchorRef = {
-      kind: 'hand-card',
-      playerIndex,
-      handIndex,
-      serial: card.serial,
-    };
-    if (claimedDestinations.has(serializeAnimationAnchor(anchor))) {
-      continue;
-    }
-    claims.push({
-      scopeKey: phase.key,
-      anchor,
-      identity: {
-        kind: Number(params?.fromArea) === CabtAreaType.TOOL ? 'tool' : 'energy',
-        serial: card.serial,
-        cardId: card.id,
-        name: card.name,
-      },
-      role: 'destination',
-    });
-  }
-  return claims;
-}
-
-function boardPlaceDestinationVisibilityClaims(phase: AnimationEventPhase, view: GameView): AnimationVisibilityClaim[] {
-  const claims: AnimationVisibilityClaim[] = [];
-  for (const event of phase.events) {
-    const params = event.params as Record<string, unknown> | undefined;
-    const playerIndex = event.playerIndex;
-    const toArea = Number(params?.toArea);
-    if (playerIndex === undefined || !isMoveCardKind(event.kind) || (toArea !== CabtAreaType.ACTIVE && toArea !== CabtAreaType.BENCH)) {
-      continue;
-    }
-    const destination = boardPokemonDestinationForEvent(view.players[playerIndex], event);
-    if (!destination?.slot.pokemon) {
-      continue;
-    }
-    claims.push({
-      scopeKey: phase.key,
-      anchor: {
-        kind: 'pokemon-card',
-        playerIndex,
-        slot: destination.kind,
-        slotIndex: destination.slot.index,
-        serial: destination.slot.pokemon.serial,
-      },
-      identity: {
-        kind: 'pokemon',
-        serial: destination.slot.pokemon.serial,
-        cardId: destination.slot.pokemon.id,
-        name: destination.slot.pokemon.name,
-      },
-      role: 'destination',
-    });
-  }
-  return claims;
+  claims.push({
+    scopeKey,
+    anchor,
+    identity,
+    role,
+  });
 }
 
 function boardPokemonDestinationForEvent(
@@ -2882,45 +2648,6 @@ function boardPokemonDestinationForEvent(
   }
   const benchSlot = player.bench.find((slot) => slot.pokemon && eventCardMatches(slot.pokemon, event));
   return benchSlot ? { kind: 'bench', slot: benchSlot } : undefined;
-}
-
-function prizeTakeDestinationVisibilityClaims(phase: AnimationEventPhase, view: GameView): AnimationVisibilityClaim[] {
-  const claims: AnimationVisibilityClaim[] = [];
-  for (const event of phase.events) {
-    const params = event.params as Record<string, unknown> | undefined;
-    const playerIndex = event.playerIndex;
-    if (
-      playerIndex === undefined
-      || !isMoveCardKind(event.kind)
-      || Number(params?.fromArea) !== CabtAreaType.PRIZE
-      || Number(params?.toArea) !== CabtAreaType.HAND
-    ) {
-      continue;
-    }
-    const hand = view.players[playerIndex]?.hand ?? [];
-    const handIndex = hand.findIndex((card) => eventCardMatches(card, event));
-    const card = hand[handIndex];
-    if (handIndex < 0 || !card) {
-      continue;
-    }
-    claims.push({
-      scopeKey: phase.key,
-      anchor: {
-        kind: 'hand-card',
-        playerIndex,
-        handIndex,
-        serial: card.serial,
-      },
-      identity: {
-        kind: 'card',
-        serial: card.serial,
-        cardId: card.id,
-        name: card.name,
-      },
-      role: 'destination',
-    });
-  }
-  return claims;
 }
 
 type AnimationEventPhase = {
@@ -3725,7 +3452,7 @@ function replayPhaseWithResolvingDiscardAnimation(
   const durationMs = Math.max(phase.durationMs, replayAnimationMotionSpanMs([...existingMotions, ...motions]));
   const visibilityClaims = [
     ...(existingPlan?.visibilityClaims ?? []),
-    ...motions.flatMap((motion) => cardMoveVisibilityClaims(phase.key, motion)),
+    ...animationMotionVisibilityClaims(phase.key, motions),
   ];
   return {
     ...phase,
@@ -3775,30 +3502,6 @@ function resolvingDiscardCardMoveMotion(
       prepaintFrames: 2,
     },
   };
-}
-
-function cardMoveVisibilityClaims(scopeKey: string, motion: AnimationMotion): AnimationVisibilityClaim[] {
-  if (motion.kind !== 'card-move') {
-    return [];
-  }
-  const claims: AnimationVisibilityClaim[] = [];
-  if (motion.handoffPolicy.hideSourceUntil !== 'none' && motion.sourceAnchor.kind !== 'deck-top') {
-    claims.push({
-      scopeKey,
-      anchor: motion.sourceAnchor,
-      identity: motion.identity,
-      role: 'source',
-    });
-  }
-  if (motion.handoffPolicy.hideDestinationUntil !== 'none') {
-    claims.push({
-      scopeKey,
-      anchor: motion.targetAnchor,
-      identity: motion.identity,
-      role: 'destination',
-    });
-  }
-  return claims;
 }
 
 function shouldResolveCardInDisplay(step: ReplayStep, entry: ResolvingPlayedCard): boolean {
