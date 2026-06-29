@@ -1,6 +1,7 @@
 import {
   isAttachedCardArea,
 } from './actionAnimationPhases';
+import { assertUnhandledActionAnimationPhaseKind } from './replayAnimationExhaustive';
 import { handDestinationAnchorForEvent } from './replayAnimationAnchors';
 import { isMoveCardKind } from './replayActionGroups';
 import { isCabtStadiumCard } from './replayCardData';
@@ -73,10 +74,6 @@ export function animationSourceViewForPhase(
       return phaseStartView;
   }
   return assertUnhandledActionAnimationPhaseKind(phase.kind);
-}
-
-function assertUnhandledActionAnimationPhaseKind(kind: never): never {
-  throw new Error(`Unhandled replay animation phase kind: ${kind}`);
 }
 
 function handPlaySourceView(

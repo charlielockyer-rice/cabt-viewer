@@ -11,6 +11,7 @@ import {
   animationPhaseNeedsDedicatedView,
   type AnimationEventPhase,
 } from './replayAnimationPhases';
+import { assertUnhandledActionAnimationPhaseKind } from './replayAnimationExhaustive';
 import { animationSourceViewForPhase } from './replayAnimationSourceViews';
 import { boardCardMoveMotions } from './replayBoardCardMotions';
 import {
@@ -197,8 +198,4 @@ function animationPhaseMotions(
       return revealSessionMotions(phase, view, stepEvents);
   }
   return assertUnhandledActionAnimationPhaseKind(phase.kind);
-}
-
-function assertUnhandledActionAnimationPhaseKind(kind: never): never {
-  throw new Error(`Unhandled replay animation phase kind: ${kind}`);
 }

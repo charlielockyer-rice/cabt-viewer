@@ -8,6 +8,7 @@ import {
   actionAnimationTimelinePhaseKey,
   type ActionAnimationPhaseKind,
 } from './actionAnimationPhases';
+import { assertUnhandledActionAnimationPhaseKind } from './replayAnimationExhaustive';
 import type { ActionTimelineEvent } from '../game/types';
 
 export type AnimationEventPhase = {
@@ -130,8 +131,4 @@ export function playerLabel(playerIndex: number | undefined): string {
 
 export function plural(count: number, singular: string): string {
   return count === 1 ? singular : `${singular}s`;
-}
-
-function assertUnhandledActionAnimationPhaseKind(kind: never): never {
-  throw new Error(`Unhandled replay animation phase kind: ${kind}`);
 }
