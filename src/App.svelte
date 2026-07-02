@@ -27,6 +27,7 @@
   import ReplayTimeline from './lib/components/ReplayTimeline.svelte';
   import SetupDock from './lib/components/SetupDock.svelte';
   import TableShell from './lib/components/TableShell.svelte';
+  import SearchDock from './lib/components/SearchDock.svelte';
   import Toolbar from './lib/components/Toolbar.svelte';
   import ZoneViewer from './lib/components/ZoneViewer.svelte';
   import type { GameCommandApi } from './lib/game/gameApi';
@@ -1244,6 +1245,7 @@
         refreshCatalog={() => void refreshCatalog()}
       />
   {:else if bottomPlayer && topPlayer}
+    <div class="table-layout" class:with-analysis={replayMode}>
     <TableShell {debugZones} {replayMode}>
       <GameStatus
         phaseLabel={game.phaseLabel}
@@ -1514,6 +1516,27 @@
         />
       </BoardLayer>
     </TableShell>
+    {#if replayMode && replayStore.replay && replayStore.currentStep}
+      <SearchDock
+        mcts={replayStore.currentDecisionStep?.mcts ?? null}
+        decisionOrdinal={replayStore.currentDecisionOrdinal}
+        decisionCount={replayStore.decisionCount}
+        decisionTurn={replayStore.currentDecisionStep?.turn}
+        decisionLabel={replayStore.currentDecisionStep?.label}
+        hasPrev={replayStore.decisionIndices.some((index) => index < replayStore.stepIndex)}
+        hasNext={replayStore.decisionIndices.some((index) => index > replayStore.stepIndex)}
+        currentTurn={replayStore.currentStep.turn}
+        stateValue={`${replayStore.currentStep.stateIndex} / ${Math.max(0, replayStore.replay.stateCount - 1)}`}
+        copiedForkPoint={replayStore.copiedForkPoint}
+        onPrev={() => replayStore.previousDecision()}
+        onNext={() => replayStore.nextDecision()}
+        onPlayResult={() => replayStore.showDecisionResult()}
+        copyForkPoint={() => void replayStore.copyForkPoint()}
+        replayName={replayStore.replay.name}
+        playerLabel={replayStore.replay.players.map((player) => player.name).join(' vs ')}
+      />
+    {/if}
+    </div>
   {:else}
     <AppHeader />
     <section class="replay-loading-screen">
@@ -1528,6 +1551,26 @@
 {/if}
 
 <style>
+  /* Wrapper is layout-transparent in normal play; in replay it becomes a row so the search
+     analysis owns a real column on the right and the board (TableShell) shrinks to leave it
+     room (via --analysis-dock-w, which TableShell reads as --analysis-w). */
+  .table-layout {
+    display: contents;
+  }
+
+  .table-layout.with-analysis {
+    display: flex;
+    align-items: stretch;
+    min-height: 100vh;
+    --analysis-dock-w: clamp(260px, 22vw, 340px);
+  }
+
+  /* The SearchDock supersedes ReplayTimeline's own details aside (name/state/fork-point +
+     payload preview) — hide the duplicate so the right side is one clean analysis column. */
+  .table-layout.with-analysis :global(.replay-details) {
+    display: none;
+  }
+
   .replay-loading-screen {
     min-height: 100vh;
     display: grid;

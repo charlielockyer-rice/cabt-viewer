@@ -16,7 +16,7 @@ import {
 import { serializeAnimationAnchor } from '../animations/animationAnchors';
 import { resolveCardImageUrl } from '../game/cardImages';
 import { SlotType, targetFor, type ActionTimelineEvent, type CardView, type GameView, type LogView, type PlayerView, type PokemonSlotView } from '../game/types';
-import type { ReplayAnimationPhase, ReplaySnapshot, ReplayStep } from '../game/replay';
+import type { MctsStepView, ReplayAnimationPhase, ReplaySnapshot, ReplayStep } from '../game/replay';
 
 type CardRow = {
   id: number;
@@ -78,12 +78,23 @@ type CabtPlayerFrame = {
   confused?: boolean;
 };
 
+type MctsChild = {
+  select?: number[];
+  visits?: number;
+  q?: number;
+  prior?: number;
+};
+
 type CabtVisualizeFrame = {
   logs?: Array<Record<string, unknown>>;
   select?: Record<string, unknown> | null;
   selected?: unknown;
   action?: unknown;
   obs?: unknown;
+  /** Optional MCTS search stats per legal option, emitted by run/export_replay.py. */
+  _mcts?: MctsChild[];
+  /** The option index array the agent actually played. */
+  _engineChoice?: number[];
   current: {
     turn: number;
     yourIndex: number;
@@ -171,6 +182,7 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
           selected: frameEntries[continuation.endIndex].frame.selected,
           action: frameEntries[continuation.endIndex].frame.action,
         },
+        mcts: buildMctsView(frame),
       }));
       index = continuation.endIndex;
       continue;
@@ -192,6 +204,7 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
             selected: frame.selected,
             action: frame.action,
           },
+          mcts: groupIndex === 0 ? buildMctsView(frame) : null,
         }));
       }
     } else {
@@ -205,6 +218,7 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
           selected: frame.selected,
           action: frame.action,
         },
+        mcts: buildMctsView(frame),
       }));
     }
   }
@@ -1189,6 +1203,121 @@ function moveCardGroupLabel(events: ActionTimelineEvent[], turn: number): string
   return events[0].message;
 }
 
+// --- MCTS search overlay (optional `_mcts` / `_engineChoice` frame fields) ---
+
+const OPTION_AREA_LABELS: Record<number, string> = {
+  1: 'deck', 2: 'hand', 3: 'discard', 4: 'active', 5: 'bench',
+  6: 'prize', 7: 'stadium', 8: 'energy', 9: 'tool', 10: 'pre-evo', 11: 'player', 12: 'look',
+};
+
+function refAt(frame: CabtVisualizeFrame, playerIndex: number, area: unknown, index: unknown): CabtCardRef | undefined {
+  const player = frame.current.players[playerIndex];
+  if (!player) {
+    return undefined;
+  }
+  const i = Number(index);
+  switch (Number(area)) {
+    case 2:
+      return player.hand?.[i];
+    case 3:
+      return player.discard?.[i];
+    case 4:
+      return player.active?.[0];
+    case 5:
+      return player.bench?.[i];
+    default:
+      return undefined;
+  }
+}
+
+function locationName(frame: CabtVisualizeFrame, playerIndex: number, area: unknown, index: unknown): string {
+  const ref = refAt(frame, playerIndex, area, index);
+  if (ref && ref.id !== undefined) {
+    return cardName(ref.id);
+  }
+  const areaLabel = OPTION_AREA_LABELS[Number(area)] ?? 'zone';
+  return Number.isFinite(Number(index)) ? `${areaLabel} #${index}` : areaLabel;
+}
+
+function decodeOption(option: Record<string, unknown>, frame: CabtVisualizeFrame): string {
+  const owner = typeof option.playerIndex === 'number' ? option.playerIndex : frame.current.yourIndex;
+  const here = (area: unknown, index: unknown) => locationName(frame, owner, area, index);
+  switch (Number(option.type)) {
+    case 0:
+      return `Choose ${option.number ?? '?'}`;
+    case 1:
+      return 'Yes';
+    case 2:
+      return 'No';
+    case 3:
+    case 4:
+    case 5:
+      return here(option.area, option.index);
+    case 6:
+      return `Energy · ${here(option.area, option.index)}`;
+    case 7:
+      return `Play ${here(2, option.index)}`;
+    case 8:
+      return `Attach ${here(option.area, option.index)} → ${here(option.inPlayArea, option.inPlayIndex)}`;
+    case 9:
+      return `Evolve ${here(option.inPlayArea, option.inPlayIndex)} → ${here(option.area, option.index)}`;
+    case 10:
+      return `Ability · ${here(option.area, option.index)}`;
+    case 11:
+      return `Discard ${here(option.area, option.index)}`;
+    case 12:
+      return 'Retreat';
+    case 13: {
+      const attack = attackDatabase.get(Number(option.attackId));
+      return `Attack · ${attack ? displayName(attack.name) : `#${option.attackId ?? '?'}`}`;
+    }
+    case 14:
+      return 'End turn';
+    case 15:
+      return 'Skill order';
+    case 16:
+      return 'Special condition';
+    default:
+      return `Option ${option.type ?? '?'}`;
+  }
+}
+
+function sameSelect(a: number[] | undefined, b: number[] | undefined): boolean {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
+    return false;
+  }
+  return a.every((value, index) => value === b[index]);
+}
+
+function buildMctsView(frame: CabtVisualizeFrame): MctsStepView | null {
+  const children = frame._mcts;
+  if (!Array.isArray(children) || !children.length) {
+    return null;
+  }
+  const options =
+    frame.select && Array.isArray(frame.select.option) ? (frame.select.option as Record<string, unknown>[]) : [];
+  const chosen = frame._engineChoice;
+  const totalVisits = children.reduce((sum, child) => sum + (Number(child.visits) || 0), 0);
+  const candidates = children
+    .map((child) => {
+      const select = Array.isArray(child.select) ? child.select : [];
+      const optionIndex = typeof select[0] === 'number' ? select[0] : -1;
+      const option = options[optionIndex];
+      const visits = Number(child.visits) || 0;
+      return {
+        optionIndex,
+        label: option ? decodeOption(option, frame) : `option ${optionIndex}`,
+        visits,
+        visitShare: totalVisits ? visits / totalVisits : 0,
+        q: Number(child.q) || 0,
+        prior: Number(child.prior) || 0,
+        chosen: sameSelect(select, chosen),
+      };
+    })
+    .sort((a, b) => b.visits - a.visits);
+  return { totalVisits, optionCount: options.length || candidates.length, candidates };
+}
+
 function replayStepForFrame({
   view,
   stateIndex,
@@ -1198,6 +1327,7 @@ function replayStepForFrame({
   actionTimeline,
   displayView,
   animationPhases,
+  mcts,
 }: {
   view: GameView;
   stateIndex: number;
@@ -1207,6 +1337,7 @@ function replayStepForFrame({
   actionTimeline?: ReplayStep['actionTimeline'];
   displayView?: ReplayStep['displayView'];
   animationPhases?: ReplayStep['animationPhases'];
+  mcts?: MctsStepView | null;
 }): ReplayStep {
   const stepLabel = persistentActionLabel(label, actionTimeline);
   return {
@@ -1223,6 +1354,7 @@ function replayStepForFrame({
     actionTimeline,
     displayView,
     animationPhases,
+    mcts: mcts ?? null,
   };
 }
 

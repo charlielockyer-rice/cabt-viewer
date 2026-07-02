@@ -57,7 +57,9 @@
     --board-content-inset-bottom: var(--board-content-inset-y);
     --board-content-inset-x: calc(var(--board-edge-pad-x) + var(--board-content-pad));
     --board-grid-h: calc(var(--board-h) - var(--board-content-inset-y) - var(--board-content-inset-bottom));
-    width: max(100vw, var(--min-table-width));
+    /* Reserve room for the replay search dock (a sibling column). 0 when absent. */
+    --analysis-w: var(--analysis-dock-w, 0px);
+    width: max(calc(100vw - var(--analysis-w)), var(--min-table-width));
     min-width: var(--min-table-width);
     min-height: 100vh;
     position: relative;

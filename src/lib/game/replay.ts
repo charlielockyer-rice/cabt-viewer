@@ -7,6 +7,22 @@ export type ReplayPlayerInfo = {
   name: string;
 };
 
+export type MctsCandidate = {
+  optionIndex: number;
+  label: string;
+  visits: number;
+  visitShare: number;
+  q: number;
+  prior: number;
+  chosen: boolean;
+};
+
+export type MctsStepView = {
+  totalVisits: number;
+  optionCount: number;
+  candidates: MctsCandidate[];
+};
+
 export type ReplayStep = {
   index: number;
   label: string;
@@ -21,6 +37,8 @@ export type ReplayStep = {
   actionTimeline?: ActionTimelineEvent[];
   displayView?: GameView;
   animationPhases?: ReplayAnimationPhase[];
+  /** Search readout for this decision (only on steps where the agent chose via MCTS). */
+  mcts?: MctsStepView | null;
 };
 
 export type ReplayAnimationPhase = {

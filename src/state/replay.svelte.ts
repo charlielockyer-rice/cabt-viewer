@@ -58,6 +58,86 @@ class ReplayStore {
     return Math.max(0, (this.replay?.steps.length ?? 1) - 1);
   }
 
+  // Steps that carry a search/MCTS readout. These are the "decisions" the agent made;
+  // most frames in between (reveals, sub-prompts, the opponent's forced moves) have none.
+  decisionIndices = $derived(
+    this.replay
+      ? this.replay.steps.reduce<number[]>((acc, step, index) => {
+          if (step.mcts) {
+            acc.push(index);
+          }
+          return acc;
+        }, [])
+      : [],
+  );
+
+  get decisionCount(): number {
+    return this.decisionIndices.length;
+  }
+
+  // The decision governing the current step: the most recent one at or before stepIndex.
+  // Carrying it forward keeps the search panel populated on the intermediate frames that
+  // have no readout of their own (instead of blinking out). -1 before the first decision.
+  get currentDecisionOrdinal(): number {
+    const indices = this.decisionIndices;
+    let ordinal = -1;
+    for (let i = 0; i < indices.length; i += 1) {
+      if (indices[i] <= this.stepIndex) {
+        ordinal = i;
+      } else {
+        break;
+      }
+    }
+    return ordinal;
+  }
+
+  get currentDecisionStep(): ReplayStep | null {
+    const ordinal = this.currentDecisionOrdinal;
+    if (ordinal < 0 || !this.replay) {
+      return null;
+    }
+    return this.replay.steps[this.decisionIndices[ordinal]] ?? null;
+  }
+
+  goToDecision(ordinal: number): void {
+    const indices = this.decisionIndices;
+    if (!indices.length) {
+      return;
+    }
+    const clamped = Math.min(indices.length - 1, Math.max(0, ordinal));
+    this.setStep(indices[clamped]);
+  }
+
+  nextDecision(): void {
+    const next = this.decisionIndices.find((index) => index > this.stepIndex);
+    if (next !== undefined) {
+      this.setStep(next);
+    }
+  }
+
+  previousDecision(): void {
+    let target: number | undefined;
+    for (const index of this.decisionIndices) {
+      if (index < this.stepIndex) {
+        target = index;
+      } else {
+        break;
+      }
+    }
+    if (target !== undefined) {
+      this.setStep(target);
+    }
+  }
+
+  // Advance from the governing decision to the state its played move produced.
+  showDecisionResult(): void {
+    const step = this.currentDecisionStep;
+    if (!step) {
+      return;
+    }
+    this.setStep(step.index + 1);
+  }
+
   async loadSaved(id = 'kaggle-context.json'): Promise<void> {
     await this.loadCandidates(replayCandidates(id));
   }
