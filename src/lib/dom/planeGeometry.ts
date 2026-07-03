@@ -14,6 +14,60 @@ export function centerOf(rect: DOMRect): Point {
   };
 }
 
+export type LocalRect = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+// Untransformed plane-local coordinates via offset accumulation. Elements
+// positioned with these coordinates inside the tilted board plane inherit its
+// 3D transform, so no perspective math is needed. Falls back to viewport rect
+// deltas when the offset chain does not reach the root.
+export function localRectIn(root: HTMLElement, element: HTMLElement): LocalRect | null {
+  let left = 0;
+  let top = 0;
+  let current: HTMLElement | null = element;
+  while (current && current !== root) {
+    left += current.offsetLeft;
+    top += current.offsetTop;
+    current = current.offsetParent instanceof HTMLElement ? current.offsetParent : null;
+  }
+  if (current !== root) {
+    const rootRect = root.getBoundingClientRect();
+    const rect = element.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      return null;
+    }
+    return {
+      left: rect.left - rootRect.left,
+      top: rect.top - rootRect.top,
+      width: rect.width,
+      height: rect.height,
+    };
+  }
+  const style = getComputedStyle(element);
+  return {
+    left,
+    top,
+    width: parsedPixelValue(style.width) ?? element.offsetWidth,
+    height: parsedPixelValue(style.height) ?? element.offsetHeight,
+  };
+}
+
+export function localRectCenter(rect: LocalRect): Point {
+  return {
+    x: rect.left + rect.width / 2,
+    y: rect.top + rect.height / 2,
+  };
+}
+
+function parsedPixelValue(value: string): number | null {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 export function planeMapper(planeElement: HTMLElement): PlaneMapper {
   const fallbackRect = planeElement.getBoundingClientRect();
   const width = planeElement.offsetWidth || fallbackRect.width;

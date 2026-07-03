@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onDestroy, tick } from 'svelte';
   import CardTile from './CardTile.svelte';
-  import DeckDiscardAnimation from './DeckDiscardAnimation.svelte';
   import DeckShuffleAnimation from './DeckShuffleAnimation.svelte';
   import { cardBackCssVar } from '../game/cardAssets';
   import type { CardView, PlayerView } from '../game/types';
@@ -39,8 +38,6 @@
     showDiscard,
   }: Props = $props();
 
-  let topDeckPileElement = $state<HTMLElement>();
-  let bottomDeckPileElement = $state<HTMLElement>();
   let resolvingDiscardAnimations = $state<ResolvingDiscardAnimation[]>([]);
   let previousResolvingCards = new Map<number, ResolvingCardSnapshot>();
   let nextResolvingDiscardAnimationId = 0;
@@ -289,7 +286,6 @@
     <div class="right-field">
       <div class="right-piles">
         <span
-          bind:this={topDeckPileElement}
           class="stack-pile deck-pile"
           style={`${deckPileStyle(topPlayer.deckCount, -1)}; ${cardBackCssVar()}`}
           title={`${topPlayer.name} deck`}
@@ -334,15 +330,6 @@
           {/if}
           <span class="pile-count">{topPlayer.discard.length}</span>
         </button>
-        <DeckDiscardAnimation
-          events={animationEvents}
-          playerIndex={topPlayer.index}
-          deckElement={topDeckPileElement}
-          discardElement={topDiscardPileElement}
-          scopeKey={animationScopeKey}
-          {replayMode}
-          opponent
-        />
       </div>
       {#if resolvingCard(topPlayer)}
         <span
@@ -392,7 +379,6 @@
       {/if}
       <div class="right-piles">
         <span
-          bind:this={bottomDeckPileElement}
           class="stack-pile deck-pile"
           style={`${deckPileStyle(bottomPlayer.deckCount, 1)}; ${cardBackCssVar()}`}
           title={`${bottomPlayer.name} deck`}
@@ -436,14 +422,6 @@
           {/if}
           <span class="pile-count">{bottomPlayer.discard.length}</span>
         </button>
-        <DeckDiscardAnimation
-          events={animationEvents}
-          playerIndex={bottomPlayer.index}
-          deckElement={bottomDeckPileElement}
-          discardElement={bottomDiscardPileElement}
-          scopeKey={animationScopeKey}
-          {replayMode}
-        />
       </div>
     </div>
   </div>

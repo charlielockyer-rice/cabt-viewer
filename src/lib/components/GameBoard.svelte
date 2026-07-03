@@ -1,7 +1,7 @@
 <script lang="ts">
   import ActiveDuel from './ActiveDuel.svelte';
   import BenchZone from './BenchZone.svelte';
-  import BoardMoveAnimation from './BoardMoveAnimation.svelte';
+  import BoardAnimationLayer from './BoardAnimationLayer.svelte';
   import CenterPiles from './CenterPiles.svelte';
   import DeckPrizeAnimation from './DeckPrizeAnimation.svelte';
   import type { ActionTimelineEvent, PlayerView, PokemonSlotView } from '../game/types';
@@ -272,10 +272,11 @@
       {slotHasCompletedEvolution}
     />
 
-    <BoardMoveAnimation
+    <BoardAnimationLayer
       events={animationEvents}
       scopeKey={animationScopeKey}
       {replayMode}
+      players={[topPlayer, bottomPlayer]}
     />
   </div>
 
