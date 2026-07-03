@@ -739,6 +739,11 @@
   }
 
   function hideModeForTarget(element: HTMLElement, anchor: Anchor): HideMode | null {
+    // A discard landing may resolve to the pile's current top card while the
+    // arriving card is deferred; hiding that unrelated card empties the pile.
+    if (anchor.kind === 'discard' && !anchor.exact) {
+      return null;
+    }
     if (element.classList.contains('card-tile')) {
       return 'element';
     }
@@ -1435,10 +1440,17 @@
   /* --- attack / ability pulses --- */
 
   /* Announcing slots rise above sibling slots so the name bubble is never
-     occluded by the active Pokemon. */
+     occluded by the active Pokemon. The bench rows and the active duel are
+     sibling containers inside the board plane, so the container holding the
+     announcing slot must rise as well. */
   :global(.board-slot[data-attack-announce-active='true']),
   :global(.board-slot[data-ability-announce-active='true']) {
     z-index: 30;
+  }
+
+  :global(.game-board-plane > :has([data-attack-announce-active='true'])),
+  :global(.game-board-plane > :has([data-ability-announce-active='true'])) {
+    z-index: 31;
   }
 
   :global(.board-slot[data-attack-announce-active='true']) {

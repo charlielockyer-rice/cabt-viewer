@@ -561,9 +561,11 @@ function moveCardChoreography(
   if (fromArea === CabtAreaType.HAND
     && (toArea === CabtAreaType.DISCARD || toArea === CabtAreaType.ACTIVE || toArea === CabtAreaType.BENCH)) {
     const to: Anchor = toArea === CabtAreaType.DISCARD
-      ? { kind: 'discard', player, serial, cardId }
+      ? { kind: 'discard', player, serial, cardId, exact: true }
       : identity;
-    const toFallbacks: Anchor[] = toArea === CabtAreaType.ACTIVE
+    const toFallbacks: Anchor[] = toArea === CabtAreaType.DISCARD
+      ? [{ kind: 'discard', player }]
+      : toArea === CabtAreaType.ACTIVE
       ? [{ kind: 'slot', player, slot: 'active', index: 0 }]
       : toArea === CabtAreaType.BENCH
         ? [{ kind: 'slot', player, slot: 'bench', index: 0 }]
