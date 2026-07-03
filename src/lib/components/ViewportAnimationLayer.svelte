@@ -21,6 +21,7 @@
 
   type Props = {
     events?: ActionTimelineEvent[];
+    stepEvents?: ActionTimelineEvent[];
     scopeKey?: string | number;
     replayMode?: boolean;
     players?: PlayerView[];
@@ -30,6 +31,7 @@
     id: string;
     style: CardMotion['style'];
     card?: CardView;
+    text?: string;
     reveal: boolean;
     concealed: boolean;
     topHand: boolean;
@@ -63,6 +65,7 @@
 
   let {
     events = [],
+    stepEvents = [],
     scopeKey = '',
     replayMode = false,
     players = [],
@@ -144,7 +147,7 @@
       return;
     }
 
-    const { motions, effects } = choreograph(batch, players);
+    const { motions, effects } = choreograph(batch, players, stepEvents.length ? stepEvents : batch);
     const mine = motions.filter((motion) => motion.space === 'viewport');
     const startedGeneration = generation;
 
@@ -154,14 +157,168 @@
     startDraws(mine.filter((motion) => motion.style === 'deck-draw'), startedGeneration);
     startResets(mine.filter((motion) => motion.style === 'hand-reset'), startedGeneration);
     startPrizeTakes(mine.filter((motion) => motion.style === 'prize-take'), startedGeneration);
+    for (const motion of mine.filter((motion) => motion.style === 'damage-float')) {
+      startDamageFloat(motion, startedGeneration);
+    }
+    for (const motion of mine.filter((motion) => motion.style === 'knock-out')) {
+      startKnockOut(motion, startedGeneration);
+    }
     for (const effect of effects) {
       if (effect.kind === 'attach-under') {
         startAttachUnder(effect, startedGeneration);
-      } else {
+      } else if (effect.kind === 'prize-place') {
         startPrizePlace(effect, startedGeneration);
+      } else if (effect.kind === 'lunge') {
+        startLunge(effect, startedGeneration);
+      } else {
+        startAnnounce(effect, startedGeneration);
       }
     }
   });
+
+  function startAnnounce(effect: TargetEffect, startedGeneration: number) {
+    const attack = effect.kind === 'announce-attack';
+    const attribute = attack ? 'data-attack-announce-active' : 'data-ability-announce-active';
+    const nameVar = attack ? '--attack-name' : '--ability-name';
+    const timer = setTimeout(() => {
+      if (startedGeneration !== generation) {
+        return;
+      }
+      const target = resolveAnchor(effect.anchor);
+      if (!target) {
+        return;
+      }
+      const release = applyTargetEffect(target.element, attribute, {
+        [nameVar]: JSON.stringify(effect.label ?? ''),
+      });
+      releases.push(release);
+      const cleanup = setTimeout(release, effect.durationMs);
+      timers.push(cleanup);
+    }, effect.startMs);
+    timers.push(timer);
+  }
+
+  function startLunge(effect: TargetEffect, startedGeneration: number) {
+    const timer = setTimeout(() => {
+      if (startedGeneration !== generation) {
+        return;
+      }
+      const attacker = resolveAnchor(effect.anchor);
+      const target = effect.targetAnchor ? resolveAnchor(effect.targetAnchor) : null;
+      if (!attacker || !target) {
+        return;
+      }
+      const sourceRect = attacker.element.getBoundingClientRect();
+      const targetRect = target.element.getBoundingClientRect();
+      const dx = targetRect.left + targetRect.width / 2 - (sourceRect.left + sourceRect.width / 2);
+      const dy = targetRect.top + targetRect.height / 2 - (sourceRect.top + sourceRect.height / 2);
+      const distance = Math.max(1, Math.hypot(dx, dy));
+      const release = applyTargetEffect(attacker.element, 'data-attack-lunge-active', {
+        '--attack-lunge-x': `${(dx / distance * 22).toFixed(1)}px`,
+        '--attack-lunge-y': `${(dy / distance * 22).toFixed(1)}px`,
+        '--damage-visual-ms': `${effect.durationMs}ms`,
+      });
+      releases.push(release);
+      const cleanup = setTimeout(release, effect.durationMs);
+      timers.push(cleanup);
+    }, effect.startMs);
+    timers.push(timer);
+  }
+
+  function startDamageFloat(motion: CardMotion, startedGeneration: number) {
+    if (motion.sprite.kind !== 'label') {
+      return;
+    }
+    const target = resolveAnchor(motion.from);
+    if (!target) {
+      return;
+    }
+    const rect = target.element.getBoundingClientRect();
+    if (rect.width <= 0) {
+      return;
+    }
+    sprites = [...sprites, {
+      id: motion.id,
+      style: 'damage-float',
+      text: motion.sprite.text,
+      reveal: false,
+      concealed: false,
+      topHand: false,
+      direct: false,
+      evolve: false,
+      css: [
+        `left: ${rect.left + rect.width / 2}px`,
+        `top: ${rect.top + rect.height * 0.42}px`,
+        `--attack-delay: ${motion.startMs}ms`,
+        `--damage-visual-ms: ${motion.durationMs}ms`,
+      ].join('; '),
+    }];
+    const timer = setTimeout(() => {
+      if (startedGeneration !== generation) {
+        return;
+      }
+      sprites = sprites.filter((sprite) => sprite.id !== motion.id);
+    }, motion.startMs + motion.durationMs);
+    timers.push(timer);
+  }
+
+  function startKnockOut(motion: CardMotion, startedGeneration: number) {
+    const padPx = 10;
+    const tiltDeg = 22;
+    const timer = setTimeout(() => {
+      if (startedGeneration !== generation) {
+        return;
+      }
+      const source = resolveAnchor(motion.from);
+      const discard = resolveAnchor(motion.to);
+      if (!source || !discard || motion.sprite.kind !== 'card') {
+        return;
+      }
+      const sourceRect = cardVisual(source.element).getBoundingClientRect();
+      const discardRect = discard.element.getBoundingClientRect();
+      if (sourceRect.width <= 0 || discardRect.width <= 0) {
+        return;
+      }
+      const spriteLeft = sourceRect.left - padPx;
+      const spriteTop = sourceRect.top - padPx;
+      const spriteWidth = sourceRect.width + padPx * 2;
+      const spriteHeight = sourceRect.height + padPx * 2;
+      const rotation = source.element.closest('.top-active-slot, .top-bench-row') ? 180 : 0;
+      releases.push(animVisibility.claim(source.element, 'contents'));
+      sprites = [...sprites, {
+        id: motion.id,
+        style: 'knock-out',
+        card: motion.sprite.card,
+        reveal: false,
+        concealed: false,
+        topHand: false,
+        direct: false,
+        evolve: false,
+        css: [
+          `left: ${spriteLeft}px`,
+          `top: ${spriteTop}px`,
+          `width: ${spriteWidth}px`,
+          `height: ${spriteHeight}px`,
+          `--ko-x: ${(discardRect.left + discardRect.width / 2 - (spriteLeft + spriteWidth / 2)).toFixed(1)}px`,
+          `--ko-y: ${(discardRect.top + discardRect.height / 2 - (spriteTop + spriteHeight / 2)).toFixed(1)}px`,
+          `--ko-rotation: ${rotation}deg`,
+          `--ko-end-rotation: ${rotation + tiltDeg}deg`,
+          `--ko-target-rotation: ${discard.element.closest('.top-piles') ? 180 : 0}deg`,
+          `--ko-scale: ${clamp(discardRect.width / sourceRect.width, 0.35, 1).toFixed(3)}`,
+          `--ko-pad: ${padPx}px`,
+          '--attack-delay: 0ms',
+        ].join('; '),
+      }];
+      const cleanup = setTimeout(() => {
+        if (startedGeneration !== generation) {
+          return;
+        }
+        sprites = sprites.filter((sprite) => sprite.id !== motion.id);
+      }, motion.durationMs + replayAnimationPhaseGapMs);
+      timers.push(cleanup);
+    }, motion.startMs);
+    timers.push(timer);
+  }
 
   function startHandPlay(motion: CardMotion, startedGeneration: number) {
     if (motion.sprite.kind !== 'card') {
@@ -749,9 +906,24 @@
   let drawSprites = $derived(sprites.filter((sprite) => sprite.style === 'deck-draw'));
   let resetSprites = $derived(sprites.filter((sprite) => sprite.style === 'hand-reset'));
   let prizeTakeSprites = $derived(sprites.filter((sprite) => sprite.style === 'prize-take'));
+  let attackSprites = $derived(sprites.filter((sprite) => sprite.style === 'damage-float' || sprite.style === 'knock-out'));
 </script>
 
 <span class="viewport-anim-layer" data-anim-layer aria-hidden="true">
+  <span class="fixed-sublayer attack-sublayer">
+    {#each attackSprites as sprite (sprite.id)}
+      {#if sprite.style === 'damage-float'}
+        <span class="attack-damage-number" style={sprite.css}>{sprite.text}</span>
+      {:else}
+        <span class="attack-ko-card" style={sprite.css}>
+          <span class="attack-ko-card-frame">
+            <CardTile card={sprite.card} compact />
+          </span>
+        </span>
+      {/if}
+    {/each}
+  </span>
+
   <span class="fixed-sublayer draw-sublayer">
     {#each drawSprites as sprite (sprite.id)}
       <span class="draw-card" class:revealed={sprite.reveal} style={sprite.css}>
@@ -820,6 +992,10 @@
     overflow: visible;
     pointer-events: none;
     transform-style: preserve-3d;
+  }
+
+  .attack-sublayer {
+    z-index: 30;
   }
 
   .draw-sublayer {
@@ -1298,6 +1474,233 @@
     }
   }
 
+  /* --- attack / ability pulses --- */
+
+  :global(.board-slot[data-attack-announce-active='true']) {
+    animation: attack-announcement-glow 520ms ease-out both;
+  }
+
+  :global(.board-slot[data-attack-announce-active='true']::after) {
+    content: var(--attack-name);
+    position: absolute;
+    left: 50%;
+    top: -12px;
+    z-index: 12;
+    min-width: max-content;
+    max-width: 210px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(17, 24, 39, 0.9);
+    color: white;
+    box-shadow: 0 8px 20px rgba(17, 24, 39, 0.24);
+    font-size: 12px;
+    font-weight: 900;
+    line-height: 1;
+    text-align: center;
+    transform: translate(-50%, -100%);
+    animation: attack-name-pop 520ms ease-out both;
+    pointer-events: none;
+  }
+
+  :global(.board-slot[data-ability-announce-active='true']) {
+    animation: ability-announcement-glow 560ms ease-out both;
+  }
+
+  :global(.board-slot[data-ability-announce-active='true']::after) {
+    content: var(--ability-name);
+    position: absolute;
+    left: 50%;
+    top: -10px;
+    z-index: 12;
+    min-width: max-content;
+    max-width: 220px;
+    padding: 6px 10px;
+    border: 1px solid rgba(186, 230, 253, 0.86);
+    border-radius: 999px;
+    background: rgba(8, 47, 73, 0.92);
+    color: #ecfeff;
+    box-shadow:
+      0 10px 24px rgba(8, 47, 73, 0.28),
+      0 0 0 5px rgba(14, 165, 233, 0.16);
+    font-size: 12px;
+    font-weight: 900;
+    line-height: 1;
+    text-align: center;
+    transform: translate(-50%, -100%);
+    animation: ability-name-pop 560ms ease-out both;
+    pointer-events: none;
+  }
+
+  :global(.board-slot[data-attack-lunge-active='true']) {
+    animation: attack-lunge var(--damage-visual-ms, 560ms) cubic-bezier(0.2, 0.82, 0.22, 1) both;
+  }
+
+  .attack-damage-number {
+    position: fixed;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 64px;
+    height: 42px;
+    padding: 0 12px;
+    border-radius: 8px;
+    border: 2px solid rgba(255, 255, 255, 0.86);
+    background:
+      linear-gradient(180deg, #fef2f2 0%, #fecaca 42%, #dc2626 100%);
+    box-shadow:
+      0 12px 26px rgba(127, 29, 29, 0.32),
+      0 0 0 5px rgba(248, 113, 113, 0.16),
+      inset 0 2px 2px rgba(255, 255, 255, 0.72);
+    color: #fff;
+    font-size: 27px;
+    font-weight: 950;
+    line-height: 1;
+    letter-spacing: 0;
+    -webkit-text-stroke: 1.2px #450a0a;
+    paint-order: stroke fill;
+    transform: translate(-50%, -50%);
+    text-shadow: 0 2px 2px rgba(69, 10, 10, 0.32);
+    animation: attack-damage-number var(--damage-visual-ms, 560ms) ease-out var(--attack-delay) both;
+  }
+
+  .attack-ko-card {
+    position: fixed;
+    display: grid;
+    place-items: center;
+    overflow: visible;
+    border-radius: 6px;
+    transform-origin: 50% 50%;
+    animation: attack-ko-card 620ms cubic-bezier(0.24, 0.78, 0.24, 1) var(--attack-delay) both;
+  }
+
+  .attack-ko-card-frame {
+    position: absolute;
+    inset: var(--ko-pad, 0);
+    display: grid;
+    place-items: center;
+    overflow: visible;
+    border-radius: inherit;
+    background: #f7f8fa;
+    box-shadow: 0 16px 36px rgba(23, 30, 38, 0.3);
+  }
+
+  .attack-ko-card-frame :global(.card-tile) {
+    width: 100%;
+    height: 100%;
+  }
+
+  @keyframes attack-announcement-glow {
+    0% {
+      filter: none;
+      box-shadow: none;
+    }
+    35%,
+    70% {
+      filter: saturate(1.15) brightness(1.04);
+      box-shadow: 0 0 0 4px rgba(251, 191, 36, 0.62), 0 0 22px rgba(251, 191, 36, 0.58);
+    }
+    100% {
+      filter: none;
+      box-shadow: none;
+    }
+  }
+
+  @keyframes attack-name-pop {
+    0% {
+      opacity: 0;
+      transform: translate(-50%, -88%) scale(0.88);
+    }
+    22%,
+    78% {
+      opacity: 1;
+      transform: translate(-50%, -100%) scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: translate(-50%, -112%) scale(0.98);
+    }
+  }
+
+  @keyframes ability-announcement-glow {
+    0% {
+      filter: drop-shadow(0 0 0 rgba(14, 165, 233, 0));
+    }
+    32% {
+      filter:
+        drop-shadow(0 0 10px rgba(14, 165, 233, 0.72))
+        drop-shadow(0 0 22px rgba(34, 211, 238, 0.34));
+    }
+    100% {
+      filter: drop-shadow(0 0 0 rgba(14, 165, 233, 0));
+    }
+  }
+
+  @keyframes ability-name-pop {
+    0% {
+      opacity: 0;
+      transform: translate(-50%, -88%) scale(0.92);
+    }
+    22% {
+      opacity: 1;
+      transform: translate(-50%, -118%) scale(1.04);
+    }
+    78% {
+      opacity: 1;
+      transform: translate(-50%, -112%) scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: translate(-50%, -124%) scale(0.98);
+    }
+  }
+
+  @keyframes attack-lunge {
+    0%,
+    100% {
+      translate: 0 0;
+      filter: none;
+    }
+    42% {
+      translate: var(--attack-lunge-x) var(--attack-lunge-y);
+      filter: saturate(1.12) brightness(1.03);
+    }
+  }
+
+  @keyframes attack-damage-number {
+    0% {
+      opacity: 0;
+      transform: translate(-50%, -38%) scale(0.76);
+    }
+    18%,
+    68% {
+      opacity: 1;
+      transform: translate(-50%, -56%) scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: translate(-50%, -78%) scale(1.08);
+    }
+  }
+
+  @keyframes attack-ko-card {
+    0% {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) rotate(var(--ko-rotation));
+    }
+    32% {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) rotate(var(--ko-end-rotation));
+    }
+    78% {
+      opacity: 1;
+      transform: translate3d(var(--ko-x), var(--ko-y), 0) rotate(var(--ko-end-rotation)) scale(var(--ko-scale));
+    }
+    100% {
+      opacity: 1;
+      transform: translate3d(var(--ko-x), var(--ko-y), 0) rotate(var(--ko-target-rotation)) scale(var(--ko-scale));
+    }
+  }
+
   /* --- attach / evolve target effects --- */
 
   :global([data-hand-attach-animation-active='true']) {
@@ -1423,6 +1826,11 @@
     .hand-reset-card-motion.revealed .hand-reset-card-inner,
     .hand-play-card,
     .hand-play-card.evolving .hand-play-card-body,
+    .attack-damage-number,
+    .attack-ko-card,
+    :global(.board-slot[data-attack-announce-active='true']),
+    :global(.board-slot[data-ability-announce-active='true']),
+    :global(.board-slot[data-attack-lunge-active='true']),
     :global([data-hand-attach-animation-active='true']::before),
     :global([data-hand-evolve-animation-active='true']::after) {
       animation: none;

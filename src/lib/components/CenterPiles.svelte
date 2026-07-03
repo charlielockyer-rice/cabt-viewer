@@ -1,10 +1,8 @@
 <script lang="ts">
   import { onDestroy, tick } from 'svelte';
   import CardTile from './CardTile.svelte';
-  import DeckShuffleAnimation from './DeckShuffleAnimation.svelte';
   import { cardBackCssVar } from '../game/cardAssets';
   import type { CardView, PlayerView } from '../game/types';
-  import type { ActionTimelineEvent } from '../game/types';
 
   type Props = {
     topPlayer: PlayerView;
@@ -15,9 +13,6 @@
     topDiscardPileElement?: HTMLButtonElement;
     bottomLostPileElement?: HTMLButtonElement;
     bottomDiscardPileElement?: HTMLButtonElement;
-    animationEvents?: ActionTimelineEvent[];
-    animationScopeKey?: string | number;
-    replayMode?: boolean;
     showLostZone: (player: PlayerView) => void;
     showDiscard: (player: PlayerView) => void;
   };
@@ -31,9 +26,6 @@
     topDiscardPileElement = $bindable(),
     bottomLostPileElement = $bindable(),
     bottomDiscardPileElement = $bindable(),
-    animationEvents = [],
-    animationScopeKey = '',
-    replayMode = false,
     showLostZone,
     showDiscard,
   }: Props = $props();
@@ -297,13 +289,6 @@
           {#if topPlayer.deckCount > 0}
             <span class="deck-card-face"></span>
           {/if}
-          <DeckShuffleAnimation
-            events={animationEvents}
-            playerIndex={topPlayer.index}
-            scopeKey={animationScopeKey}
-            {replayMode}
-            opponent
-          />
           <span class="pile-count">{topPlayer.deckCount}</span>
         </span>
         <button
@@ -390,12 +375,6 @@
           {#if bottomPlayer.deckCount > 0}
             <span class="deck-card-face"></span>
           {/if}
-          <DeckShuffleAnimation
-            events={animationEvents}
-            playerIndex={bottomPlayer.index}
-            scopeKey={animationScopeKey}
-            {replayMode}
-          />
           <span class="pile-count">{bottomPlayer.deckCount}</span>
         </span>
         <button

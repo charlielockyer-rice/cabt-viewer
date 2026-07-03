@@ -214,9 +214,6 @@
       {bottomPlayer}
       {boardTilt}
       {projectedHoverPile}
-      {animationEvents}
-      {animationScopeKey}
-      {replayMode}
       bind:topLostPileElement
       bind:topDiscardPileElement
       bind:bottomLostPileElement

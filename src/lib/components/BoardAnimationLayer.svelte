@@ -152,7 +152,61 @@
       beginAttachedMove(motion, plane, startedGeneration);
       return;
     }
+    if (motion.style === 'deck-shuffle') {
+      beginDeckShuffle(motion, plane, startedGeneration);
+      return;
+    }
     beginDeckDiscard(motion, plane, startedGeneration);
+  }
+
+  function beginDeckShuffle(motion: CardMotion, plane: HTMLElement, startedGeneration: number) {
+    const deck = resolveAnchor(motion.from);
+    if (!deck) {
+      return;
+    }
+    const pileRect = localRectIn(plane, deck.element);
+    if (!pileRect || pileRect.width <= 0) {
+      return;
+    }
+    sprites = [...sprites, {
+      id: motion.id,
+      motion,
+      left: pileRect.left,
+      top: pileRect.top,
+      width: pileRect.width,
+      height: pileRect.height,
+      vars: '',
+      opponentSide: !!deck.element.closest('.top-piles'),
+      measuring: false,
+    }];
+    const timer = setTimeout(() => {
+      if (startedGeneration !== generation) {
+        return;
+      }
+      sprites = sprites.filter((sprite) => sprite.id !== motion.id);
+    }, motion.durationMs);
+    timers.push(timer);
+  }
+
+  // Deterministic split/cross/settle offsets for the six shuffle cards.
+  function shuffleCardStyle(index: number, opponent: boolean): string {
+    const direction = opponent ? -1 : 1;
+    const side = index % 2 === 0 ? -1 : 1;
+    const depth = index - 2.5;
+    return [
+      `--shuffle-delay: ${index * 32}ms`,
+      `--split-x: ${(side * (20 + index * 2)).toFixed(1)}px`,
+      `--split-y: ${(direction * (-18 - Math.abs(depth) * 2)).toFixed(1)}px`,
+      `--split-rotation: ${(side * (5 + index * 0.8)).toFixed(1)}deg`,
+      `--cross-x: ${(-side * (15 + index)).toFixed(1)}px`,
+      `--cross-y: ${(direction * (-4 + depth)).toFixed(1)}px`,
+      `--cross-rotation: ${(-side * (4 + index * 0.5)).toFixed(1)}deg`,
+      `--settle-x: ${(side * 4).toFixed(1)}px`,
+      `--settle-y: ${(direction * 2).toFixed(1)}px`,
+      `--settle-rotation: ${(side * 1.5).toFixed(1)}deg`,
+      `--base-rotation: ${opponent ? 180 : 0}deg`,
+      cardBackCssVar(),
+    ].join('; ');
   }
 
   async function beginBoardMove(motion: CardMotion, plane: HTMLElement, startedGeneration: number, latestDeckPlacementStartMs: number) {
@@ -472,6 +526,7 @@
 
   let attachedSprites = $derived(sprites.filter((sprite) => sprite.motion.style === 'attached-move'));
   let discardSprites = $derived(sprites.filter((sprite) => sprite.motion.style === 'deck-discard'));
+  let shuffleSprites = $derived(sprites.filter((sprite) => sprite.motion.style === 'deck-shuffle'));
   let boardMoveSprites = $derived(sprites.filter((sprite) => sprite.motion.style === 'board-move'));
 </script>
 
@@ -484,6 +539,17 @@
             <CardTile card={sprite.motion.sprite.card} compact />
           {/if}
         </span>
+      </span>
+    {/each}
+  </span>
+
+  <span class="anim-sublayer shuffle-sublayer">
+    {#each shuffleSprites as sprite (sprite.id)}
+      <span class="shuffle-stack" style={spriteBaseStyle(sprite)}>
+        <span class="shuffle-glow"></span>
+        {#each [0, 1, 2, 3, 4, 5] as index (index)}
+          <span class="shuffle-card" style={shuffleCardStyle(index, sprite.opponentSide)}></span>
+        {/each}
       </span>
     {/each}
   </span>
@@ -541,6 +607,10 @@
 
   .attached-sublayer {
     z-index: 3;
+  }
+
+  .shuffle-sublayer {
+    z-index: 8;
   }
 
   .discard-sublayer {
@@ -848,11 +918,101 @@
     }
   }
 
+  .shuffle-stack {
+    position: absolute;
+    display: block;
+    border-radius: 5px;
+    pointer-events: none;
+  }
+
+  .shuffle-card,
+  .shuffle-glow {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+  }
+
+  .shuffle-card {
+    background:
+      var(--card-back-image, var(--cardback-shade)),
+      linear-gradient(135deg, rgba(255, 255, 255, 0.1), transparent 28%),
+      repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.08) 0 6px, transparent 6px 12px),
+      linear-gradient(145deg, #203654, #111a2c);
+    background-size: cover, auto, auto, auto;
+    background-position: center;
+    box-shadow:
+      0 7px 16px rgba(23, 30, 38, 0.2),
+      0 0 0 1px rgba(18, 21, 26, 0.16);
+    opacity: 0;
+    animation: shuffle-card 760ms cubic-bezier(0.2, 0.72, 0.22, 1) var(--shuffle-delay) both;
+    will-change: transform, opacity;
+  }
+
+  .shuffle-glow {
+    border: 1px solid rgba(82, 188, 168, 0.55);
+    box-shadow:
+      0 0 0 0 rgba(82, 188, 168, 0.22),
+      0 0 22px rgba(82, 188, 168, 0.24);
+    opacity: 0;
+    animation: shuffle-glow 760ms ease-out both;
+  }
+
+  @keyframes shuffle-card {
+    0% {
+      opacity: 0;
+      transform: translate3d(0, 0, 0) rotate(var(--base-rotation)) scale(0.98);
+    }
+    12% {
+      opacity: 1;
+      transform: translate3d(0, -6px, 0) rotate(var(--base-rotation)) scale(1.01);
+    }
+    38% {
+      opacity: 1;
+      transform: translate3d(var(--split-x), var(--split-y), 0) rotate(calc(var(--base-rotation) + var(--split-rotation))) scale(1.02);
+    }
+    62% {
+      opacity: 1;
+      transform: translate3d(var(--cross-x), var(--cross-y), 0) rotate(calc(var(--base-rotation) + var(--cross-rotation))) scale(1.01);
+    }
+    84% {
+      opacity: 1;
+      transform: translate3d(var(--settle-x), var(--settle-y), 0) rotate(calc(var(--base-rotation) + var(--settle-rotation))) scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: translate3d(0, 0, 0) rotate(var(--base-rotation)) scale(0.98);
+    }
+  }
+
+  @keyframes shuffle-glow {
+    0% {
+      opacity: 0;
+      transform: scale(0.98);
+    }
+    22% {
+      opacity: 1;
+      transform: scale(1.05);
+      box-shadow:
+        0 0 0 7px rgba(82, 188, 168, 0.14),
+        0 0 24px rgba(82, 188, 168, 0.28);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(1.14);
+      box-shadow:
+        0 0 0 16px rgba(82, 188, 168, 0),
+        0 0 30px rgba(82, 188, 168, 0);
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .board-move-card,
     .attached-move-sprite,
     .deck-discard-card,
-    .deck-discard-card-inner {
+    .deck-discard-card-inner,
+    .shuffle-card,
+    .shuffle-glow {
       animation: none;
     }
   }

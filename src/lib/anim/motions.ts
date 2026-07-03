@@ -8,7 +8,9 @@ import type { HideMode } from './visibility';
 export type SpriteSpec =
   | { kind: 'slot'; slot: PokemonSlotView; activeSize: boolean }
   | { kind: 'card'; card: CardView }
-  | { kind: 'flip-card'; card: CardView };
+  | { kind: 'flip-card'; card: CardView }
+  | { kind: 'label'; text: string }
+  | { kind: 'none' };
 
 export type HideClaim = {
   anchor: Anchor;
@@ -22,7 +24,10 @@ export type MotionStyle =
   | 'hand-play'
   | 'deck-draw'
   | 'hand-reset'
-  | 'prize-take';
+  | 'prize-take'
+  | 'knock-out'
+  | 'damage-float'
+  | 'deck-shuffle';
 
 export type CardMotion = {
   id: string;
@@ -60,7 +65,7 @@ export type CardMotion = {
 // Target-owned CSS animations: no sprite, the real element animates.
 export type TargetEffect = {
   id: string;
-  kind: 'attach-under' | 'prize-place';
+  kind: 'attach-under' | 'prize-place' | 'announce-attack' | 'announce-ability' | 'lunge';
   anchor: Anchor;
   player: number;
   card?: CardView;
@@ -68,6 +73,10 @@ export type TargetEffect = {
   sourceSerial?: number;
   // prize-place: stacking order within the placement group.
   order: number;
+  // announce-*: the attack/ability name shown above the slot.
+  label?: string;
+  // lunge: the defender the attacker nudges toward.
+  targetAnchor?: Anchor;
   startMs: number;
   durationMs: number;
 };
@@ -79,8 +88,13 @@ export type Choreography = {
 
 // Turns one batch of timeline events into motions and target effects. This is
 // a pure function of (events, players) so replay phases and live frames share
-// one classification.
-export function choreograph(events: ActionTimelineEvent[], players: PlayerView[]): Choreography {
+// one classification. `context` is the whole step's timeline, used to find
+// the attacking Pokemon when a damage phase animates on its own.
+export function choreograph(
+  events: ActionTimelineEvent[],
+  players: PlayerView[],
+  context: ActionTimelineEvent[] = events,
+): Choreography {
   const motions: CardMotion[] = [];
   const effects: TargetEffect[] = [];
   const drawIndexes = new Map<number, number>();
@@ -126,6 +140,20 @@ export function choreograph(events: ActionTimelineEvent[], players: PlayerView[]
       effects.push(...attachEffects(event, events));
       continue;
     }
+    if (event.kind === 'Attack' || event.kind === 'Ability') {
+      effects.push(...announceEffects(event, events));
+      continue;
+    }
+    if (event.kind === 'HpChange' || event.kind === 'HPChange') {
+      const result = damageChoreography(event, events, context);
+      motions.push(...result.motions);
+      effects.push(...result.effects);
+      continue;
+    }
+    if (event.kind === 'Shuffle') {
+      motions.push(...shuffleMotions(event, events));
+      continue;
+    }
     if (event.kind === 'MoveCard' || event.kind === 'MoveCardReverse') {
       const result = moveCardChoreography(event, events, players, prizePlaceIndexes, prizeTakeIndexes, prizeTakeCounts);
       motions.push(...result.motions);
@@ -133,6 +161,117 @@ export function choreograph(events: ActionTimelineEvent[], players: PlayerView[]
     }
   }
   return { motions, effects };
+}
+
+function announceEffects(event: ActionTimelineEvent, batch: ActionTimelineEvent[]): TargetEffect[] {
+  const params = eventParams(event);
+  const player = event.playerIndex;
+  const serial = num(params.serial);
+  const cardId = num(params.cardId);
+  if (player === undefined || (serial === undefined && cardId === undefined)) {
+    return [];
+  }
+  const attack = event.kind === 'Attack';
+  return [{
+    id: `${event.id}-announce`,
+    kind: attack ? 'announce-attack' : 'announce-ability',
+    anchor: { kind: 'pokemon', player, serial, cardId },
+    player,
+    order: 0,
+    label: announceLabel(event),
+    startMs: actionAnimationStartMs(batch, event),
+    durationMs: attack ? actionAnimationTiming.attackAnnounceMs : actionAnimationTiming.abilityAnnounceMs,
+  }];
+}
+
+function announceLabel(event: ActionTimelineEvent): string {
+  const params = eventParams(event);
+  const explicit = typeof params.abilityName === 'string' ? params.abilityName.trim() : '';
+  if (explicit) {
+    return explicit;
+  }
+  const match = event.message.match(/\bused\s+(.+?)\s+with\b/i);
+  return match?.[1] ?? (event.kind === 'Attack' ? 'Attack' : 'Ability');
+}
+
+function damageChoreography(
+  event: ActionTimelineEvent,
+  batch: ActionTimelineEvent[],
+  context: ActionTimelineEvent[],
+): Choreography {
+  const params = eventParams(event);
+  const player = event.playerIndex;
+  const serial = num(params.serial);
+  const cardId = num(params.cardId);
+  if (player === undefined || (serial === undefined && cardId === undefined)) {
+    return { motions: [], effects: [] };
+  }
+  const target: Anchor = { kind: 'pokemon', player, serial, cardId };
+  const startMs = actionAnimationStartMs(batch, event);
+  const value = num(params.value);
+  const damage = value !== undefined ? Math.abs(Math.min(0, value)) : 0;
+
+  const effects: TargetEffect[] = [];
+  const attackEvent = context.find((candidate) => candidate.kind === 'Attack');
+  if (attackEvent && attackEvent.playerIndex !== undefined) {
+    const attackParams = eventParams(attackEvent);
+    effects.push({
+      id: `${event.id}-lunge`,
+      kind: 'lunge',
+      anchor: {
+        kind: 'pokemon',
+        player: attackEvent.playerIndex,
+        serial: num(attackParams.serial),
+        cardId: num(attackParams.cardId),
+      },
+      player: attackEvent.playerIndex,
+      order: 0,
+      targetAnchor: target,
+      startMs,
+      durationMs: actionAnimationTiming.damageVisualMs,
+    });
+  }
+
+  const motions: CardMotion[] = damage > 0
+    ? [{
+        id: `${event.id}-damage`,
+        style: 'damage-float',
+        space: 'viewport',
+        player,
+        sprite: { kind: 'label', text: String(damage) },
+        from: target,
+        to: target,
+        startMs,
+        durationMs: actionAnimationTiming.damageVisualMs,
+        toDeck: false,
+        fromDeck: false,
+        waitForDestinationCard: false,
+        hide: [],
+      }]
+    : [];
+  return { motions, effects };
+}
+
+function shuffleMotions(event: ActionTimelineEvent, batch: ActionTimelineEvent[]): CardMotion[] {
+  const player = event.playerIndex;
+  if (player === undefined) {
+    return [];
+  }
+  return [{
+    id: `${event.id}-shuffle`,
+    style: 'deck-shuffle',
+    space: 'board',
+    player,
+    sprite: { kind: 'none' },
+    from: { kind: 'deck', player },
+    to: { kind: 'deck', player },
+    startMs: actionAnimationStartMs(batch, event),
+    durationMs: actionAnimationTiming.deckShuffleMs,
+    toDeck: false,
+    fromDeck: false,
+    waitForDestinationCard: false,
+    hide: [],
+  }];
 }
 
 function switchMotions(event: ActionTimelineEvent, batch: ActionTimelineEvent[], players: PlayerView[]): CardMotion[] {
@@ -444,6 +583,24 @@ function moveCardChoreography(
         { anchor: identity, mode: 'contents' },
         { anchor: to, mode: 'contents' },
       ],
+    }], effects: [] };
+  }
+
+  if ((fromArea === CabtAreaType.ACTIVE || fromArea === CabtAreaType.BENCH) && toArea === CabtAreaType.DISCARD) {
+    return { motions: [{
+      id: `${event.id}-${serial ?? cardId}`,
+      style: 'knock-out',
+      space: 'viewport',
+      player,
+      sprite: { kind: 'card', card: cabtCardToView(cardId) },
+      from: identity,
+      to: { kind: 'discard', player, surface: true },
+      startMs: actionAnimationStartMs(batch, event),
+      durationMs: actionAnimationTiming.knockOutMs,
+      toDeck: false,
+      fromDeck: false,
+      waitForDestinationCard: false,
+      hide: [{ anchor: identity, mode: 'contents' }],
     }], effects: [] };
   }
 
