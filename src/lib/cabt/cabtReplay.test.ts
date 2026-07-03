@@ -222,6 +222,72 @@ describe('cabtReplayToSnapshot', () => {
     });
   });
 
+  it('gives an instantly resolved trainer a play-zone hold and a discard resolve phase', () => {
+    const opponent = {
+      active: [], bench: [], benchMax: 5, handCount: 0, deckCount: 60, prize: [],
+    };
+    const me = (hand: Array<{ id: number; serial: number }>, discard: Array<{ id: number; serial: number }>) => ({
+      active: [{ id: 66, serial: 14, hp: 140, maxHp: 140 }],
+      bench: [], benchMax: 5, hand, deckCount: 40, discard, prize: [],
+    });
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: { turn: 1, yourIndex: 0, result: -1, players: [me([{ id: 1141, serial: 80 }], []), opponent] },
+      }, {
+        logs: [{ type: 'Play', playerIndex: 0, cardId: 1141, serial: 80 }],
+        current: { turn: 1, yourIndex: 0, result: -1, players: [me([], [{ id: 1141, serial: 80 }]), opponent] },
+      }],
+    });
+
+    const step = snapshot.steps[1];
+    expect(step.animationPhases?.map((phase) => phase.key)).toEqual(['Play:0', 'PlayResolve:0']);
+    expect(step.animationPhases?.[0].view.players[0].playZone.map((card) => card.serial)).toEqual([80]);
+    expect(step.animationPhases?.[0].view.players[0].discard).toHaveLength(0);
+    expect(step.animationPhases?.[1].view.players[0].playZone).toHaveLength(0);
+    expect(step.animationPhases?.[1].view.players[0].discard.map((card) => card.serial)).toEqual([80]);
+    expect(step.displayView?.players[0].discard.map((card) => card.serial)).toEqual([80]);
+  });
+
+  it('keeps the previous discard top visible while hand cards fly onto the pile', () => {
+    const opponent = {
+      active: [], bench: [], benchMax: 5, handCount: 0, deckCount: 60, prize: [],
+    };
+    const me = (hand: Array<{ id: number; serial: number }>, discard: Array<{ id: number; serial: number }>) => ({
+      active: [{ id: 66, serial: 14, hp: 140, maxHp: 140 }],
+      bench: [], benchMax: 5, hand, deckCount: 40, discard, prize: [],
+    });
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 1, yourIndex: 0, result: -1,
+          players: [me([{ id: 1181, serial: 70 }, { id: 3, serial: 71 }, { id: 4, serial: 72 }], [{ id: 5, serial: 60 }]), opponent],
+        },
+      }, {
+        logs: [
+          { type: 'Play', playerIndex: 0, cardId: 1181, serial: 70 },
+          { type: 'MoveCard', playerIndex: 0, cardId: 3, serial: 71, fromArea: CabtAreaType.HAND, toArea: CabtAreaType.DISCARD },
+          { type: 'MoveCard', playerIndex: 0, cardId: 4, serial: 72, fromArea: CabtAreaType.HAND, toArea: CabtAreaType.DISCARD },
+          { type: 'Draw', playerIndex: 0, cardId: 6, serial: 101 },
+        ],
+        current: {
+          turn: 1, yourIndex: 0, result: -1,
+          players: [me(
+            [{ id: 6, serial: 101 }],
+            [{ id: 5, serial: 60 }, { id: 3, serial: 71 }, { id: 4, serial: 72 }, { id: 1181, serial: 70 }],
+          ), opponent],
+        },
+      }],
+    });
+
+    const step = snapshot.steps[1];
+    const handMovePhase = step.animationPhases?.find((phase) => phase.key.startsWith('HandMove:0:'));
+    expect(handMovePhase).toBeDefined();
+    // Only the pre-existing top card shows while the dumped cards are in
+    // flight; the played supporter is held in the play zone.
+    expect(handMovePhase?.view.players[0].discard.map((card) => card.serial)).toEqual([60]);
+    expect(handMovePhase?.view.players[0].playZone.map((card) => card.serial)).toEqual([70]);
+  });
+
   it('keeps a turn-long trainer in the play zone until it reaches the discard', () => {
     const opponent = {
       active: [],

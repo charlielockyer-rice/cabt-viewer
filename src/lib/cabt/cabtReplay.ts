@@ -1484,9 +1484,12 @@ function groupedStepAnimationPhases(
   let phaseStartView = projectedViewForEvents(previousView, currentView, groups.slice(0, groupIndex).flatMap((item) => item.events));
   const phases: ReplayAnimationPhase[] = [];
   for (const phase of eventPhases) {
+    // Cards dumped from hand land on top of the discard, so the pile keeps
+    // showing its previous top card while the sprites are in flight.
+    const handToDiscardPhase = phase.key.startsWith('HandMove:') && phase.key.endsWith(`:${CabtAreaType.DISCARD}`);
     const phaseView = phase.usesSourceView
       ? animationSourceViewForPhase(phaseStartView, currentView, phase)
-      : projectedViewForEvents(phaseStartView, currentView, phase.events);
+      : projectedViewForEvents(phaseStartView, currentView, phase.events, handToDiscardPhase ? { deferDiscardArrivals: true } : {});
     phases.push({
       key: phase.key,
       label: animationPhaseLabel(phase),
@@ -1887,7 +1890,7 @@ function projectedViewForEvents(
   baseView: GameView,
   currentView: GameView,
   events: ActionTimelineEvent[],
-  options: { deferBoardStateEvents?: boolean; deferMoveCardEvents?: boolean } = {},
+  options: ProjectionOptions = {},
 ): GameView {
   const view: GameView = {
     ...currentView,
@@ -1931,6 +1934,34 @@ function applyResolvingPlayedCards(steps: ReplayStep[], views: GameView[]): void
       const resolvingCard = resolvingPlayedCardForEvent(baseView, event);
       if (resolvingCard && !resolving.some((entry) => entry.playerIndex === resolvingCard.playerIndex && sameKnownCard(entry.card, resolvingCard.card))) {
         resolving = [...resolving, resolvingCard];
+      }
+    }
+
+    // A trainer whose effect resolves without any follow-up phases (e.g. a
+    // turn-long boost item) still deserves the standard presentation: hold in
+    // the play zone, then slide onto the discard. Synthesize that phase pair
+    // so the in-step view transition drives the existing pile animation.
+    if (!step.animationPhases?.length) {
+      const instantResolved = resolving.filter((entry) =>
+        stepContainsPlayForCard(step, entry.card)
+        && playerHasDiscardCard(baseView.players[entry.playerIndex], entry.card));
+      if (instantResolved.length) {
+        const playerIndex = instantResolved[0].playerIndex;
+        const holdingView = gameViewWithResolvingCards(step.displayView ?? baseView, instantResolved);
+        step.animationPhases = [{
+          key: `Play:${playerIndex}`,
+          view: { ...holdingView, actionTimeline: step.actionTimeline ?? [] },
+          actionTimeline: step.actionTimeline ?? [],
+          durationMs: 700,
+        }, {
+          key: `PlayResolve:${playerIndex}`,
+          view: { ...baseView, actionTimeline: [] },
+          actionTimeline: [],
+          durationMs: 460,
+        }];
+        step.displayView = baseView;
+        resolving = resolving.filter((entry) => !instantResolved.some((resolved) => sameResolvingCard(resolved, entry)));
+        continue;
       }
     }
 
@@ -2151,11 +2182,18 @@ function needsPlayedCardDiscardProjection(currentView: GameView, event: ActionTi
     && !playerHasCardInPlay(player, event);
 }
 
+type ProjectionOptions = {
+  deferBoardStateEvents?: boolean;
+  deferMoveCardEvents?: boolean;
+  // Keep the base discard while cards are still flying onto the pile.
+  deferDiscardArrivals?: boolean;
+};
+
 function applyReplayEvent(
   view: GameView,
   currentView: GameView,
   event: ActionTimelineEvent,
-  options: { deferBoardStateEvents?: boolean; deferMoveCardEvents?: boolean } = {},
+  options: ProjectionOptions = {},
 ): void {
   const playerIndex = event.playerIndex;
   if (playerIndex === undefined || !view.players[playerIndex] || !currentView.players[playerIndex]) {
@@ -2227,6 +2265,9 @@ function applyReplayEvent(
   const fromArea = Number(params?.fromArea);
   const toArea = Number(params?.toArea);
   applyReplayAreaDelta(player, currentPlayer, fromArea, -1, event);
+  if (options.deferDiscardArrivals && toArea === CabtAreaType.DISCARD) {
+    return;
+  }
   applyReplayAreaDelta(player, currentPlayer, toArea, 1, event);
 }
 

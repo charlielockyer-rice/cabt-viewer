@@ -387,6 +387,14 @@
       ].join('; '),
     }];
 
+    // In replay, pile destinations only show the landed card when the phase
+    // view advances, so the sprite holds at its final position until the
+    // scope ends instead of releasing on a timer.
+    const holdUntilScopeEnd = replayMode
+      && (target.anchor.kind === 'discard' || target.anchor.kind === 'playZone');
+    if (holdUntilScopeEnd) {
+      return;
+    }
     const timer = setTimeout(() => {
       if (startedGeneration !== generation) {
         return;
@@ -1425,6 +1433,13 @@
   }
 
   /* --- attack / ability pulses --- */
+
+  /* Announcing slots rise above sibling slots so the name bubble is never
+     occluded by the active Pokemon. */
+  :global(.board-slot[data-attack-announce-active='true']),
+  :global(.board-slot[data-ability-announce-active='true']) {
+    z-index: 30;
+  }
 
   :global(.board-slot[data-attack-announce-active='true']) {
     animation: attack-announcement-glow 520ms ease-out both;
