@@ -27,7 +27,15 @@ export type MotionStyle =
   | 'prize-take'
   | 'knock-out'
   | 'damage-float'
-  | 'deck-shuffle';
+  | 'deck-shuffle'
+  // Reveal-session styles: consumed by the stateful reveal renderer. `reveal`
+  // and `search-reveal` create session sprites at the deck; `reveal-take` and
+  // `reveal-return` move sprites the session already holds, so their `from`
+  // anchor is the deck only nominally.
+  | 'reveal'
+  | 'search-reveal'
+  | 'reveal-take'
+  | 'reveal-return';
 
 export type CardMotion = {
   id: string;
@@ -60,6 +68,8 @@ export type CardMotion = {
   // source rects of prize slots that already left the DOM.
   takeIndex?: number;
   takeCount?: number;
+  // reveal-session styles: the card's LOOKING-zone serial, the session key.
+  revealSerial?: number;
 };
 
 // Target-owned CSS animations: no sprite, the real element animates.
@@ -399,6 +409,52 @@ function moveCardChoreography(
 
   if (event.kind !== 'MoveCard') {
     return none;
+  }
+
+  if (fromArea === CabtAreaType.DECK && (toArea === CabtAreaType.LOOKING || toArea === CabtAreaType.HAND)) {
+    if (cardId === undefined) {
+      return none;
+    }
+    const search = toArea === CabtAreaType.HAND;
+    return { motions: [{
+      id: `${event.id}-${serial ?? cardId}`,
+      style: search ? 'search-reveal' : 'reveal',
+      space: 'viewport',
+      player,
+      sprite: { kind: 'card', card: cabtCardToView(cardId) },
+      from: { kind: 'deck', player },
+      to: search ? { kind: 'hand-slot', player, serial } : { kind: 'deck', player },
+      startMs: actionAnimationStartMs(batch, event),
+      durationMs: actionAnimationTiming.deckRevealMs,
+      toDeck: false,
+      fromDeck: true,
+      waitForDestinationCard: false,
+      hide: [],
+      revealSerial: serial,
+    }], effects: [] };
+  }
+
+  if (fromArea === CabtAreaType.LOOKING && (toArea === CabtAreaType.HAND || toArea === CabtAreaType.DECK)) {
+    if (serial === undefined) {
+      return none;
+    }
+    const take = toArea === CabtAreaType.HAND;
+    return { motions: [{
+      id: `${event.id}-${serial}`,
+      style: take ? 'reveal-take' : 'reveal-return',
+      space: 'viewport',
+      player,
+      sprite: { kind: 'card', card: cardId !== undefined ? cabtCardToView(cardId) : unknownCard() },
+      from: { kind: 'deck', player },
+      to: take ? { kind: 'hand-slot', player, serial } : { kind: 'deck', player },
+      startMs: actionAnimationStartMs(batch, event),
+      durationMs: take ? actionAnimationTiming.handMoveMs : actionAnimationTiming.deckRevealReturnMs,
+      toDeck: !take,
+      fromDeck: false,
+      waitForDestinationCard: false,
+      hide: [],
+      revealSerial: serial,
+    }], effects: [] };
   }
 
   if (fromArea === CabtAreaType.DECK && toArea === CabtAreaType.DISCARD) {

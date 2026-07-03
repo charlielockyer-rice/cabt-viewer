@@ -289,6 +289,23 @@ describe('choreograph viewport family', () => {
     expect(reset?.to).toEqual({ kind: 'deck', player: 0 });
   });
 
+  it('classifies reveal-session motions keyed by the looking-zone serial', () => {
+    const players = [player(0), player(1)];
+    const { motions } = choreograph([
+      moveCard(0, CabtAreaType.DECK, CabtAreaType.LOOKING, 900, 40),
+      moveCard(0, CabtAreaType.DECK, CabtAreaType.HAND, 901, 41),
+      moveCard(0, CabtAreaType.LOOKING, CabtAreaType.HAND, 900, 40),
+      moveCard(0, CabtAreaType.LOOKING, CabtAreaType.DECK, 902, 42),
+    ], players);
+
+    expect(motions.map((motion) => motion.style)).toEqual(['reveal', 'search-reveal', 'reveal-take', 'reveal-return']);
+    expect(motions.every((motion) => motion.space === 'viewport')).toBe(true);
+    expect(motions.map((motion) => motion.revealSerial)).toEqual([40, 41, 40, 42]);
+    expect(motions[1].to).toEqual({ kind: 'hand-slot', player: 0, serial: 41 });
+    expect(motions[2].to).toEqual({ kind: 'hand-slot', player: 0, serial: 40 });
+    expect(motions[3].toDeck).toBe(true);
+  });
+
   it('classifies prize placement effects and prize takes, including facedown moves', () => {
     const players = [player(0), player(1)];
     const placement = choreograph([
