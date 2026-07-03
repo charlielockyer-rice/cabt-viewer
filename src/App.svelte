@@ -6,7 +6,7 @@
   import BoardPromptStrip from './lib/components/prompts/BoardPromptStrip.svelte';
   import EndGamePrompt from './lib/components/EndGamePrompt.svelte';
   import ViewportAnimationLayer from './lib/components/ViewportAnimationLayer.svelte';
-  import DeckRevealAnimation from './lib/components/DeckRevealAnimation.svelte';
+  import RevealSessionLayer from './lib/components/RevealSessionLayer.svelte';
   import GameBoard from './lib/components/GameBoard.svelte';
   import GameStatus from './lib/components/GameStatus.svelte';
   import Hand from './lib/components/Hand.svelte';
@@ -1382,10 +1382,11 @@
           {replayMode}
         />
 
-        <DeckRevealAnimation
+        <RevealSessionLayer
           events={game.actionTimeline ?? []}
           scopeKey={animationScopeKey}
           {replayMode}
+          players={game.players}
         />
 
         <ViewportAnimationLayer
