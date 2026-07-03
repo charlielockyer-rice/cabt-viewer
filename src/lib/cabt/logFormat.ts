@@ -74,8 +74,13 @@ export function formatCabtLog(log: Record<string, unknown>): string {
       return `${actor} devolved ${card}.`;
     case 'Attack':
       return `${actor} used ${attackName(Number(log.attackId))} with ${card}.`;
-    case 'Ability':
-      return `${actor} used ${abilityName(log)} with ${card}.`;
+    case 'Ability': {
+      const ability = abilityName(log);
+      // Stadium effects: the "ability" IS the card, so "with <card>" is noise.
+      return ability === card
+        ? `${actor} used ${ability}.`
+        : `${actor} used ${ability} with ${card}.`;
+    }
     case 'MoveCard':
       return moveCardMessage(actor, card, log);
     case 'MoveCardReverse':
@@ -171,6 +176,7 @@ function areaName(area: unknown): string {
     [CabtAreaType.PRE_EVOLUTION]: 'evolution stack',
     [CabtAreaType.PLAYER]: 'player',
     [CabtAreaType.LOOKING]: 'selection',
+    [CabtAreaType.PLAYING]: 'the play zone',
   };
   return areaMap[Number(area)] ?? 'zone';
 }

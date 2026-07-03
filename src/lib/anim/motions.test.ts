@@ -253,6 +253,16 @@ describe('choreograph viewport family', () => {
     expect(evolve.startMs).toBeGreaterThan(play.startMs);
   });
 
+  it('anchors stadium ability announces to the stadium card', () => {
+    const players = [player(0), player(1)];
+    const { effects } = choreograph([
+      event('Ability', 0, { cardId: 1259, serial: 62, area: CabtAreaType.STADIUM, abilityName: 'Spikemuth Gym' }),
+    ], players);
+    expect(effects).toHaveLength(1);
+    expect(effects[0].kind).toBe('announce-ability');
+    expect(effects[0].anchor).toEqual({ kind: 'stadium', player: 0, serial: 62 });
+  });
+
   it('emits attach-under target effects for Attach events', () => {
     const players = [player(0, card(100, 1)), player(1)];
     const events = [event('Attach', 0, { cardId: 500, serial: 11, cardIdTarget: 100, serialTarget: 1 })];

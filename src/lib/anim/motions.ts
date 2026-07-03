@@ -182,10 +182,13 @@ function announceEffects(event: ActionTimelineEvent, batch: ActionTimelineEvent[
     return [];
   }
   const attack = event.kind === 'Attack';
+  const stadium = !attack && num(params.area) === CabtAreaType.STADIUM;
   return [{
     id: `${event.id}-announce`,
     kind: attack ? 'announce-attack' : 'announce-ability',
-    anchor: { kind: 'pokemon', player, serial, cardId },
+    anchor: stadium
+      ? { kind: 'stadium', player, serial }
+      : { kind: 'pokemon', player, serial, cardId },
     player,
     order: 0,
     label: announceLabel(event),

@@ -62,10 +62,13 @@ export function resolveAnchor(anchor: Anchor): ResolvedAnchor | null {
       return { element, geometry: element };
     }
     case 'stadium': {
+      // Either player may use the stadium in play, so fall back from the
+      // player-scoped anchor to whichever stadium is on the board.
       const element = (anchor.serial !== undefined
-        ? query(`[data-card-anchor="player:${anchor.player}:stadium"][data-card-serial="${anchor.serial}"]`)
+        ? query(`[data-card-anchor$=":stadium"][data-card-serial="${anchor.serial}"]`)
         : null)
-        ?? query(`[data-card-anchor="player:${anchor.player}:stadium"]`);
+        ?? query(`[data-card-anchor="player:${anchor.player}:stadium"]`)
+        ?? query('[data-card-anchor$=":stadium"]');
       return element ? { element, geometry: element } : null;
     }
     case 'attached': {

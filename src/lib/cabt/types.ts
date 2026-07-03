@@ -11,6 +11,7 @@ export const CabtAreaType = {
   PRE_EVOLUTION: 10,
   PLAYER: 11,
   LOOKING: 12,
+  PLAYING: 13,
 } as const;
 
 export const CabtEnergyType = {

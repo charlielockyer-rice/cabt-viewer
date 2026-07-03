@@ -469,7 +469,7 @@ function buildPlayerView(
     discard: player.discard.map((item) => cardToView(item, dataMaps)),
     lostZone: [],
     stadium: stadiumForPlayer(observation.current?.stadium ?? [], index).map((item) => cardToView(item, dataMaps)),
-    playZone: [],
+    playZone: playZoneForPlayer(observation.select, index, dataMaps),
     prizesLeft: player.prize.length,
     active: pokemonToSlot(player.active[0] ?? null, index, 'active', 0, activePlayerIndex, player, dataMaps),
     bench: Array.from({ length: player.benchMax }, (_item, benchIndex) =>
@@ -478,6 +478,21 @@ function buildPlayerView(
     playableCardIds: player.hand?.map((item) => item.id) ?? [],
     availableActions: buildAvailableActions(player, index, activePlayerIndex, dataMaps, observation.select),
   };
+}
+
+// The engine parks a resolving or turn-long Trainer in its Playing zone,
+// exposed through the select payload as contextCard/effect. Surfacing those
+// as the play zone keeps the card visible between play and eventual discard.
+function playZoneForPlayer(
+  select: CabtObservation['select'],
+  playerIndex: number,
+  dataMaps: CabtDataMaps,
+): CardView[] {
+  const cards = [select?.contextCard, select?.effect]
+    .filter((card): card is CabtCard => !!card && card.playerIndex === playerIndex);
+  const unique = cards.filter((card, index) =>
+    cards.findIndex((other) => other.serial === card.serial && other.id === card.id) === index);
+  return unique.map((card) => cardToView(card, dataMaps));
 }
 
 function stadiumForPlayer(stadium: CabtCard[], playerIndex: number) {

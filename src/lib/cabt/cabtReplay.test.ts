@@ -150,6 +150,136 @@ describe('cabtReplayToSnapshot', () => {
     expect(snapshot.views[0].players[1].stadium.map((card) => card.serial)).toEqual([62]);
   });
 
+  it('merges a used stadium search into one announced step', () => {
+    const players = (deckCount: number, hand: Array<{ id: number; serial: number }>) => [{
+      active: [{ id: 66, serial: 14, hp: 140, maxHp: 140 }],
+      bench: [],
+      benchMax: 5,
+      hand,
+      deckCount,
+      discard: [],
+      prize: [],
+    }, {
+      active: [],
+      bench: [],
+      benchMax: 5,
+      handCount: 0,
+      deckCount: 60,
+      prize: [],
+    }];
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        select: {
+          type: 'Main',
+          option: [
+            { type: 'Ability', area: CabtAreaType.STADIUM, index: 0 },
+            { type: 'End' },
+          ],
+        },
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          stadium: [{ id: 1259, serial: 62 }],
+          players: players(40, []),
+        },
+      }, {
+        action: [[0], []],
+        logs: [
+          { type: 'MoveCard', playerIndex: 0, cardId: 900, serial: 90, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.HAND, openType: 1 },
+        ],
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          stadium: [{ id: 1259, serial: 62 }],
+          players: players(39, [{ id: 900, serial: 90 }]),
+        },
+      }, {
+        logs: [
+          { type: 'Shuffle', playerIndex: 0 },
+        ],
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          stadium: [{ id: 1259, serial: 62 }],
+          players: players(39, [{ id: 900, serial: 90 }]),
+        },
+      }],
+    });
+
+    const step = snapshot.steps[1];
+    expect(snapshot.steps).toHaveLength(2);
+    expect(step.label).toBe('Player 1 used Spikemuth Gym.');
+    expect(step.actionTimeline?.map((event) => event.kind)).toEqual(['Ability', 'MoveCard', 'Shuffle']);
+    expect(step.actionTimeline?.[0].params).toMatchObject({
+      type: 'Ability',
+      area: CabtAreaType.STADIUM,
+      cardId: 1259,
+      serial: 62,
+      abilityName: 'Spikemuth Gym',
+    });
+  });
+
+  it('keeps a turn-long trainer in the play zone until it reaches the discard', () => {
+    const opponent = {
+      active: [],
+      bench: [],
+      benchMax: 5,
+      handCount: 0,
+      deckCount: 60,
+      prize: [],
+    };
+    const me = (hand: Array<{ id: number; serial: number }>, discard: Array<{ id: number; serial: number }>) => ({
+      active: [{ id: 66, serial: 14, hp: 140, maxHp: 140 }],
+      bench: [],
+      benchMax: 5,
+      hand,
+      deckCount: 40,
+      discard,
+      prize: [],
+    });
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: { turn: 1, yourIndex: 0, result: -1, players: [me([{ id: 1141, serial: 80 }], []), opponent] },
+      }, {
+        select: { type: 'Main', option: [{ type: 'End' }], effect: { id: 1141, serial: 80 } },
+        logs: [
+          { type: 'Play', playerIndex: 0, cardId: 1141, serial: 80 },
+          { type: 'MoveCard', playerIndex: 0, cardId: 1141, serial: 80, fromArea: CabtAreaType.HAND, toArea: CabtAreaType.PLAYING },
+        ],
+        current: { turn: 1, yourIndex: 0, result: -1, players: [me([], []), opponent] },
+      }, {
+        select: { type: 'Main', option: [{ type: 'End' }], effect: { id: 1141, serial: 80 } },
+        logs: [
+          { type: 'Draw', playerIndex: 0, cardId: 3, serial: 101 },
+        ],
+        current: { turn: 1, yourIndex: 0, result: -1, players: [me([{ id: 3, serial: 101 }], []), opponent] },
+      }, {
+        logs: [
+          { type: 'TurnEnd', playerIndex: 0 },
+          { type: 'MoveCard', playerIndex: 0, cardId: 1141, serial: 80, fromArea: CabtAreaType.PLAYING, toArea: CabtAreaType.DISCARD },
+        ],
+        current: { turn: 1, yourIndex: 0, result: -1, players: [me([{ id: 3, serial: 101 }], [{ id: 1141, serial: 80 }]), opponent] },
+      }],
+    });
+
+    const playStep = snapshot.steps.find((step) =>
+      step.actionTimeline?.some((event) => event.kind === 'Play'));
+    expect(playStep?.displayView?.players[0].playZone.map((card) => card.serial)).toEqual([80]);
+
+    const drawStep = snapshot.steps.find((step) =>
+      step.actionTimeline?.some((event) => event.kind === 'Draw'));
+    expect(drawStep?.displayView?.players[0].playZone.map((card) => card.serial)).toEqual([80]);
+
+    const endStep = snapshot.steps.find((step) =>
+      step.actionTimeline?.some((event) => event.kind === 'TurnEnd'));
+    expect(endStep).toBeDefined();
+    expect(snapshot.views[endStep!.stateIndex].players[0].discard.map((card) => card.serial)).toEqual([80]);
+    expect(endStep?.displayView?.players[0].playZone ?? []).toHaveLength(0);
+  });
+
   it('synthesizes selected ability usage before its logged effects', () => {
     const snapshot = cabtReplayToSnapshot({
       visualize: [{

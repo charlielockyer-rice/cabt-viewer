@@ -436,7 +436,10 @@ function abilitySourceCard(
   playerIndex: number,
   area: number | undefined,
   index: number,
-): CabtPokemonRef | undefined {
+): CabtCardRef | undefined {
+  if (area === CabtAreaType.STADIUM) {
+    return frame.current.stadium?.[index] ?? frame.current.stadium?.[0];
+  }
   const player = frame.current.players[playerIndex];
   if (!player) {
     return undefined;
@@ -475,12 +478,22 @@ function cardEffectContinuation(entries: ReplayFrameEntry[], startIndex: number)
   if (triggeredEvolutionContinuation) {
     return triggeredEvolutionContinuation;
   }
+  const stadiumContinuation = stadiumAbilitySearchContinuationFrom(entries, startIndex, firstGroup);
+  if (stadiumContinuation) {
+    return stadiumContinuation;
+  }
   if (!isCardEffectStartGroup(firstGroup)) {
     return null;
   }
   const playEvent = resolvingTrainerPlayEvent(firstGroup);
   const playerIndex = playEvent?.playerIndex;
   if (!playEvent || playerIndex === undefined) {
+    return null;
+  }
+
+  // A turn-long trainer (e.g. "during this turn" items) parks as a continual
+  // effect instead of resolving; merging would swallow the rest of the turn.
+  if (playedCardIsContinualEffect(entries, startIndex, playEvent)) {
     return null;
   }
 
@@ -523,6 +536,52 @@ function cardEffectContinuation(entries: ReplayFrameEntry[], startIndex: number)
       };
     }
     return null;
+  }
+  return null;
+}
+
+// A used stadium (a synthesized Ability event with a stadium area) behaves
+// like a search trainer: the chosen card arrives from the deck in a later
+// frame, then the deck shuffles. Merge those frames into one step so the
+// whole effect reads as a single action. Continuation frames must contain
+// only deck-to-hand moves or shuffles by the same player, so an unrelated
+// following action can never be swallowed.
+function stadiumAbilitySearchContinuationFrom(
+  entries: ReplayFrameEntry[],
+  startIndex: number,
+  firstGroup: ReplayActionGroup,
+): CardEffectContinuation | null {
+  const abilityEvent = firstGroup.events.find((event) => {
+    const params = event.params as Record<string, unknown> | undefined;
+    return event.kind === 'Ability' && Number(params?.area) === CabtAreaType.STADIUM;
+  });
+  const playerIndex = abilityEvent?.playerIndex;
+  if (!abilityEvent || playerIndex === undefined) {
+    return null;
+  }
+  if (firstGroup.events.some((event) => event.kind === 'Shuffle')) {
+    return { endIndex: startIndex, group: firstGroup };
+  }
+
+  const events = [...firstGroup.events];
+  for (let index = startIndex + 1; index < entries.length; index += 1) {
+    const groups = entries[index].groups;
+    if (!groups.length) {
+      continue;
+    }
+    if (groups.length !== 1 || !isDeckSearchContinuationGroup(groups[0], playerIndex)) {
+      return null;
+    }
+    events.push(...groups[0].events);
+    if (groups[0].events.some((event) => event.kind === 'Shuffle')) {
+      return {
+        endIndex: index,
+        group: {
+          ...firstGroup,
+          events,
+        },
+      };
+    }
   }
   return null;
 }
@@ -640,6 +699,34 @@ function resolvingTrainerContinuationFrom(
     }
   }
   return null;
+}
+
+function playedCardIsContinualEffect(
+  entries: ReplayFrameEntry[],
+  startIndex: number,
+  playEvent: ActionTimelineEvent,
+): boolean {
+  const params = playEvent.params as Record<string, unknown> | undefined;
+  const cardId = Number(params?.cardId);
+  const serial = Number(params?.serial);
+  for (const entry of entries.slice(startIndex, startIndex + 2)) {
+    const effect = (entry.frame.select as Record<string, unknown> | null | undefined)?.effect as
+      | Record<string, unknown>
+      | null
+      | undefined;
+    if (!effect) {
+      continue;
+    }
+    const effectSerial = Number(effect.serial);
+    const effectCardId = Number(effect.id);
+    if (
+      (Number.isFinite(serial) && effectSerial === serial)
+      || (!Number.isFinite(serial) && Number.isFinite(cardId) && effectCardId === cardId)
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function startGroupHasTerminalResolvingEffect(group: ReplayActionGroup): boolean {
@@ -1837,7 +1924,9 @@ function applyResolvingPlayedCards(steps: ReplayStep[], views: GameView[]): void
       }
     }
 
-    const displayResolved = resolving.filter((entry) => shouldResolveCardInDisplay(step, entry));
+    const displayResolved = resolving.filter((entry) =>
+      shouldResolveCardInDisplay(step, entry)
+      && playerHasDiscardCard(baseView.players[entry.playerIndex], entry.card));
     const displayResolving = resolving.filter((entry) =>
       !displayResolved.some((resolvedEntry) => sameResolvingCard(resolvedEntry, entry))
       && shouldShowResolvingCardInDisplay(step, baseView, entry));

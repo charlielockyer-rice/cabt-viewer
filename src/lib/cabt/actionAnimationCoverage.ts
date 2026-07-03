@@ -277,6 +277,7 @@ export function areaName(area: number): string {
     [CabtAreaType.PRE_EVOLUTION]: 'evolution-stack',
     [CabtAreaType.PLAYER]: 'player',
     [CabtAreaType.LOOKING]: 'looking',
+    [CabtAreaType.PLAYING]: 'playing',
   };
   return areaMap[area] ?? `area-${area}`;
 }
