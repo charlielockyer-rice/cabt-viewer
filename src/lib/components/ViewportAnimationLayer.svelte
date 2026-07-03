@@ -1448,9 +1448,11 @@
     z-index: 30;
   }
 
-  :global(.game-board-plane > :has([data-attack-announce-active='true'])),
-  :global(.game-board-plane > :has([data-ability-announce-active='true'])) {
-    z-index: 31;
+  /* .bench-zone pins itself to z-index 1 (below .active-duel's 3) with the
+     same specificity as a bare :has() rule, so name the class explicitly. */
+  :global(.game-board-plane > .bench-zone:has([data-attack-announce-active='true'])),
+  :global(.game-board-plane > .bench-zone:has([data-ability-announce-active='true'])) {
+    z-index: 5;
   }
 
   :global(.board-slot[data-attack-announce-active='true']) {
