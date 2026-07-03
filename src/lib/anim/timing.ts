@@ -1,4 +1,4 @@
-import { CabtAreaType } from './types';
+import { CabtAreaType } from '../cabt/types';
 import type { ActionTimelineEvent } from '../game/types';
 
 export const actionAnimationTiming = {

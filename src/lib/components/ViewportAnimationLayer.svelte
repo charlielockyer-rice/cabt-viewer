@@ -9,7 +9,7 @@
   import { animVisibility, type HideMode, type ReleaseClaim } from '../anim/visibility';
   import { cardBackCssVar, cardFaceImageUrl, cssAssetUrl } from '../game/cardAssets';
   import { replayAnimationPhaseGapMs } from '../game/replay';
-  import { actionAnimationTiming } from '../cabt/actionAnimationSchedule';
+  import { actionAnimationTiming } from '../anim/timing';
   import {
     centerOf,
     cssMatrix3dForQuad,

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import CardTile from './CardTile.svelte';
-  import { actionAnimationTiming } from '../cabt/actionAnimationSchedule';
+  import { actionAnimationTiming } from '../anim/timing';
   import { AnimationEventGate } from '../anim/gate';
   import { resolveAnchor } from '../anim/anchors';
   import { choreograph, type CardMotion, type TargetEffect } from '../anim/motions';

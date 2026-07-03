@@ -130,7 +130,7 @@ describe('choreographBoardMotions', () => {
   });
 
   it('builds deck-to-board placements with the destination stack and hidden landing slot', () => {
-    const placed: CardView = { ...card(300, 5), animationHidden: true };
+    const placed: CardView = card(300, 5);
     const players = [player(0, card(100, 1), [placed]), player(1)];
     const events = [moveCard(0, CabtAreaType.DECK, CabtAreaType.BENCH, 300, 5)];
 
@@ -142,7 +142,7 @@ describe('choreographBoardMotions', () => {
     expect(motion.to).toEqual({ kind: 'pokemon', player: 0, serial: 5, cardId: 300 });
     expect(motion.hide).toEqual([{ anchor: { kind: 'pokemon', player: 0, serial: 5, cardId: 300 }, mode: 'contents' }]);
     if (motion.sprite.kind === 'slot') {
-      expect(motion.sprite.slot.pokemon?.animationHidden).toBeUndefined();
+      expect(motion.sprite.slot.pokemon?.serial).toBe(5);
     } else {
       throw new Error('expected slot sprite');
     }

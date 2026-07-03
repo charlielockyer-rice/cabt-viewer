@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from './actionAnimationSchedule';
-import { CabtAreaType } from './types';
+import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from './timing';
+import { CabtAreaType } from '../cabt/types';
 import type { ActionTimelineEvent } from '../game/types';
 
 describe('actionAnimationStartMs', () => {

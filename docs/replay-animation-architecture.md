@@ -162,15 +162,24 @@ Cards that start and end on the tilted board stay in the board plane. Cards
 moving between hand and board use the viewport layer and explicit cross-plane
 projection.
 
-## Remaining Migrations
+## Reveal Sessions
 
-`DeckRevealAnimation.svelte` still owns reveal and search sessions. Those flows
-need a session model before they can move fully onto this backbone.
+Reveal and search effects (deck to looking zone, selected cards to hand or an
+attach target, the rest back to the deck) are a session, not independent
+motions. `RevealSessionLayer.svelte` holds sprite state keyed by looking-zone
+serial across replay phases: a phase change keeps the session alive when the
+incoming phase continues the same reveal effect and clears it otherwise.
+`attach-under` effects are consumed by two renderers with mutually exclusive
+guards: the viewport layer plays a hand attachment when the source card is in
+a hand; the reveal layer plays it when the source serial is a held session
+sprite.
 
-Live play still feeds cumulative timelines through the gate. It should be
-unified with the replay phase model so the same event ownership and handoff
-rules apply everywhere.
+## Live Play
 
-`animationHidden` still exists in `GameView` as a bridge for reveal-take and
-deck-place phases. Once those paths migrate, keep hiding inside the visibility
-manager only.
+Live play shares the entire pipeline — choreographer, anchors, visibility,
+renderers, and timing. The one live-specific piece is inside
+`AnimationEventGate`: live engine frames carry cumulative timelines against an
+already-updated board, so the gate animates only the unseen tail of each
+frame, while replay phases animate their whole event list against a projected
+phase view. Replay additionally holds board-space sprites until the phase
+scope ends; live releases per motion.

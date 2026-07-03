@@ -111,7 +111,6 @@
       class="hand-card-frame"
       data-hand-card-slot={`player:${player.index}:hand:${index}`}
       data-card-serial={card.serial ?? undefined}
-      data-reveal-animation-hidden={card.animationHidden ? 'true' : undefined}
       animate:flip={{ duration: 180 }}
     >
       <div

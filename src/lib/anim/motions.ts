@@ -1,4 +1,4 @@
-import { actionAnimationStartMs, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
+import { actionAnimationStartMs, actionAnimationTiming } from './timing';
 import { cabtCardToView } from '../cabt/cardView';
 import { CabtAreaType } from '../cabt/types';
 import type { ActionTimelineEvent, CardView, PlayerView, PokemonSlotView } from '../game/types';
@@ -855,11 +855,7 @@ function slotSprite(
 ): SpriteSpec {
   const slot = slotForIdentity(players, playerIndex, serial, cardId);
   if (slot?.pokemon) {
-    return {
-      kind: 'slot',
-      slot: { ...slot, pokemon: { ...slot.pokemon, animationHidden: undefined } },
-      activeSize,
-    };
+    return { kind: 'slot', slot, activeSize };
   }
   return {
     kind: 'slot',

@@ -91,7 +91,6 @@
   data-slot-index={slot.index}
   data-pokemon-card-id={slot.pokemon?.id ?? undefined}
   data-pokemon-serial={slot.pokemon?.serial ?? undefined}
-  data-reveal-animation-hidden={slot.pokemon?.animationHidden ? 'true' : undefined}
   title={slot.pokemon?.fullName ?? (slot.slot === 'active' ? 'Active' : `Bench ${slot.index + 1}`)}
   {onclick}
   {ondragover}
