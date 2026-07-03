@@ -3,7 +3,6 @@
   import BenchZone from './BenchZone.svelte';
   import BoardAnimationLayer from './BoardAnimationLayer.svelte';
   import CenterPiles from './CenterPiles.svelte';
-  import DeckPrizeAnimation from './DeckPrizeAnimation.svelte';
   import type { ActionTimelineEvent, PlayerView, PokemonSlotView } from '../game/types';
 
   type ZoneName = 'discard' | 'lostZone' | 'stadium' | 'playZone';
@@ -224,13 +223,6 @@
       bind:bottomDiscardPileElement
       {showLostZone}
       {showDiscard}
-    />
-
-    <DeckPrizeAnimation
-      events={animationEvents}
-      scopeKey={animationScopeKey}
-      {replayMode}
-      animateTakes={false}
     />
 
     <ActiveDuel

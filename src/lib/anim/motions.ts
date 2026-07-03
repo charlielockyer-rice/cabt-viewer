@@ -15,12 +15,28 @@ export type HideClaim = {
   mode: HideMode;
 };
 
+export type MotionStyle =
+  | 'board-move'
+  | 'attached-move'
+  | 'deck-discard'
+  | 'hand-play'
+  | 'deck-draw'
+  | 'hand-reset'
+  | 'prize-take';
+
 export type CardMotion = {
   id: string;
-  style: 'board-move' | 'attached-move' | 'deck-discard';
+  style: MotionStyle;
+  // Board-space motions render inside the tilted plane; viewport motions
+  // render position:fixed and cross planes via homography.
+  space: 'board' | 'viewport';
+  player: number;
   sprite: SpriteSpec;
   from: Anchor;
   to: Anchor;
+  // Tried in order when `to` does not resolve (e.g. a played trainer lands in
+  // the play zone, the discard, or on the board depending on the view).
+  toFallbacks?: Anchor[];
   startMs: number;
   durationMs: number;
   toDeck: boolean;
@@ -28,23 +44,95 @@ export type CardMotion = {
   // Live-mode handoff waits until the destination shows this exact card.
   waitForDestinationCard: boolean;
   hide: HideClaim[];
+  // hand-play: hide whichever destination resolved, mode chosen by element.
+  hideResolvedTarget?: boolean;
+  // hand-play: evolution flight with target glow and slot-chrome fade.
+  evolve?: boolean;
+  // deck-draw: batch shares a step with a hand-to-deck reset (mulligan), so
+  // draws refill existing slots by serial instead of appending.
+  mulligan?: boolean;
+  // prize-take: position within this player's take group, for extrapolating
+  // source rects of prize slots that already left the DOM.
+  takeIndex?: number;
+  takeCount?: number;
 };
 
-// Turns one batch of timeline events into board-plane card motions. This is a
-// pure function of (events, players) so replay phases and live frames share
-// one classification. `players` must be indexable by event playerIndex.
-export function choreographBoardMotions(events: ActionTimelineEvent[], players: PlayerView[]): CardMotion[] {
+// Target-owned CSS animations: no sprite, the real element animates.
+export type TargetEffect = {
+  id: string;
+  kind: 'attach-under' | 'prize-place';
+  anchor: Anchor;
+  player: number;
+  card?: CardView;
+  // attach-under: the hand card the attachment visually departs from.
+  sourceSerial?: number;
+  // prize-place: stacking order within the placement group.
+  order: number;
+  startMs: number;
+  durationMs: number;
+};
+
+export type Choreography = {
+  motions: CardMotion[];
+  effects: TargetEffect[];
+};
+
+// Turns one batch of timeline events into motions and target effects. This is
+// a pure function of (events, players) so replay phases and live frames share
+// one classification.
+export function choreograph(events: ActionTimelineEvent[], players: PlayerView[]): Choreography {
   const motions: CardMotion[] = [];
+  const effects: TargetEffect[] = [];
+  const drawIndexes = new Map<number, number>();
+  const drawCounts = new Map<number, number>();
+  const prizePlaceIndexes = new Map<number, number>();
+  const prizeTakeIndexes = new Map<number, number>();
+  const prizeTakeCounts = new Map<number, number>();
+
   for (const event of events) {
+    const player = event.playerIndex;
+    if (player === undefined) {
+      continue;
+    }
+    if (event.kind === 'Draw' || event.kind === 'DrawReverse') {
+      drawCounts.set(player, (drawCounts.get(player) ?? 0) + 1);
+      continue;
+    }
+    const params = eventParams(event);
+    if ((event.kind === 'MoveCard' || event.kind === 'MoveCardReverse')
+      && num(params.fromArea) === CabtAreaType.PRIZE
+      && num(params.toArea) === CabtAreaType.HAND) {
+      prizeTakeCounts.set(player, (prizeTakeCounts.get(player) ?? 0) + 1);
+    }
+  }
+
+  for (const event of events) {
+    if (event.playerIndex === undefined) {
+      continue;
+    }
     if (event.kind === 'Switch') {
       motions.push(...switchMotions(event, events, players));
       continue;
     }
-    if (event.kind === 'MoveCard') {
-      motions.push(...moveCardMotions(event, events, players));
+    if (event.kind === 'Draw' || event.kind === 'DrawReverse') {
+      motions.push(...drawMotions(event, events, players, drawIndexes, drawCounts));
+      continue;
+    }
+    if (event.kind === 'Play' || event.kind === 'Evolve') {
+      motions.push(...handPlayMotions(event, events));
+      continue;
+    }
+    if (event.kind === 'Attach') {
+      effects.push(...attachEffects(event, events));
+      continue;
+    }
+    if (event.kind === 'MoveCard' || event.kind === 'MoveCardReverse') {
+      const result = moveCardChoreography(event, events, players, prizePlaceIndexes, prizeTakeIndexes, prizeTakeCounts);
+      motions.push(...result.motions);
+      effects.push(...result.effects);
     }
   }
-  return motions;
+  return { motions, effects };
 }
 
 function switchMotions(event: ActionTimelineEvent, batch: ActionTimelineEvent[], players: PlayerView[]): CardMotion[] {
@@ -65,6 +153,8 @@ function switchMotions(event: ActionTimelineEvent, batch: ActionTimelineEvent[],
     {
       id: `${event.id}-active-${activeSerial ?? activeCard}`,
       style: 'board-move',
+      space: 'board',
+      player,
       sprite: slotSprite(players, player, activeSerial, activeCard, false),
       from: fromActive,
       to: fromBench,
@@ -81,6 +171,8 @@ function switchMotions(event: ActionTimelineEvent, batch: ActionTimelineEvent[],
     {
       id: `${event.id}-bench-${benchSerial ?? benchCard}`,
       style: 'board-move',
+      space: 'board',
+      player,
       sprite: slotSprite(players, player, benchSerial, benchCard, true),
       from: fromBench,
       to: fromActive,
@@ -97,7 +189,15 @@ function switchMotions(event: ActionTimelineEvent, batch: ActionTimelineEvent[],
   ];
 }
 
-function moveCardMotions(event: ActionTimelineEvent, batch: ActionTimelineEvent[], players: PlayerView[]): CardMotion[] {
+function moveCardChoreography(
+  event: ActionTimelineEvent,
+  batch: ActionTimelineEvent[],
+  players: PlayerView[],
+  prizePlaceIndexes: Map<number, number>,
+  prizeTakeIndexes: Map<number, number>,
+  prizeTakeCounts: Map<number, number>,
+): Choreography {
+  const none: Choreography = { motions: [], effects: [] };
   const params = eventParams(event);
   const player = event.playerIndex;
   const fromArea = num(params.fromArea);
@@ -105,16 +205,72 @@ function moveCardMotions(event: ActionTimelineEvent, batch: ActionTimelineEvent[
   const cardId = num(params.cardId);
   const serial = num(params.serial);
   if (player === undefined || fromArea === undefined || toArea === undefined) {
-    return [];
+    return none;
+  }
+
+  // Prize placements and takes are the only facedown (MoveCardReverse) paths
+  // that animate.
+  if (fromArea === CabtAreaType.DECK && toArea === CabtAreaType.PRIZE) {
+    const index = prizePlaceIndexes.get(player) ?? 0;
+    prizePlaceIndexes.set(player, index + 1);
+    const prizesLeft = players.find((candidate) => candidate.index === player)?.prizesLeft ?? 6;
+    const placeCount = batch.filter((candidate) => {
+      const candidateParams = eventParams(candidate);
+      return candidate.playerIndex === player
+        && (candidate.kind === 'MoveCard' || candidate.kind === 'MoveCardReverse')
+        && num(candidateParams.fromArea) === CabtAreaType.DECK
+        && num(candidateParams.toArea) === CabtAreaType.PRIZE;
+    }).length;
+    return {
+      motions: [],
+      effects: [{
+        id: `${event.id}-prize-${index}`,
+        kind: 'prize-place',
+        anchor: { kind: 'prize', player, index: Math.max(0, prizesLeft - placeCount + index) },
+        player,
+        order: index + 1,
+        startMs: index * prizePlaceStepMs,
+        durationMs: prizePlaceMs,
+      }],
+    };
+  }
+
+  if (fromArea === CabtAreaType.PRIZE && toArea === CabtAreaType.HAND) {
+    const index = prizeTakeIndexes.get(player) ?? 0;
+    prizeTakeIndexes.set(player, index + 1);
+    const count = prizeTakeCounts.get(player) ?? 1;
+    return { motions: [{
+      id: `${event.id}-${serial ?? index}`,
+      style: 'prize-take',
+      space: 'viewport',
+      player,
+      sprite: { kind: 'card', card: cardId !== undefined ? cabtCardToView(cardId) : unknownCard() },
+      from: { kind: 'prize', player, index },
+      to: { kind: 'hand-slot', player, serial, fromEnd: count - index },
+      startMs: actionAnimationStartMs(batch, event),
+      durationMs: actionAnimationTiming.prizeTakeMs,
+      toDeck: false,
+      fromDeck: false,
+      waitForDestinationCard: false,
+      hide: [],
+      takeIndex: index,
+      takeCount: count,
+    }], effects: [] };
+  }
+
+  if (event.kind !== 'MoveCard') {
+    return none;
   }
 
   if (fromArea === CabtAreaType.DECK && toArea === CabtAreaType.DISCARD) {
     if (cardId === undefined) {
-      return [];
+      return none;
     }
-    return [{
+    return { motions: [{
       id: `${event.id}-${serial ?? cardId}`,
       style: 'deck-discard',
+      space: 'board',
+      player,
       sprite: { kind: 'flip-card', card: cabtCardToView(cardId) },
       from: { kind: 'deck', player },
       to: { kind: 'discard', player, surface: true },
@@ -124,12 +280,12 @@ function moveCardMotions(event: ActionTimelineEvent, batch: ActionTimelineEvent[
       fromDeck: false,
       waitForDestinationCard: false,
       hide: [],
-    }];
+    }], effects: [] };
   }
 
   if (isAttachedArea(fromArea) && (toArea === CabtAreaType.DISCARD || toArea === CabtAreaType.DECK)) {
     if (serial === undefined || cardId === undefined) {
-      return [];
+      return none;
     }
     const from: Anchor = { kind: 'attached', attached: fromArea === CabtAreaType.ENERGY ? 'energy' : 'tool', serial };
     const toDiscard = toArea === CabtAreaType.DISCARD;
@@ -137,9 +293,11 @@ function moveCardMotions(event: ActionTimelineEvent, batch: ActionTimelineEvent[
     if (toDiscard) {
       hide.push({ anchor: { kind: 'discard', player, serial, cardId, exact: true }, mode: 'element' });
     }
-    return [{
+    return { motions: [{
       id: `${event.id}-${serial}`,
       style: 'attached-move',
+      space: 'board',
+      player,
       sprite: { kind: 'card', card: cabtCardToView(cardId) },
       from,
       to: toDiscard ? { kind: 'discard', player } : { kind: 'deck', player },
@@ -149,16 +307,18 @@ function moveCardMotions(event: ActionTimelineEvent, batch: ActionTimelineEvent[
       fromDeck: false,
       waitForDestinationCard: false,
       hide,
-    }];
+    }], effects: [] };
   }
 
   if (fromArea === CabtAreaType.STADIUM && toArea === CabtAreaType.DISCARD) {
     if (cardId === undefined) {
-      return [];
+      return none;
     }
-    return [{
+    return { motions: [{
       id: `${event.id}-${serial ?? cardId}`,
       style: 'board-move',
+      space: 'board',
+      player,
       sprite: { kind: 'card', card: cabtCardToView(cardId) },
       from: { kind: 'stadium', player, serial },
       to: { kind: 'discard', player, serial, cardId },
@@ -171,18 +331,70 @@ function moveCardMotions(event: ActionTimelineEvent, batch: ActionTimelineEvent[
         { anchor: { kind: 'stadium', player, serial }, mode: 'element' },
         { anchor: { kind: 'discard', player, serial, cardId, exact: true }, mode: 'element' },
       ],
-    }];
+    }], effects: [] };
   }
 
   if (cardId === undefined) {
-    return [];
+    return none;
   }
   const identity: Anchor = { kind: 'pokemon', player, serial, cardId };
 
+  if (fromArea === CabtAreaType.HAND && toArea === CabtAreaType.DECK) {
+    if (serial === undefined) {
+      return none;
+    }
+    return { motions: [{
+      id: `${event.id}-${serial}`,
+      style: 'hand-reset',
+      space: 'viewport',
+      player,
+      sprite: { kind: 'card', card: cabtCardToView(cardId) },
+      from: { kind: 'hand-slot', player, serial },
+      to: { kind: 'deck', player },
+      startMs: actionAnimationStartMs(batch, event),
+      durationMs: actionAnimationTiming.handMoveMs,
+      toDeck: true,
+      fromDeck: false,
+      waitForDestinationCard: false,
+      hide: [],
+    }], effects: [] };
+  }
+
+  if (fromArea === CabtAreaType.HAND
+    && (toArea === CabtAreaType.DISCARD || toArea === CabtAreaType.ACTIVE || toArea === CabtAreaType.BENCH)) {
+    const to: Anchor = toArea === CabtAreaType.DISCARD
+      ? { kind: 'discard', player, serial, cardId }
+      : identity;
+    const toFallbacks: Anchor[] = toArea === CabtAreaType.ACTIVE
+      ? [{ kind: 'slot', player, slot: 'active', index: 0 }]
+      : toArea === CabtAreaType.BENCH
+        ? [{ kind: 'slot', player, slot: 'bench', index: 0 }]
+        : [];
+    return { motions: [{
+      id: `${event.id}-${serial ?? cardId}`,
+      style: 'hand-play',
+      space: 'viewport',
+      player,
+      sprite: { kind: 'card', card: cabtCardToView(cardId) },
+      from: { kind: 'hand-slot', player, serial },
+      to,
+      toFallbacks,
+      startMs: actionAnimationStartMs(batch, event),
+      durationMs: handPlayMoveMs,
+      toDeck: false,
+      fromDeck: false,
+      waitForDestinationCard: false,
+      hide: [],
+      hideResolvedTarget: true,
+    }], effects: [] };
+  }
+
   if (fromArea === CabtAreaType.DECK && (toArea === CabtAreaType.ACTIVE || toArea === CabtAreaType.BENCH)) {
-    return [{
+    return { motions: [{
       id: `${event.id}-${serial ?? cardId}`,
       style: 'board-move',
+      space: 'board',
+      player,
       sprite: slotSprite(players, player, serial, cardId, toArea === CabtAreaType.ACTIVE),
       from: { kind: 'deck', player },
       to: identity,
@@ -192,13 +404,15 @@ function moveCardMotions(event: ActionTimelineEvent, batch: ActionTimelineEvent[
       fromDeck: true,
       waitForDestinationCard: false,
       hide: [{ anchor: identity, mode: 'contents' }],
-    }];
+    }], effects: [] };
   }
 
   if ((fromArea === CabtAreaType.ACTIVE || fromArea === CabtAreaType.BENCH) && toArea === CabtAreaType.DECK) {
-    return [{
+    return { motions: [{
       id: `${event.id}-${serial ?? cardId}`,
       style: 'board-move',
+      space: 'board',
+      player,
       sprite: slotSprite(players, player, serial, cardId, fromArea === CabtAreaType.ACTIVE),
       from: identity,
       to: { kind: 'deck', player },
@@ -208,14 +422,16 @@ function moveCardMotions(event: ActionTimelineEvent, batch: ActionTimelineEvent[
       fromDeck: false,
       waitForDestinationCard: false,
       hide: [{ anchor: identity, mode: 'contents' }],
-    }];
+    }], effects: [] };
   }
 
   if (fromArea === CabtAreaType.BENCH && toArea === CabtAreaType.ACTIVE) {
     const to: Anchor = { kind: 'slot', player, slot: 'active', index: 0 };
-    return [{
+    return { motions: [{
       id: `${event.id}-${serial ?? cardId}`,
       style: 'board-move',
+      space: 'board',
+      player,
       sprite: slotSprite(players, player, serial, cardId, true),
       from: identity,
       to,
@@ -228,17 +444,19 @@ function moveCardMotions(event: ActionTimelineEvent, batch: ActionTimelineEvent[
         { anchor: identity, mode: 'contents' },
         { anchor: to, mode: 'contents' },
       ],
-    }];
+    }], effects: [] };
   }
 
   if (fromArea === CabtAreaType.ACTIVE && toArea === CabtAreaType.BENCH) {
     const to = activeToBenchTarget(event, batch);
     if (!to) {
-      return [];
+      return none;
     }
-    return [{
+    return { motions: [{
       id: `${event.id}-${serial ?? cardId}`,
       style: 'board-move',
+      space: 'board',
+      player,
       sprite: slotSprite(players, player, serial, cardId, false),
       from: identity,
       to,
@@ -251,10 +469,139 @@ function moveCardMotions(event: ActionTimelineEvent, batch: ActionTimelineEvent[
         { anchor: identity, mode: 'contents' },
         { anchor: to, mode: 'contents' },
       ],
-    }];
+    }], effects: [] };
   }
 
-  return [];
+  return none;
+}
+
+const handPlayMoveMs = 360;
+const handEvolveMoveMs = 430;
+const prizePlaceMs = 280;
+const prizePlaceStepMs = 45;
+
+function handPlayMotions(event: ActionTimelineEvent, batch: ActionTimelineEvent[]): CardMotion[] {
+  const params = eventParams(event);
+  const player = event.playerIndex;
+  const cardId = num(params.cardId);
+  const serial = num(params.serial);
+  if (player === undefined || cardId === undefined) {
+    return [];
+  }
+  const card = cabtCardToView(cardId);
+  const evolve = event.kind === 'Evolve';
+
+  let to: Anchor;
+  let toFallbacks: Anchor[];
+  if (evolve) {
+    to = { kind: 'pokemon', player, serial: num(params.serialTarget), cardId: num(params.cardIdTarget) };
+    toFallbacks = [{ kind: 'pokemon', player, serial, cardId }];
+  } else if (card.trainerType === 'Stadium') {
+    to = { kind: 'stadium', player, serial };
+    toFallbacks = [];
+  } else {
+    to = { kind: 'pokemon', player, serial, cardId };
+    toFallbacks = [
+      { kind: 'discard', player, serial, cardId, exact: true },
+      { kind: 'playZone', player, serial },
+      { kind: 'discard', player },
+    ];
+  }
+
+  return [{
+    id: `${event.id}-${serial ?? cardId}`,
+    style: 'hand-play',
+    space: 'viewport',
+    player,
+    sprite: { kind: 'card', card },
+    from: { kind: 'hand-slot', player, serial },
+    to,
+    toFallbacks,
+    startMs: actionAnimationStartMs(batch, event),
+    durationMs: evolve ? handEvolveMoveMs : handPlayMoveMs,
+    toDeck: false,
+    fromDeck: false,
+    waitForDestinationCard: false,
+    hide: [],
+    hideResolvedTarget: !evolve,
+    evolve,
+  }];
+}
+
+function attachEffects(event: ActionTimelineEvent, batch: ActionTimelineEvent[]): TargetEffect[] {
+  const params = eventParams(event);
+  const player = event.playerIndex;
+  const cardId = num(params.cardId);
+  const serial = num(params.serial);
+  const serialTarget = num(params.serialTarget);
+  const cardIdTarget = num(params.cardIdTarget);
+  if (player === undefined || cardId === undefined) {
+    return [];
+  }
+  return [{
+    id: `${event.id}-attach-${serial ?? cardId}`,
+    kind: 'attach-under',
+    anchor: { kind: 'pokemon', player, serial: serialTarget, cardId: cardIdTarget },
+    player,
+    card: cabtCardToView(cardId),
+    sourceSerial: serial,
+    order: 0,
+    startMs: actionAnimationStartMs(batch, event),
+    durationMs: actionAnimationTiming.handMoveMs,
+  }];
+}
+
+function drawMotions(
+  event: ActionTimelineEvent,
+  batch: ActionTimelineEvent[],
+  players: PlayerView[],
+  drawIndexes: Map<number, number>,
+  drawCounts: Map<number, number>,
+): CardMotion[] {
+  const params = eventParams(event);
+  const player = event.playerIndex;
+  if (player === undefined) {
+    return [];
+  }
+  void players;
+  const serial = num(params.serial);
+  const cardId = num(params.cardId);
+  const index = drawIndexes.get(player) ?? 0;
+  drawIndexes.set(player, index + 1);
+  const count = drawCounts.get(player) ?? 1;
+  const mulligan = batch.some((candidate) => {
+    const candidateParams = eventParams(candidate);
+    return candidate.kind === 'MoveCard'
+      && candidate.playerIndex === player
+      && num(candidateParams.fromArea) === CabtAreaType.HAND
+      && num(candidateParams.toArea) === CabtAreaType.DECK;
+  });
+
+  return [{
+    id: `${event.id}-${serial ?? index}`,
+    style: 'deck-draw',
+    space: 'viewport',
+    player,
+    sprite: {
+      kind: 'card',
+      card: event.kind === 'Draw' && cardId !== undefined ? cabtCardToView(cardId) : unknownCard(),
+    },
+    from: { kind: 'deck', player },
+    to: mulligan
+      ? { kind: 'hand-slot', player, serial, index }
+      : { kind: 'hand-slot', player, serial: undefined, fromEnd: count - index },
+    startMs: actionAnimationStartMs(batch, event),
+    durationMs: actionAnimationTiming.deckDrawMs,
+    toDeck: false,
+    fromDeck: true,
+    waitForDestinationCard: false,
+    hide: [],
+    mulligan,
+  }];
+}
+
+function unknownCard(): CardView {
+  return { name: 'Card', fullName: 'Card' };
 }
 
 // An active Pokemon retreating to bench lands where its counterpart came

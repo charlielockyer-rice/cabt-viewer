@@ -175,13 +175,73 @@ function measuredViewportQuad(element: HTMLElement): Point[] {
   }
 }
 
-function rectQuad(rect: DOMRect): Point[] {
+// Projects a flat width x height rectangle onto an arbitrary on-screen quad
+// as a CSS matrix3d, so a position:fixed sprite can start flat (hand space)
+// and land exactly on a perspective-projected board destination.
+export function cssMatrix3dForQuad(width: number, height: number, quad: Point[]): string | null {
+  if (
+    width <= 0
+    || height <= 0
+    || quad.length !== 4
+    || quad.some((point) => !Number.isFinite(point.x) || !Number.isFinite(point.y))
+  ) {
+    return null;
+  }
+
+  const homography = solveHomography(
+    [
+      { x: 0, y: 0 },
+      { x: width, y: 0 },
+      { x: width, y: height },
+      { x: 0, y: height },
+    ],
+    quad,
+  );
+
+  if (!homography || homography.some((value) => !Number.isFinite(value))) {
+    return null;
+  }
+
+  return [
+    'matrix3d(',
+    formatMatrixNumber(homography[0]), ', ',
+    formatMatrixNumber(homography[3]), ', ',
+    '0, ',
+    formatMatrixNumber(homography[6]), ', ',
+    formatMatrixNumber(homography[1]), ', ',
+    formatMatrixNumber(homography[4]), ', ',
+    '0, ',
+    formatMatrixNumber(homography[7]), ', ',
+    '0, 0, 1, 0, ',
+    formatMatrixNumber(homography[2]), ', ',
+    formatMatrixNumber(homography[5]), ', ',
+    '0, ',
+    formatMatrixNumber(homography[8]),
+    ')',
+  ].join('');
+}
+
+export function rectQuad(rect: DOMRect): Point[] {
   return [
     { x: rect.left, y: rect.top },
     { x: rect.right, y: rect.top },
     { x: rect.right, y: rect.bottom },
     { x: rect.left, y: rect.bottom },
   ];
+}
+
+// A 180-degree-rotated flat quad, for cards leaving the top player's hand.
+export function rotatedRectQuad(rect: DOMRect): Point[] {
+  return [
+    { x: rect.right, y: rect.bottom },
+    { x: rect.left, y: rect.bottom },
+    { x: rect.left, y: rect.top },
+    { x: rect.right, y: rect.top },
+  ];
+}
+
+function formatMatrixNumber(value: number): string {
+  return Number.isFinite(value) ? value.toFixed(6).replace(/\.?0+$/, '') : '0';
 }
 
 function solveHomography(from: Point[], to: Point[]): number[] | null {

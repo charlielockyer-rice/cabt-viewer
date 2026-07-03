@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { CabtAreaType } from '../cabt/types';
 import type { ActionTimelineEvent, CardView, PlayerView, PokemonSlotView } from '../game/types';
-import { choreographBoardMotions } from './motions';
+import { choreograph } from './motions';
+
+function choreographBoardMotions(events: ActionTimelineEvent[], players: PlayerView[]) {
+  return choreograph(events, players).motions.filter((motion) => motion.space === 'board');
+}
 
 let nextEventId = 1;
 
@@ -214,7 +218,7 @@ describe('choreographBoardMotions', () => {
     expect(motions[1].startMs).toBeGreaterThan(motions[0].startMs);
   });
 
-  it('ignores events outside the board-plane family', () => {
+  it('keeps non-board events out of the board space', () => {
     const players = [player(0, card(100, 1)), player(1)];
     const events = [
       event('Draw', 0, { cardId: 1, serial: 2 }),
@@ -223,5 +227,86 @@ describe('choreographBoardMotions', () => {
       event('Attack', 0, { cardId: 100, serial: 1 }),
     ];
     expect(choreographBoardMotions(events, players)).toHaveLength(0);
+  });
+});
+
+describe('choreograph viewport family', () => {
+  it('classifies hand plays with destination fallbacks and staggered evolutions', () => {
+    const players = [player(0, card(100, 1)), player(1)];
+    const events = [
+      event('Play', 0, { cardId: 300, serial: 5 }),
+      event('Evolve', 0, { cardId: 301, serial: 6, cardIdTarget: 100, serialTarget: 1 }),
+    ];
+
+    const { motions } = choreograph(events, players);
+    expect(motions).toHaveLength(2);
+    const [play, evolve] = motions;
+    expect(play.style).toBe('hand-play');
+    expect(play.space).toBe('viewport');
+    expect(play.from).toEqual({ kind: 'hand-slot', player: 0, serial: 5 });
+    expect(play.to).toEqual({ kind: 'pokemon', player: 0, serial: 5, cardId: 300 });
+    expect(play.toFallbacks?.map((anchor) => anchor.kind)).toEqual(['discard', 'playZone', 'discard']);
+    expect(play.hideResolvedTarget).toBe(true);
+    expect(evolve.evolve).toBe(true);
+    expect(evolve.to).toEqual({ kind: 'pokemon', player: 0, serial: 1, cardId: 100 });
+    expect(evolve.hideResolvedTarget).toBe(false);
+    expect(evolve.startMs).toBeGreaterThan(play.startMs);
+  });
+
+  it('emits attach-under target effects for Attach events', () => {
+    const players = [player(0, card(100, 1)), player(1)];
+    const events = [event('Attach', 0, { cardId: 500, serial: 11, cardIdTarget: 100, serialTarget: 1 })];
+
+    const { motions, effects } = choreograph(events, players);
+    expect(motions).toHaveLength(0);
+    expect(effects).toHaveLength(1);
+    expect(effects[0].kind).toBe('attach-under');
+    expect(effects[0].anchor).toEqual({ kind: 'pokemon', player: 0, serial: 1, cardId: 100 });
+    expect(effects[0].sourceSerial).toBe(11);
+  });
+
+  it('targets draw motions at the end of the hand, or by serial during a mulligan', () => {
+    const players = [player(0), player(1)];
+    const plainDraws = choreograph([
+      event('Draw', 0, { cardId: 700, serial: 20 }),
+      event('Draw', 0, { cardId: 701, serial: 21 }),
+    ], players);
+    expect(plainDraws.motions.map((motion) => motion.to)).toEqual([
+      { kind: 'hand-slot', player: 0, serial: undefined, fromEnd: 2 },
+      { kind: 'hand-slot', player: 0, serial: undefined, fromEnd: 1 },
+    ]);
+    expect(plainDraws.motions[0].mulligan).toBe(false);
+
+    const mulligan = choreograph([
+      moveCard(0, CabtAreaType.HAND, CabtAreaType.DECK, 600, 15),
+      event('Draw', 0, { cardId: 700, serial: 20 }),
+    ], players);
+    const draw = mulligan.motions.find((motion) => motion.style === 'deck-draw');
+    expect(draw?.mulligan).toBe(true);
+    expect(draw?.to).toEqual({ kind: 'hand-slot', player: 0, serial: 20, index: 0 });
+    const reset = mulligan.motions.find((motion) => motion.style === 'hand-reset');
+    expect(reset?.from).toEqual({ kind: 'hand-slot', player: 0, serial: 15 });
+    expect(reset?.to).toEqual({ kind: 'deck', player: 0 });
+  });
+
+  it('classifies prize placement effects and prize takes, including facedown moves', () => {
+    const players = [player(0), player(1)];
+    const placement = choreograph([
+      event('MoveCardReverse', 0, { fromArea: CabtAreaType.DECK, toArea: CabtAreaType.PRIZE }),
+      event('MoveCardReverse', 0, { fromArea: CabtAreaType.DECK, toArea: CabtAreaType.PRIZE }),
+    ], players);
+    expect(placement.effects).toHaveLength(2);
+    expect(placement.effects[0].kind).toBe('prize-place');
+    expect(placement.effects[0].anchor).toEqual({ kind: 'prize', player: 0, index: 4 });
+    expect(placement.effects[1].anchor).toEqual({ kind: 'prize', player: 0, index: 5 });
+
+    const take = choreograph([
+      event('MoveCard', 0, { fromArea: CabtAreaType.PRIZE, toArea: CabtAreaType.HAND, cardId: 800, serial: 30 }),
+    ], players);
+    expect(take.motions).toHaveLength(1);
+    expect(take.motions[0].style).toBe('prize-take');
+    expect(take.motions[0].takeIndex).toBe(0);
+    expect(take.motions[0].takeCount).toBe(1);
+    expect(take.motions[0].to).toEqual({ kind: 'hand-slot', player: 0, serial: 30, fromEnd: 1 });
   });
 });

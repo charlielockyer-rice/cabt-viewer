@@ -7,11 +7,8 @@
   import BoardLayer from './lib/components/BoardLayer.svelte';
   import BoardPromptStrip from './lib/components/prompts/BoardPromptStrip.svelte';
   import EndGamePrompt from './lib/components/EndGamePrompt.svelte';
-  import DeckDrawAnimation from './lib/components/DeckDrawAnimation.svelte';
-  import DeckPrizeAnimation from './lib/components/DeckPrizeAnimation.svelte';
+  import ViewportAnimationLayer from './lib/components/ViewportAnimationLayer.svelte';
   import DeckRevealAnimation from './lib/components/DeckRevealAnimation.svelte';
-  import HandPlayAnimation from './lib/components/HandPlayAnimation.svelte';
-  import HandResetAnimation from './lib/components/HandResetAnimation.svelte';
   import GameBoard from './lib/components/GameBoard.svelte';
   import GameStatus from './lib/components/GameStatus.svelte';
   import Hand from './lib/components/Hand.svelte';
@@ -1387,35 +1384,17 @@
           {replayMode}
         />
 
-        <DeckDrawAnimation
-          events={game.actionTimeline ?? []}
-          scopeKey={animationScopeKey}
-          {replayMode}
-        />
-
         <DeckRevealAnimation
           events={game.actionTimeline ?? []}
           scopeKey={animationScopeKey}
           {replayMode}
         />
 
-        <DeckPrizeAnimation
+        <ViewportAnimationLayer
           events={game.actionTimeline ?? []}
           scopeKey={animationScopeKey}
           {replayMode}
-          animatePlacements={false}
-        />
-
-        <HandPlayAnimation
-          events={game.actionTimeline ?? []}
-          scopeKey={animationScopeKey}
-          {replayMode}
-        />
-
-        <HandResetAnimation
-          events={game.actionTimeline ?? []}
-          scopeKey={animationScopeKey}
-          {replayMode}
+          players={game.players}
         />
 
         <AbilityAnimation

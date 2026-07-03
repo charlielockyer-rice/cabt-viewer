@@ -8,7 +8,14 @@ export type Anchor =
   // then the pile.
   | { kind: 'discard'; player: number; serial?: number; cardId?: number; exact?: boolean; surface?: boolean }
   | { kind: 'stadium'; player: number; serial?: number }
-  | { kind: 'attached'; attached: 'energy' | 'tool'; serial: number };
+  | { kind: 'attached'; attached: 'energy' | 'tool'; serial: number }
+  | { kind: 'hand'; player: number }
+  // Hand slots resolve by serial first, then by position: `fromEnd` counts
+  // back from the last slot (arriving cards land at the end of the hand),
+  // `index` counts from the start (mulligan redraws refill in order).
+  | { kind: 'hand-slot'; player: number; serial?: number; fromEnd?: number; index?: number }
+  | { kind: 'prize'; player: number; index: number }
+  | { kind: 'playZone'; player: number; serial?: number };
 
 export type ResolvedAnchor = {
   // The element visibility claims attach to.
@@ -70,7 +77,44 @@ export function resolveAnchor(anchor: Anchor): ResolvedAnchor | null {
       const ownerCard = element.closest('.board-slot')?.querySelector('.card-tile');
       return { element, geometry: ownerCard instanceof HTMLElement ? ownerCard : element };
     }
+    case 'hand': {
+      const element = query(`[data-card-anchor="player:${anchor.player}:hand"]`);
+      return element ? { element, geometry: element } : null;
+    }
+    case 'hand-slot': {
+      const slots = handSlots(anchor.player);
+      const element = (anchor.serial !== undefined
+        ? slots.find((slot) => Number(slot.dataset.cardSerial) === anchor.serial)
+        : undefined)
+        ?? (anchor.fromEnd !== undefined ? slots[slots.length - anchor.fromEnd] : undefined)
+        ?? (anchor.index !== undefined ? slots[anchor.index] : undefined);
+      return element ? { element, geometry: element } : null;
+    }
+    case 'prize': {
+      const element = query(`[data-card-anchor="player:${anchor.player}:prize:${anchor.index}"]`);
+      return element ? { element, geometry: element } : null;
+    }
+    case 'playZone': {
+      const zone = query(`[data-card-anchor="player:${anchor.player}:playZone"]`);
+      if (!zone) {
+        return null;
+      }
+      const card = anchor.serial !== undefined
+        ? childElement(zone, `[data-card-serial="${anchor.serial}"]`)
+        : null;
+      const element = card ?? zone;
+      return { element, geometry: element };
+    }
   }
+}
+
+export function handSlots(player: number): HTMLElement[] {
+  const hand = query(`[data-card-anchor="player:${player}:hand"]`);
+  if (!hand) {
+    return [];
+  }
+  return [...hand.querySelectorAll(`[data-hand-card-slot^="player:${player}:hand:"]`)]
+    .filter((element): element is HTMLElement => element instanceof HTMLElement);
 }
 
 function pokemonElement(anchor: { player?: number; serial?: number; cardId?: number }): HTMLElement | null {

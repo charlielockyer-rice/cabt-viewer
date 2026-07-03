@@ -2,10 +2,10 @@
   import { onDestroy, onMount, tick } from 'svelte';
   import BoardSlot from './BoardSlot.svelte';
   import CardTile from './CardTile.svelte';
-  import { actionAnimationBatchEvents, actionAnimationTiming } from '../cabt/actionAnimationSchedule';
   import { localRectIn, localRectCenter, type LocalRect } from '../dom/planeGeometry';
-  import { resolveAnchor, type Anchor, type ResolvedAnchor } from '../anim/anchors';
-  import { choreographBoardMotions, type CardMotion } from '../anim/motions';
+  import { AnimationEventGate } from '../anim/gate';
+  import { resolveAnchor, type Anchor } from '../anim/anchors';
+  import { choreograph, type CardMotion } from '../anim/motions';
   import { animVisibility, type ReleaseClaim } from '../anim/visibility';
   import { cardBackCssVar } from '../game/cardAssets';
   import { replayAnimationPhaseGapMs } from '../game/replay';
@@ -46,14 +46,12 @@
   let sprites = $state<RenderSprite[]>([]);
   let reduceMotion = $state(false);
 
+  const gate = new AnimationEventGate();
   const timers: ReturnType<typeof setTimeout>[] = [];
   const settleTimers: ReturnType<typeof setTimeout>[] = [];
   const settleFrameIds: number[] = [];
   const scopeReleases: ReleaseClaim[] = [];
   const motionReleases = new Map<string, ReleaseClaim[]>();
-  let seenEventIds = new Set<number>();
-  let initialized = false;
-  let lastScopeKey: string | number = '';
   let generation = 0;
   let discardOrder = 0;
   // Live play swaps the view before this effect runs, so an attached card's
@@ -112,25 +110,9 @@
   });
 
   $effect(() => {
-    const currentEvents = events;
-    const currentScopeKey = scopeKey;
-    const scopeChanged = initialized && currentScopeKey !== lastScopeKey;
+    const { scopeChanged, batch } = gate.update(events, scopeKey, replayMode);
     if (scopeChanged) {
       endScope({ settle: replayMode });
-    }
-    lastScopeKey = currentScopeKey;
-
-    if (!initialized) {
-      for (const event of currentEvents) {
-        seenEventIds.add(event.id);
-      }
-      initialized = true;
-      return;
-    }
-
-    const batch = actionAnimationBatchEvents(currentEvents, seenEventIds, replayMode, scopeChanged);
-    for (const event of currentEvents) {
-      seenEventIds.add(event.id);
     }
     if (!batch.length || reduceMotion) {
       return;
@@ -139,7 +121,7 @@
   });
 
   function startMotions(batch: ActionTimelineEvent[]) {
-    const motions = choreographBoardMotions(batch, players);
+    const motions = choreograph(batch, players).motions.filter((motion) => motion.space === 'board');
     if (!motions.length) {
       return;
     }
@@ -595,7 +577,7 @@
   }
 
   :global([data-anim-hidden='element']) {
-    opacity: 0;
+    visibility: hidden;
   }
 
   .board-move-card {
