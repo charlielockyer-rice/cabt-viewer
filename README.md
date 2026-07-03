@@ -102,6 +102,15 @@ VITE_CABT_CARD_BACK_IMAGE_URL=https://assets.example.com/cabt/cardback.png
 VITE_CABT_ENERGY_IMAGE_TEMPLATE=https://assets.example.com/cabt/energy/{slug}.webp
 ```
 
+For the Scrydex image CDN, use the `{setId}` token — `setImageMap` in
+`src/lib/game/cardImages.ts` translates CABT set codes (MEG, ASC, SVE, ...)
+into Scrydex set ids (me1, me2pt5, sve, ...). The final path segment picks the
+size: `small`, `medium`, or `large`.
+
+```bash
+VITE_CABT_CARD_IMAGE_TEMPLATE=https://images.scrydex.com/pokemon/{setId}-{number}/large
+```
+
 ## Run Local CABT Play
 
 Local play requires the Kaggle-provided sample submission files:
