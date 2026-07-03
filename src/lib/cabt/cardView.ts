@@ -38,7 +38,7 @@ export function cabtCardToView(cardId: number): CardView {
   };
 }
 
-function displayName(name: string): string {
+export function displayName(name: string): string {
   return name
     .replaceAll('{G}', 'Grass')
     .replaceAll('{R}', 'Fire')
@@ -51,7 +51,7 @@ function displayName(name: string): string {
     .replaceAll('{C}', 'Colorless');
 }
 
-function energySymbolToType(value: string | undefined): number | undefined {
+export function energySymbolToType(value: string | undefined): number | undefined {
   if (!value) {
     return undefined;
   }

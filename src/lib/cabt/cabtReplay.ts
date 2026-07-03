@@ -1,6 +1,7 @@
 import cardRows from './cardData.generated.json';
 import attackRows from './attackData.generated.json';
 import { actionAnimationTiming } from './actionAnimationSchedule';
+import { displayName, energySymbolToType } from './cardView';
 import { cabtLogsToTimeline } from './logFormat';
 import { CabtAreaType, CabtOptionType, CabtSelectContext } from './types';
 import { resolveCardImageUrl } from '../game/cardImages';
@@ -2823,34 +2824,6 @@ function attacksForCard(data: CardRow | undefined): CardView['attacks'] {
 
 function retreatCostFor(data: CardRow | undefined): number {
   return data?.retreat ?? data?.retreatCost ?? 0;
-}
-
-function displayName(name: string): string {
-  return name
-    .replaceAll('{G}', 'Grass')
-    .replaceAll('{R}', 'Fire')
-    .replaceAll('{W}', 'Water')
-    .replaceAll('{L}', 'Lightning')
-    .replaceAll('{P}', 'Psychic')
-    .replaceAll('{F}', 'Fighting')
-    .replaceAll('{D}', 'Darkness')
-    .replaceAll('{M}', 'Metal')
-    .replaceAll('{C}', 'Colorless');
-}
-
-function energySymbolToType(value: string | undefined): number | undefined {
-  if (!value) {
-    return undefined;
-  }
-  if (value.includes('{G}') || /grass/i.test(value)) return 1;
-  if (value.includes('{R}') || /fire/i.test(value)) return 2;
-  if (value.includes('{W}') || /water/i.test(value)) return 3;
-  if (value.includes('{L}') || /lightning/i.test(value)) return 4;
-  if (value.includes('{P}') || /psychic/i.test(value)) return 5;
-  if (value.includes('{F}') || /fighting/i.test(value)) return 6;
-  if (value.includes('{D}') || /dark/i.test(value)) return 7;
-  if (value.includes('{M}') || /metal/i.test(value)) return 8;
-  return 0;
 }
 
 function energyCostLabels(cost: string): string[] {

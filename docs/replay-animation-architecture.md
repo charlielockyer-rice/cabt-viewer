@@ -1,223 +1,176 @@
-# Replay Animation Architecture Plan
+# Replay Animation Architecture
 
-## Goal
+## Purpose
 
-Preserve the current replay animation language while replacing the fragile
-per-component ownership model. Moving card visuals should have exactly one
-owner, real DOM visibility should be centrally controlled, and handoff from an
-animated sprite to the final board state should be deterministic.
+The 2026 replay-animation rebuild makes animation intent an explicit contract
+between replay data, semantic anchors, shared visibility ownership, and two
+focused render layers. The goal is deterministic card motion and handoff without
+component-local hiding, DOM cloning, or duplicated event classification.
 
-This plan is intended to eliminate the recurring class of bugs we have seen:
-hand-card flicker, board Pokemon/tool flicker, missing cards after fast
-scrubbing, duplicate discard/play-zone cards, cards snapping out of the tilted
-board plane, and stale hidden attributes after replay scope changes.
+## Data Flow
 
-## Current Failure Mode
+CABT input starts as engine frames plus logs. `cabtReplayToSnapshot` turns those
+frames into replay data for the viewer. It is responsible for semantic grouping:
+raw log lines become action timeline events, related events are grouped into
+player-visible actions, and trainer effects that continue across multiple engine
+frames are collapsed into a single replay step when that is the visible action.
 
-Replay animation ownership is spread across many components. Board moves, hand
-reset, deck draw, deck reveal, hand play, attached-card movement, discard
-resolution, prize movement, attack, and ability animations all inspect events,
-clone DOM, set hidden attributes, run timers, and clean up independently.
+For grouped steps, `cabtReplayToSnapshot` also builds per-phase projected
+`GameView`s. A phase view is the real board state that should exist while one
+part of the action animates, so animation components do not invent temporary
+board state.
 
-That creates three structural problems:
+Replay steps expose animation phases as `{ key, view, actionTimeline,
+durationMs }`.
 
-- Multiple components can hide or reveal the same visual at different times.
-- DOM nodes can be replaced between phase views while a component still owns the
-  old element reference.
-- Timing and phase classification are duplicated between replay generation,
-  replay state, and animation components.
+The render layers receive the phase timeline and players, then call
+`choreograph(events, players, context)`. `choreograph` is a pure classifier: it
+does not read the DOM or mutate state. It returns card sprites and target-owned
+CSS effects for that phase. The optional `context` is the whole step timeline,
+used when a phase needs surrounding events, such as finding the attacker for a
+standalone damage phase.
 
-The durable fix is to make temporary animation ownership an explicit replay
-contract instead of something rediscovered from the DOM by each component.
+## Motion Contract
 
-## Target Model
+`choreograph` returns `{ motions: CardMotion[], effects: TargetEffect[] }`.
 
-### Typed Animation Anchors
+`CardMotion` is the sprite contract. Its fields are:
 
-Add a typed `AnimationAnchorRef` contract and matching `data-animation-*`
-attributes for every place a card can start, travel through, or land.
+- `id`: stable motion identity for rendering and cleanup.
+- `style`: visual path, such as `board-move`, `attached-move`, `deck-discard`,
+  `hand-play`, `deck-draw`, `hand-reset`, `prize-take`, `knock-out`,
+  `damage-float`, or `deck-shuffle`.
+- `space`: `board` for tilted-plane sprites, or `viewport` for
+  `position: fixed` sprites.
+- `player`: the owning player index.
+- `sprite`: Pokemon slot, card, flip-card, text label, or no rendered visual.
+- `from` and `to`: semantic anchors for source and destination.
+- `toFallbacks`: destination anchors tried in order when the primary `to`
+  anchor does not resolve.
+- `startMs` and `durationMs`: timing within the phase.
+- `toDeck` and `fromDeck`: deck-direction flags.
+- `waitForDestinationCard`: live-mode handoff waits for the exact destination
+  card before releasing.
+- `hide`: visibility claims to apply while the sprite owns the visual.
+- `hideResolvedTarget`: for hand plays, hide the resolved destination.
+- `evolve`: marks a hand play as an evolution flight, with target glow and slot
+  chrome fade behavior.
+- `mulligan`: refill existing hand slots by serial instead of appending.
+- `takeIndex` and `takeCount`: prize-take group metadata used to extrapolate
+  source positions after prize cards have left the DOM.
 
-The anchor model must distinguish a card visual from the slot or surface that
-contains it. For example, a bench Pokemon card, a bench slot surface, a discard
-top card, and a discard pile surface are separate anchors.
+`TargetEffect` is for animations owned by the real target element:
 
-Required anchors:
+- `id`: stable effect identity.
+- `kind`: `attach-under`, `prize-place`, `announce-attack`, `announce-ability`,
+  or `lunge`.
+- `anchor`: semantic target anchor.
+- `player`: owning player index.
+- `card`: optional card payload for effects that need card data.
+- `sourceSerial`: the hand-card serial an attachment visually departs from.
+- `order`: placement order within a grouped effect.
+- `label`: attack or ability text shown above a slot.
+- `targetAnchor`: defender anchor for lunge effects.
+- `startMs` and `durationMs`: timing within the phase.
 
-- hand card
-- hand insertion slot
-- deck top
-- discard top card
-- discard pile surface
-- play-zone card
-- stadium card
-- active Pokemon card
-- bench Pokemon card
-- bench slot surface
-- attached energy
-- attached tool
-- prize card or back by index
-- reveal/search card slot
+## Anchors
 
-### Central Visibility Manager
+Anchors are semantic DOM addresses, resolved at animation time by
+`resolveAnchor`. They describe game locations, not component instances:
 
-Replace component-local hidden maps and one-off hidden attributes with a central
-token-based visibility manager.
+- `slot`: active or bench slot by player and index.
+- `pokemon`: Pokemon by serial, or by card id plus player.
+- `deck`: a player's deck pile.
+- `discard`: discard pile, exact discard card, top card, or pile surface.
+- `stadium`: a player's stadium card, optionally by serial.
+- `attached`: attached energy or tool by attachment serial.
+- `hand`: a player's hand container.
+- `hand-slot`: a hand card slot by serial, index, or offset from the end.
+- `prize`: prize slot by player and index.
+- `playZone`: played-card zone, optionally by serial.
 
-Visibility claims should be keyed by semantic ownership, not only by
-`HTMLElement`:
+A resolved anchor returns both `element` and `geometry`. Visibility claims apply
+to `element`; sprite measurements use `geometry`. These are usually the same
+node, but deck geometry prefers the visible deck face, and attached-card
+geometry uses the owning Pokemon card footprint instead of the small badge.
 
-```ts
-type AnimationVisibilityClaim = {
-  scopeKey: string;
-  anchor: AnimationAnchorRef;
-  identity?: AnimationIdentity;
-  role: 'source' | 'destination' | 'handoff';
-};
-```
+Resolution prefers precise identity where available. Discard anchors can target
+the pile surface, require an exact card, or fall back from exact card to top card
+to pile. Hand slots resolve by serial first, then `fromEnd`, then `index`.
+Anchor queries skip `[data-anim-layer]` subtrees because sprites render real
+board components and must never become their own source or destination.
 
-The manager resolves claims onto the current DOM. If a phase change replaces an
-element, the claim still applies to the newly resolved element until released.
+## Visibility
 
-Rules:
+All animation-time hiding goes through `animVisibility` in
+`src/lib/anim/visibility.ts`. It has one public operation: claim an element with
+mode `contents` or `element`, and receive a release function.
 
-- Claims are ref-counted by anchor, identity, role, and scope.
-- Scope cleanup releases all claims for stale replay phases.
-- Handoff is standardized: reveal the destination DOM, wait for a prepaint
-  window, then remove the sprite.
-- Components should not set animation-specific hidden attributes directly once
-  their path is migrated.
+Claims are ref-counted per DOM element and per mode. If two motions hide the
+same element, the first release cannot reveal it while the second claim is still
+active. Element claims win over contents claims when both are present.
 
-### Replay Animation Plan
+The manager writes exactly one attribute: `data-anim-hidden`. Its value is
+`contents` or `element`; removing the last claim removes the attribute.
+Animation components should not set animation-specific hidden attributes.
 
-Extend replay phases with explicit animation intent:
+## Render Layers
 
-```ts
-type ReplayAnimationPhasePlan = {
-  key: string;
-  label?: string;
-  view: GameView;
-  durationMs: number;
-  motions: AnimationMotion[];
-  visibilityClaims: AnimationVisibilityClaim[];
-};
-```
+`BoardAnimationLayer.svelte` renders board-space sprites inside the tilted
+`.game-board-plane`. It handles board moves, attached-card moves, deck mill,
+deck placement, and shuffles. Geometry is measured with `localRectIn`, which
+accumulates offsets inside the untransformed board plane. The sprite inherits
+the same 3D transform as the real cards, so in-plane motion needs no perspective
+projection.
 
-Each motion carries the information needed to render and hand off without
-reclassifying events:
+`ViewportAnimationLayer.svelte` renders viewport-space sprites with
+`position: fixed`. It handles hand plays and evolutions, draws, mulligan resets,
+prize takes, damage floats, knock-outs, and target effects. Cross-plane landings
+use `planeGeometry.ts`; `cssMatrix3dForQuad` projects a flat sprite onto the
+board destination quad.
 
-```ts
-type AnimationMotion = {
-  id: string;
-  kind: string;
-  identity?: AnimationIdentity;
-  sourceAnchor?: AnimationAnchorRef;
-  targetAnchor?: AnimationAnchorRef;
-  coordinateSpace: 'board' | 'viewport' | 'cross-plane';
-  startMs: number;
-  durationMs: number;
-  spriteVisual: AnimationSpriteVisual;
-  handoffPolicy: AnimationHandoffPolicy;
-};
-```
+Target effects use `applyTargetEffect` on real elements. Attach slide-under,
+prize placement, attack and ability announcements, and lunges are not separate
+card sprites unless the motion contract says they are.
 
-The replay plan should carry phase and motion timing directly. Components should
-not need to recompute offsets from event kind strings.
+Replay and live play use different handoff policies. In replay, sprites and hide
+claims hold until the phase scope ends. Cleanup waits for a 40ms settle window
+and two pre-paint frames before release. In live play, per-motion timers release
+after travel; when required, the layer polls until the destination card exists.
 
-### Animation Orchestrator And Renderers
+## Invariants
 
-Use one orchestrator for ownership and several focused renderers for visuals.
+Exactly one system animates a given event. Old animation paths must be gated off
+for events owned by the new backbone.
 
-The orchestrator owns:
+Sprites render from view data through the normal board components, such as
+`BoardSlot` and `CardTile`. They do not clone live DOM nodes.
 
-- scope cleanup
-- visibility claims
-- stale timer guards
-- reduced-motion behavior
-- anchor resolution
-- source/destination snapshot timing
-- final handoff policy
+All animation-time hiding goes through the visibility manager and the single
+`data-anim-hidden` attribute.
 
-Renderers only render sprites and effects:
+Anchor queries skip `[data-anim-layer]` subtrees, so animation sprites cannot be
+resolved as live source or destination elements.
 
-- board-plane card moves
-- viewport and cross-plane card moves
-- reveal/search sessions
-- ability, attack, and damage pulses
+The moving visual has one owner. If the final game state already contains the
+destination card, that destination stays hidden only until the handoff. If the
+final game state omits the source card, the layer uses the previous visual
+state or a semantic sprite rather than letting the source disappear early.
 
-Avoid turning this into a single large component that owns every visual detail.
+Board-plane animations and viewport animations do not share coordinate systems.
+Cards that start and end on the tilted board stay in the board plane. Cards
+moving between hand and board use the viewport layer and explicit cross-plane
+projection.
 
-### Reveal/Search Sessions
+## Remaining Migrations
 
-Model deck search and reveal flows as a session, not as a generic card fan.
+`DeckRevealAnimation.svelte` still owns reveal and search sessions. Those flows
+need a session model before they can move fully onto this backbone.
 
-A reveal session can include:
+Live play still feeds cumulative timelines through the gate. It should be
+unified with the replay phase model so the same event ownership and handoff
+rules apply everywhere.
 
-- cards leaving deck
-- revealed group holding on the board
-- selected card identification
-- selected card transitioning into the standard revealed-card presentation
-- unselected cards returning to deck
-- selected card moving to hand, attach target, or another destination
-- shuffle motion
-
-Pokegear should be the main proof case for this path.
-
-## Migration Order
-
-1. Add typed anchors and an anchor resolver without changing visual behavior.
-2. Add and test the central visibility manager.
-3. Convert board moves first. This covers Boss, Switch, active/bench swaps,
-   counter-stadium displacement, and board-space discard movement.
-4. Convert discard, play-zone, and stadium handoff ownership.
-5. Convert hand arrivals: draw, prize take, reveal take, search-to-hand, and
-   mulligan reset/draw.
-6. Convert attached-card movement after board moves. Attached moves are harder
-   because sources can disappear and old geometry may need to be snapshotted.
-7. Convert reveal/search sessions, using Pokegear as the main acceptance case.
-8. Convert ability, attack, damage, and other pulse effects to consume the same
-   phase plan.
-9. Delete obsolete component-local hidden attributes, refcount maps, clone
-   timers, and duplicated timing code after each path is migrated.
-
-During migration, gate old animation components off for phase keys handled by
-the new orchestrator. The old and new systems must not animate or hide the same
-event at the same time.
-
-## Replay Data Contract
-
-Keep `cabtReplay.ts` responsible for semantic grouping and projected phase
-views, but move animation-specific hiding out of `GameView`.
-
-The target state is:
-
-- `GameView` describes real visible game state.
-- `ReplayAnimationPhasePlan` describes temporary animation ownership and
-  motion.
-- The visibility manager decides what real DOM is hidden during the animation.
-
-Existing `animationHidden` flags can remain as a legacy bridge only while their
-animation path has not been migrated.
-
-## Regression Coverage
-
-Add focused tests for:
-
-- Boss/Switch repeated prev-next: no Pokemon or tool flicker.
-- Buddy-Buddy Poffin: multiple deck-to-bench placements stay one effect and
-  land in the board frame.
-- Manual repeated benching: two identical hand-to-bench actions stay separate.
-- Mulligan fast-clicking: no missing hand cards and no partial outgoing card
-  slivers.
-- Pokegear: selected card reveals cleanly, unselected cards return, selected
-  card lands in hand without flicker.
-- Colress, Hilda, and Lillie-style search-to-hand effects.
-- Enhanced Hammer: attached energy slides from under the owning Pokemon to the
-  top of discard.
-- Counter-stadium: old stadium moves to its owner's discard in board space.
-- Discard pile count stays above incoming discard animations.
-- Top/bottom player rotation does not invert owner discard or board anchors.
-- Missing-anchor fallback fails without leaving real cards hidden forever.
-- Reduced motion still performs deterministic handoff.
-
-Run `npm test -- --run` and `npm run build` before committing meaningful
-implementation slices.
+`animationHidden` still exists in `GameView` as a bridge for reveal-take and
+deck-place phases. Once those paths migrate, keep hiding inside the visibility
+manager only.
