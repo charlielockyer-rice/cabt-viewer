@@ -285,7 +285,8 @@
       const spriteWidth = sourceRect.width + padPx * 2;
       const spriteHeight = sourceRect.height + padPx * 2;
       const rotation = source.element.closest('.top-active-slot, .top-bench-row') ? 180 : 0;
-      releases.push(animVisibility.claim(source.element, 'contents'));
+      const sourceRelease = animVisibility.claim(source.element, 'contents');
+      releases.push(sourceRelease);
       sprites = [...sprites, {
         id: motion.id,
         style: 'knock-out',
@@ -314,6 +315,7 @@
         if (startedGeneration !== generation) {
           return;
         }
+        sourceRelease();
         sprites = sprites.filter((sprite) => sprite.id !== motion.id);
       }, motion.durationMs + replayAnimationPhaseGapMs);
       timers.push(cleanup);
@@ -347,19 +349,21 @@
       return;
     }
 
+    const motionReleases: ReleaseClaim[] = [];
     if (motion.hideResolvedTarget) {
       const mode = hideModeForTarget(target.resolved.element, target.anchor);
       if (mode) {
-        releases.push(animVisibility.claim(target.resolved.element, mode));
+        motionReleases.push(animVisibility.claim(target.resolved.element, mode));
       }
     }
     if (motion.evolve) {
-      releases.push(applyTargetEffect(target.resolved.element, 'data-hand-evolve-animation-active', {
+      motionReleases.push(applyTargetEffect(target.resolved.element, 'data-hand-evolve-animation-active', {
         '--hand-evolve-delay': `${motion.startMs}ms`,
         '--hand-evolve-move-ms': `${evolveMoveMs}ms`,
         '--hand-evolve-visible-ms': `${evolveVisibleMs}ms`,
       }));
     }
+    releases.push(...motionReleases);
 
     const moveMs = motion.evolve ? evolveMoveMs : handPlayMoveMs;
     const visibleMs = motion.evolve ? evolveVisibleMs : moveMs;
@@ -386,6 +390,9 @@
     const timer = setTimeout(() => {
       if (startedGeneration !== generation) {
         return;
+      }
+      for (const release of motionReleases) {
+        release();
       }
       sprites = sprites.filter((sprite) => sprite.id !== motion.id);
     }, motion.startMs + visibleMs + 24);
@@ -523,6 +530,7 @@
       return;
     }
     const started: CardMotion[] = [];
+    const sourceReleases: ReleaseClaim[] = [];
     for (const motion of motions) {
       const player = motion.player;
       const serial = motion.from.kind === 'hand-slot' ? motion.from.serial : undefined;
@@ -538,7 +546,9 @@
       }
       const deckCenter = centerOf(deckRect);
       const cardCenter = centerOf(entry.visualRect);
-      releases.push(animVisibility.claim(entry.frameElement, 'element'));
+      const release = animVisibility.claim(entry.frameElement, 'element');
+      releases.push(release);
+      sourceReleases.push(release);
       started.push(motion);
       const card = motion.sprite.kind === 'card' ? motion.sprite.card : undefined;
       sprites = [...sprites, {
@@ -571,6 +581,13 @@
       if (startedGeneration !== generation) {
         return;
       }
+      // In replay the reset sources stay hidden until the phase scope ends;
+      // in live play the view has already removed them, so release now.
+      if (!replayMode) {
+        for (const release of sourceReleases) {
+          release();
+        }
+      }
       sprites = sprites.filter((sprite) => !spriteIds.has(sprite.id));
     }, Math.max(...started.map((motion) => motion.startMs)) + resetMoveMs + 120);
     timers.push(timer);
@@ -594,6 +611,7 @@
       }
       const concealed = hand.element.classList.contains('concealed');
       const layout = revealLayout(count);
+      const targetReleases: ReleaseClaim[] = [];
       let maxEndMs = 0;
 
       playerMotions.forEach((motion) => {
@@ -612,7 +630,9 @@
         const durationMs = reveal ? actionAnimationTiming.prizeTakeMs : prizeTakeDirectMs;
         maxEndMs = Math.max(maxEndMs, motion.startMs + durationMs);
         if (targetElement) {
-          releases.push(animVisibility.claim(targetElement, 'element'));
+          const release = animVisibility.claim(targetElement, 'element');
+          releases.push(release);
+          targetReleases.push(release);
         }
         sprites = [...sprites, {
           id: motion.id,
@@ -648,6 +668,9 @@
       const timer = setTimeout(() => {
         if (startedGeneration !== generation) {
           return;
+        }
+        for (const release of targetReleases) {
+          release();
         }
         sprites = sprites.filter((sprite) => !spriteIds.has(sprite.id));
       }, maxEndMs + 20);
