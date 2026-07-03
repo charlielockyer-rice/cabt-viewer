@@ -63,48 +63,35 @@ being cut off by scroll containers.
 
 ## Animation Development
 
-Animations should have one clear owner for the moving visual. When the final
-game state already contains the destination card, hide that destination only
-until the animated card hands off to it. When the final game state omits the
-source card, snapshot the previous visual state and animate that snapshot rather
-than letting the source disappear.
+Read `docs/replay-animation-architecture.md` before touching animation code.
+The short version: `choreograph()` in `src/lib/anim/motions.ts` is the single
+classifier from timeline events to motions and target effects; the render
+layers (`BoardAnimationLayer`, `ViewportAnimationLayer`, `RevealSessionLayer`)
+resolve anchors and execute; all animation-time hiding goes through
+`animVisibility` and the one `data-anim-hidden` attribute.
 
-Keep card motion in the correct frame of reference for the whole animation. If a
-card starts or ends in a tilted board zone, either animate inside that coordinate
-system or smoothly transition between the hand and board transforms. Avoid end
-snaps, duplicate cards, and placeholder overlays that visibly change badges,
-card aspect ratios, or stack layout.
+Rules that keep this system flicker-free:
 
-Polished animation coverage requires a real visible source anchor and a matching
-motion component. Do not mark projected state changes as polished just because
-the replay state updates correctly; pre-evolution stack cards and other hidden
-sub-zones need explicit DOM anchors before they can claim motion coverage.
-
-Timer-driven animation components must be scoped to the replay phase. Any
-timeouts, sprite nodes, temporary CSS classes, and `data-*` hidden flags should
-be tracked centrally and cleared on replay-scope changes and component destroy.
-Stale timers that reveal or hide old DOM after scrubbing are a common source of
-flicker.
-
-For handoffs, keep exactly one visible owner. Hide the destination while the
-sprite is moving, keep the sprite visible at the destination, then reveal the
-real destination and remove the sprite in the same handoff moment. Avoid fading
-the sprite out before the destination appears.
-When multiple sprites share a source or destination in the same phase, hidden
-DOM flags must be ref-counted so the first sprite to finish cannot reveal an
-element still owned by another sprite.
-Replay board-position moves, including Switch and active/bench swaps, should
-hold the source board hidden until the replay scope advances to the final view.
-Do not poll destination readiness or reveal those old slots from inside the
-animation component; the phase transition is the handoff.
-Cloned board-move sprites should force eager/synchronous image loading for
-visible card art and attached overlays; lazy image decoding can still cause a
-flash even when ownership and hidden flags are otherwise correct.
-
-Board-plane animations and viewport/hand animations are different coordinate
-spaces. A card that starts and ends on the tilted board should stay inside the
-board plane. A card moving between the board and the hand needs an explicit
-cross-plane transition; do not fake a hand target inside the tilted board layer.
+- One system animates a given event. New animation behavior goes into the
+  choreographer and an existing layer; do not add per-component event
+  classification, private hidden attributes, or component-local hide maps.
+- Sprites render from view data through `BoardSlot`/`CardTile`. Never clone
+  live DOM for a sprite, and never let an anchor query resolve inside a
+  `[data-anim-layer]` subtree.
+- When the final game state already contains the destination card, hide that
+  destination with a visibility claim only until handoff. When the final state
+  omits the source, use the pre-render snapshots (hand cards, attached badges)
+  rather than letting the source pop out early.
+- Timers belong to a layer, guarded by its generation counter, and are cleared
+  on scope changes and destroy. In replay, board-space sprites and claims hold
+  until the phase scope ends; the phase transition is the handoff. Do not
+  reveal old slots from inside a renderer.
+- Board-plane and viewport animations are different coordinate spaces. A card
+  that starts and ends on the tilted board stays inside the board plane
+  (offset-sum geometry); a card crossing between hand and board uses the
+  viewport layer and the homography in `planeGeometry.ts`.
+- Preserve the animation look. Keyframes, easings, and timing constants are
+  the product; change them deliberately, not as a refactor side effect.
 
 ## Checks
 
