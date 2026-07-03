@@ -710,11 +710,13 @@ function playedCardIsContinualEffect(
   const cardId = Number(params?.cardId);
   const serial = Number(params?.serial);
   for (const entry of entries.slice(startIndex, startIndex + 2)) {
-    const effect = (entry.frame.select as Record<string, unknown> | null | undefined)?.effect as
-      | Record<string, unknown>
-      | null
-      | undefined;
-    if (!effect) {
+    const select = entry.frame.select as Record<string, unknown> | null | undefined;
+    const effect = select?.effect as Record<string, unknown> | null | undefined;
+    // The engine reports select.effect during ANY card's resolution. A card is
+    // only parked for the turn when the effect persists while the player is
+    // already back at the main action menu (the select with an End option);
+    // mid-effect choice prompts never offer End.
+    if (!effect || !select || !selectHasEndOption(select)) {
       continue;
     }
     const effectSerial = Number(effect.serial);
@@ -727,6 +729,14 @@ function playedCardIsContinualEffect(
     }
   }
   return false;
+}
+
+function selectHasEndOption(select: Record<string, unknown>): boolean {
+  const options = Array.isArray(select.option) ? select.option : [];
+  return options.some((option) => {
+    const type = (option as Record<string, unknown> | null | undefined)?.type;
+    return type === CabtOptionType.END || type === 'End';
+  });
 }
 
 function startGroupHasTerminalResolvingEffect(group: ReplayActionGroup): boolean {
