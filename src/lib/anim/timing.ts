@@ -118,10 +118,11 @@ function animationPhaseForEvent(event: ActionTimelineEvent): AnimationPhase | nu
   }
 
   if (event.kind === 'HpChange' || event.kind === 'HPChange') {
+    // Multi-target attacks land all their damage at once.
     return {
       key: `Damage:${playerKey}`,
       durationMs: actionAnimationTiming.damageMs,
-      stepMs: actionAnimationTiming.damageMs,
+      stepMs: 0,
     };
   }
 

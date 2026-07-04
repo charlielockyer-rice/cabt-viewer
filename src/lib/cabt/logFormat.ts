@@ -76,6 +76,9 @@ export function formatCabtLog(log: Record<string, unknown>): string {
       return `${actor} used ${attackName(Number(log.attackId))} with ${card}.`;
     case 'Ability': {
       const ability = abilityName(log);
+      if (ability === 'Retreat') {
+        return `${actor} retreated ${card}.`;
+      }
       // Stadium effects: the "ability" IS the card, so "with <card>" is noise.
       return ability === card
         ? `${actor} used ${ability}.`

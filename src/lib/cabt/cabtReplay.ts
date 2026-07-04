@@ -251,6 +251,7 @@ function logsWithSynthesizedAbility(
     return logs;
   }
   const abilityLog = abilityLogForSelectedOption(previousFrame, frame)
+    ?? retreatLogForSelectedOption(previousFrame, frame)
     ?? abilityLogForConfirmedTrigger(previousFrame, frame)
     ?? abilityLogForTriggeredEvolution(previousFrame, logs);
   return abilityLog ? [abilityLog, ...logs] : logs;
@@ -322,6 +323,35 @@ function abilityLogForSelectedOption(
     abilityName,
     area,
     index,
+  };
+}
+
+// Retreating is chosen from the main menu like an ability; announcing it the
+// same way gives the badge, and the effect bracket then folds the energy
+// discards and the switch into one step.
+function retreatLogForSelectedOption(
+  previousFrame: CabtVisualizeFrame,
+  frame: CabtVisualizeFrame,
+): Record<string, unknown> | null {
+  const selected = selectedOptionFromAction(previousFrame.select, frame.action);
+  const option = selected?.option;
+  if (!option || (option.type !== 'Retreat' && option.type !== CabtOptionType.RETREAT)) {
+    return null;
+  }
+  const playerIndex = numberField(option.playerIndex) ?? selected.playerIndex;
+  if (playerIndex === undefined) {
+    return null;
+  }
+  const active = previousFrame.current.players[playerIndex]?.active?.[0];
+  if (!active) {
+    return null;
+  }
+  return {
+    type: 'Ability',
+    playerIndex,
+    cardId: active.id,
+    serial: active.serial,
+    abilityName: 'Retreat',
   };
 }
 
@@ -644,7 +674,7 @@ function abilityEffectContinuationFrom(
 ): CardEffectContinuation | null {
   const abilityEvent = firstGroup.events.find((event) => {
     const params = event.params as Record<string, unknown> | undefined;
-    return event.kind === 'Ability' && !params?.trigger;
+    return (event.kind === 'Ability' && !params?.trigger) || event.kind === 'Attack';
   });
   const playerIndex = abilityEvent?.playerIndex;
   if (!abilityEvent || playerIndex === undefined) {
@@ -659,11 +689,18 @@ function abilityEffectContinuationFrom(
 
   const events = [...firstGroup.events];
   let endIndex = startIndex;
+  // Attack consequences (damage, knockouts, prize takes) land on the
+  // defender, so attack brackets admit consequence kinds for either player;
+  // ability brackets stay owner-only.
+  const attackBracket = abilityEvent.kind === 'Attack';
   const maxLookahead = Math.min(entries.length, startIndex + 12);
   for (let index = startIndex + 1; index < maxLookahead; index += 1) {
     const entry = entries[index];
     const frameEvents = entry.groups.flatMap((group) => group.events);
-    if (!frameEvents.every((event) => event.playerIndex === undefined || event.playerIndex === playerIndex)) {
+    const admissible = attackBracket
+      ? frameEvents.every((event) => isAttackConsequenceKind(event.kind))
+      : frameEvents.every((event) => event.playerIndex === undefined || event.playerIndex === playerIndex);
+    if (!admissible) {
       break;
     }
     if (frameEvents.length) {
@@ -830,6 +867,24 @@ function playedCardIsContinualEffect(
     }
   }
   return false;
+}
+
+function isAttackConsequenceKind(kind: string | undefined): boolean {
+  return [
+    'HpChange',
+    'HPChange',
+    'MoveCard',
+    'MoveCardReverse',
+    'Poisoned',
+    'Burned',
+    'Asleep',
+    'Paralyzed',
+    'Confused',
+    'Coin',
+    'Devolve',
+    'MoveAttached',
+    'Shuffle',
+  ].includes(kind ?? '');
 }
 
 function selectHasEndOption(select: Record<string, unknown>): boolean {
@@ -2024,7 +2079,7 @@ function animationPhaseStepMs(key: string): number {
     return actionAnimationTiming.abilityAnnounceMs;
   }
   if (key.startsWith('Damage:')) {
-    return actionAnimationTiming.damageMs;
+    return 0;
   }
   if (key.startsWith('KnockOut:')) {
     return actionAnimationTiming.knockOutMs;
