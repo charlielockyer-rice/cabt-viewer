@@ -1588,9 +1588,14 @@ function groupedStepAnimationPhases(
     // Cards dumped from hand land on top of the discard, so the pile keeps
     // showing its previous top card while the sprites are in flight.
     const handToDiscardPhase = phase.key.startsWith('HandMove:') && phase.key.endsWith(`:${CabtAreaType.DISCARD}`);
-    const phaseView = phase.usesSourceView
+    const projectedView = phase.usesSourceView
       ? animationSourceViewForPhase(phaseStartView, currentView, phase)
       : projectedViewForEvents(phaseStartView, currentView, phase.events, handToDiscardPhase ? { deferDiscardArrivals: true } : {});
+    // Board-state events sync whole slots to the step's end state, which
+    // would show energy/tool badges before their attach phase plays. Strip
+    // attachments that arrive in later phases of this step.
+    const futureEvents = eventPhases.slice(eventPhases.indexOf(phase) + 1).flatMap((later) => later.events);
+    const phaseView = gameViewWithDeferredAttachments(projectedView, futureEvents);
     phases.push({
       key: phase.key,
       label: animationPhaseLabel(phase),
@@ -1872,6 +1877,34 @@ function mergedKnownCards(left: CardView[], right: CardView[]): CardView[] {
     ...left,
     ...right.filter((card) => !left.some((existing) => sameKnownCard(existing, card))),
   ];
+}
+
+function gameViewWithDeferredAttachments(view: GameView, futureEvents: ActionTimelineEvent[]): GameView {
+  const serials = new Set(futureEvents
+    .filter((event) => {
+      const params = event.params as Record<string, unknown> | undefined;
+      const toArea = Number(params?.toArea);
+      return event.kind === 'Attach'
+        || (isMoveCardKind(event.kind) && (toArea === CabtAreaType.ENERGY || toArea === CabtAreaType.TOOL));
+    })
+    .map((event) => Number((event.params as Record<string, unknown> | undefined)?.serial))
+    .filter((serial) => Number.isFinite(serial)));
+  if (!serials.size) {
+    return view;
+  }
+  const stripSlot = (slot: PokemonSlotView): PokemonSlotView => ({
+    ...slot,
+    energy: slot.energy.filter((card) => card.serial === undefined || !serials.has(card.serial)),
+    tools: slot.tools.filter((card) => card.serial === undefined || !serials.has(card.serial)),
+  });
+  return {
+    ...view,
+    players: view.players.map((player) => ({
+      ...player,
+      active: stripSlot(player.active),
+      bench: player.bench.map(stripSlot),
+    })),
+  };
 }
 
 // Attaches whose card was never in a hand present as a deck reveal before
