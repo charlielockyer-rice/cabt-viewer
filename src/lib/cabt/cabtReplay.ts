@@ -870,11 +870,19 @@ function playedCardIsContinualEffect(
 }
 
 function isAttackConsequenceKind(kind: string | undefined): boolean {
+  // Anything an attack's own resolution can produce, for either player:
+  // damage, knockouts and prize movement, status, coin flips, self-switches
+  // (Jetting Blow), energy/tool movement, and effect draws. Kinds that start
+  // a new action (Play, Attack, Ability, TurnEnd/TurnStart) end the bracket.
   return [
     'HpChange',
     'HPChange',
     'MoveCard',
     'MoveCardReverse',
+    'Switch',
+    'Attach',
+    'Draw',
+    'DrawReverse',
     'Poisoned',
     'Burned',
     'Asleep',
