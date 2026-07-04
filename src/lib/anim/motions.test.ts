@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CabtAreaType } from '../cabt/types';
 import type { ActionTimelineEvent, CardView, PlayerView, PokemonSlotView } from '../game/types';
 import { choreograph } from './motions';
+import { actionAnimationTiming } from './timing';
 
 function choreographBoardMotions(events: ActionTimelineEvent[], players: PlayerView[]) {
   return choreograph(events, players).motions.filter((motion) => motion.space === 'board');
@@ -231,6 +232,25 @@ describe('choreographBoardMotions', () => {
 });
 
 describe('choreograph viewport family', () => {
+  it('emits staggered coin flip motions with per-player group metadata', () => {
+    const players = [player(0), player(1)];
+    const { motions } = choreograph([
+      event('Coin', 0, { head: true }),
+      event('Coin', 0, { head: false }),
+    ], players);
+
+    expect(motions).toHaveLength(2);
+    expect(motions.map((motion) => motion.style)).toEqual(['coin-flip', 'coin-flip']);
+    expect(motions.every((motion) => motion.space === 'viewport')).toBe(true);
+    expect(motions.map((motion) => motion.sprite.kind)).toEqual(['none', 'none']);
+    expect(motions.map((motion) => motion.coinHead)).toEqual([true, false]);
+    expect(motions.map((motion) => motion.coinIndex)).toEqual([0, 1]);
+    expect(motions.map((motion) => motion.coinCount)).toEqual([2, 2]);
+    expect(motions.map((motion) => motion.from)).toEqual([{ kind: 'deck', player: 0 }, { kind: 'deck', player: 0 }]);
+    expect(motions.map((motion) => motion.to)).toEqual([{ kind: 'deck', player: 0 }, { kind: 'deck', player: 0 }]);
+    expect(motions[1].startMs - motions[0].startMs).toBe(actionAnimationTiming.coinFlipStepMs);
+  });
+
   it('classifies hand plays with destination fallbacks and staggered evolutions', () => {
     const players = [player(0, card(100, 1)), player(1)];
     const events = [

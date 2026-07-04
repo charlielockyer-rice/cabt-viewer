@@ -38,6 +38,7 @@
     topHand: boolean;
     direct: boolean;
     evolve: boolean;
+    coinHead?: boolean;
     css: string;
   };
 
@@ -62,6 +63,7 @@
   const resetMoveMs = 360;
   const prizeTakeDirectMs = 520;
   const prizePlaceHandoffMs = 304;
+  const coinSizePx = 64;
   const cardRatio = 88 / 63;
 
   let {
@@ -160,6 +162,9 @@
     startPrizeTakes(mine.filter((motion) => motion.style === 'prize-take'), startedGeneration);
     for (const motion of mine.filter((motion) => motion.style === 'damage-float')) {
       startDamageFloat(motion, startedGeneration);
+    }
+    for (const motion of mine.filter((motion) => motion.style === 'coin-flip')) {
+      startCoinFlip(motion, startedGeneration);
     }
     for (const motion of mine.filter((motion) => motion.style === 'knock-out')) {
       startKnockOut(motion, startedGeneration);
@@ -260,6 +265,42 @@
       }
       sprites = sprites.filter((sprite) => sprite.id !== motion.id);
     }, motion.startMs + motion.durationMs);
+    timers.push(timer);
+  }
+
+  function startCoinFlip(motion: CardMotion, startedGeneration: number) {
+    const boardRect = document.querySelector('.playmat')?.getBoundingClientRect();
+    const centerX = boardRect ? boardRect.left + boardRect.width / 2 : window.innerWidth / 2;
+    const centerY = boardRect ? boardRect.top + boardRect.height * 0.5 : window.innerHeight * 0.47;
+    const index = motion.coinIndex ?? 0;
+    const count = motion.coinCount ?? 1;
+    const offsetX = (index - (count - 1) / 2) * (coinSizePx * 1.2);
+    const coinHead = motion.coinHead === true;
+    sprites = [...sprites, {
+      id: motion.id,
+      style: 'coin-flip',
+      text: coinHead ? 'Heads' : 'Tails',
+      reveal: false,
+      concealed: false,
+      topHand: false,
+      direct: false,
+      evolve: false,
+      coinHead,
+      css: [
+        `left: ${(centerX + offsetX).toFixed(1)}px`,
+        `top: ${centerY.toFixed(1)}px`,
+        `--coin-size: ${coinSizePx}px`,
+        `--coin-delay: ${motion.startMs}ms`,
+        `--coin-duration: ${motion.durationMs}ms`,
+        `--coin-end-rotation: ${coinHead ? 1800 : 1980}deg`,
+      ].join('; '),
+    }];
+    const timer = setTimeout(() => {
+      if (startedGeneration !== generation) {
+        return;
+      }
+      sprites = sprites.filter((sprite) => sprite.id !== motion.id);
+    }, motion.startMs + motion.durationMs + 60);
     timers.push(timer);
   }
 
@@ -870,6 +911,7 @@
   let resetSprites = $derived(sprites.filter((sprite) => sprite.style === 'hand-reset'));
   let prizeTakeSprites = $derived(sprites.filter((sprite) => sprite.style === 'prize-take'));
   let attackSprites = $derived(sprites.filter((sprite) => sprite.style === 'damage-float' || sprite.style === 'knock-out'));
+  let coinSprites = $derived(sprites.filter((sprite) => sprite.style === 'coin-flip'));
 </script>
 
 <span class="viewport-anim-layer" data-anim-layer aria-hidden="true">
@@ -884,6 +926,18 @@
           </span>
         </span>
       {/if}
+    {/each}
+  </span>
+
+  <span class="fixed-sublayer coin-sublayer">
+    {#each coinSprites as sprite (sprite.id)}
+      <span class="coin-flip-sprite" style={sprite.css}>
+        <span class="coin-flip-coin">
+          <span class="coin-face coin-heads"></span>
+          <span class="coin-face coin-tails">×</span>
+        </span>
+        <span class="coin-result-caption">{sprite.text}</span>
+      </span>
     {/each}
   </span>
 
@@ -961,6 +1015,11 @@
     z-index: 30;
   }
 
+  .coin-sublayer {
+    z-index: 44;
+    perspective: 900px;
+  }
+
   .draw-sublayer {
     z-index: 32;
   }
@@ -1013,6 +1072,141 @@
       linear-gradient(145deg, #203654, #111a2c);
     background-size: cover, auto, auto, auto;
     background-position: center;
+  }
+
+  /* --- coin flip --- */
+
+  .coin-flip-sprite {
+    position: fixed;
+    display: grid;
+    justify-items: center;
+    width: var(--coin-size, 64px);
+    height: calc(var(--coin-size, 64px) + 28px);
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    transform-style: preserve-3d;
+  }
+
+  .coin-flip-coin {
+    position: relative;
+    display: block;
+    width: var(--coin-size, 64px);
+    height: var(--coin-size, 64px);
+    border-radius: 50%;
+    transform-style: preserve-3d;
+    transform-origin: center;
+    animation: coin-flip var(--coin-duration, 920ms) cubic-bezier(0.16, 0.84, 0.26, 1) var(--coin-delay) both;
+    will-change: transform, opacity;
+  }
+
+  .coin-face {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    box-sizing: border-box;
+    border-radius: 50%;
+    backface-visibility: hidden;
+    box-shadow:
+      0 14px 26px rgba(15, 23, 42, 0.28),
+      0 0 0 1px rgba(255, 255, 255, 0.48) inset,
+      0 0 0 2px rgba(15, 23, 42, 0.22);
+  }
+
+  .coin-heads {
+    transform: translateZ(1px);
+    border: 2px solid rgba(255, 255, 255, 0.64);
+    background:
+      radial-gradient(circle at 34% 26%, rgba(255, 255, 255, 0.96) 0 8%, transparent 9%),
+      radial-gradient(circle at 38% 30%, #fff7ad 0 0, #facc15 38%, #d97706 72%, #92400e 100%);
+  }
+
+  .coin-heads::after {
+    content: "";
+    width: 42%;
+    height: 42%;
+    border: 4px solid rgba(255, 255, 255, 0.92);
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px rgba(146, 64, 14, 0.18);
+  }
+
+  .coin-tails {
+    transform: rotateX(180deg) translateZ(1px);
+    border: 2px solid rgba(226, 232, 240, 0.5);
+    background:
+      radial-gradient(circle at 34% 26%, rgba(255, 255, 255, 0.36) 0 9%, transparent 10%),
+      radial-gradient(circle at 50% 50%, #64748b 0 0, #334155 48%, #0f172a 100%);
+    color: rgba(255, 255, 255, 0.92);
+    font-size: 36px;
+    font-weight: 900;
+    line-height: 1;
+    text-shadow: 0 2px 6px rgba(15, 23, 42, 0.38);
+  }
+
+  .coin-result-caption {
+    position: absolute;
+    top: calc(var(--coin-size, 64px) + 7px);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 48px;
+    height: 22px;
+    padding: 0 9px;
+    border-radius: 999px;
+    background: rgba(17, 24, 39, 0.92);
+    color: #fff;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.28);
+    font-size: 11px;
+    font-weight: 900;
+    line-height: 1;
+    letter-spacing: 0;
+    opacity: 0;
+    transform: translateY(-2px) scale(0.94);
+    animation: coin-result-caption var(--coin-duration, 920ms) ease-out var(--coin-delay) both;
+  }
+
+  @keyframes coin-flip {
+    0% {
+      opacity: 0;
+      transform: translate3d(0, 18px, 0) scale(0.4) rotateX(0deg);
+    }
+    6% {
+      opacity: 1;
+      transform: translate3d(0, 8px, 0) scale(0.74) rotateX(180deg);
+    }
+    24% {
+      opacity: 1;
+      transform: translate3d(0, -34px, 0) scale(1) rotateX(720deg);
+    }
+    65% {
+      opacity: 1;
+      transform: translate3d(0, -10px, 0) scale(1) rotateX(var(--coin-end-rotation));
+    }
+    88% {
+      opacity: 1;
+      transform: translate3d(0, -10px, 0) scale(1) rotateX(var(--coin-end-rotation));
+    }
+    100% {
+      opacity: 0;
+      transform: translate3d(0, -18px, 0) scale(0.94) rotateX(var(--coin-end-rotation));
+    }
+  }
+
+  @keyframes coin-result-caption {
+    0%,
+    64% {
+      opacity: 0;
+      transform: translateY(-2px) scale(0.94);
+    }
+    70%,
+    88% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.98);
+    }
   }
 
   /* --- deck draw --- */
@@ -1831,6 +2025,8 @@
     .hand-reset-card-motion.revealed .hand-reset-card-inner,
     .hand-play-card,
     .hand-play-card.evolving .hand-play-card-body,
+    .coin-flip-coin,
+    .coin-result-caption,
     .attack-damage-number,
     .attack-ko-card,
     :global(.board-slot[data-attack-announce-active='true']),

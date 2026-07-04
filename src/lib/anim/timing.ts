@@ -21,6 +21,8 @@ export const actionAnimationTiming = {
   abilityAnnounceMs: 560,
   damageMs: 320,
   damageVisualMs: 560,
+  coinFlipMs: 920,
+  coinFlipStepMs: 140,
   knockOutMs: 620,
   boardMoveMs: 520,
 } as const;
@@ -123,6 +125,14 @@ function animationPhaseForEvent(event: ActionTimelineEvent): AnimationPhase | nu
       key: `Damage:${playerKey}`,
       durationMs: actionAnimationTiming.damageMs,
       stepMs: 0,
+    };
+  }
+
+  if (event.kind === 'Coin') {
+    return {
+      key: `Coin:${playerKey}`,
+      durationMs: actionAnimationTiming.coinFlipMs,
+      stepMs: actionAnimationTiming.coinFlipStepMs,
     };
   }
 

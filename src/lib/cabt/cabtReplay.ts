@@ -1818,6 +1818,9 @@ function animationPhaseKey(event: ActionTimelineEvent): string | null {
   if (event.kind === 'HpChange' || event.kind === 'HPChange') {
     return `Damage:${playerKey}`;
   }
+  if (event.kind === 'Coin') {
+    return `Coin:${playerKey}`;
+  }
   if (event.kind === 'MoveCard') {
     if (isBoardPositionMove(fromArea, toArea)) {
       return `BoardMove:${playerKey}`;
@@ -2049,6 +2052,9 @@ function animationPhaseCardDurationMs(key: string): number {
   if (key.startsWith('Damage:')) {
     return actionAnimationTiming.damageMs;
   }
+  if (key.startsWith('Coin:')) {
+    return actionAnimationTiming.coinFlipMs;
+  }
   if (key.startsWith('KnockOut:')) {
     return actionAnimationTiming.knockOutMs;
   }
@@ -2100,6 +2106,9 @@ function animationPhaseStepMs(key: string): number {
   }
   if (key.startsWith('Damage:')) {
     return 0;
+  }
+  if (key.startsWith('Coin:')) {
+    return actionAnimationTiming.coinFlipStepMs;
   }
   if (key.startsWith('KnockOut:')) {
     return actionAnimationTiming.knockOutMs;

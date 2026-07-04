@@ -27,6 +27,7 @@ export type MotionStyle =
   | 'prize-take'
   | 'knock-out'
   | 'damage-float'
+  | 'coin-flip'
   | 'deck-shuffle'
   // Reveal-session styles: consumed by the stateful reveal renderer. `reveal`
   // and `search-reveal` create session sprites at the deck; `reveal-take` and
@@ -68,6 +69,10 @@ export type CardMotion = {
   // source rects of prize slots that already left the DOM.
   takeIndex?: number;
   takeCount?: number;
+  // coin-flip: result and position within this player's coin group.
+  coinHead?: boolean;
+  coinIndex?: number;
+  coinCount?: number;
   // reveal-session styles: the card's LOOKING-zone serial, the session key.
   revealSerial?: number;
 };
@@ -109,6 +114,8 @@ export function choreograph(
   const effects: TargetEffect[] = [];
   const drawIndexes = new Map<number, number>();
   const drawCounts = new Map<number, number>();
+  const coinIndexes = new Map<number, number>();
+  const coinCounts = new Map<number, number>();
   const prizePlaceIndexes = new Map<number, number>();
   const prizeTakeIndexes = new Map<number, number>();
   const prizeTakeCounts = new Map<number, number>();
@@ -120,6 +127,10 @@ export function choreograph(
     }
     if (event.kind === 'Draw' || event.kind === 'DrawReverse') {
       drawCounts.set(player, (drawCounts.get(player) ?? 0) + 1);
+      continue;
+    }
+    if (event.kind === 'Coin') {
+      coinCounts.set(player, (coinCounts.get(player) ?? 0) + 1);
       continue;
     }
     const params = eventParams(event);
@@ -140,6 +151,10 @@ export function choreograph(
     }
     if (event.kind === 'Draw' || event.kind === 'DrawReverse') {
       motions.push(...drawMotions(event, events, players, drawIndexes, drawCounts));
+      continue;
+    }
+    if (event.kind === 'Coin') {
+      motions.push(...coinMotions(event, events, coinIndexes, coinCounts));
       continue;
     }
     if (event.kind === 'Play' || event.kind === 'Evolve') {
@@ -173,6 +188,40 @@ export function choreograph(
     }
   }
   return { motions, effects };
+}
+
+function coinMotions(
+  event: ActionTimelineEvent,
+  batch: ActionTimelineEvent[],
+  coinIndexes: Map<number, number>,
+  coinCounts: Map<number, number>,
+): CardMotion[] {
+  const params = eventParams(event);
+  const player = event.playerIndex;
+  if (player === undefined) {
+    return [];
+  }
+  const index = coinIndexes.get(player) ?? 0;
+  coinIndexes.set(player, index + 1);
+  const count = coinCounts.get(player) ?? 1;
+  return [{
+    id: `${event.id}-coin-${index}`,
+    style: 'coin-flip',
+    space: 'viewport',
+    player,
+    sprite: { kind: 'none' },
+    from: { kind: 'deck', player },
+    to: { kind: 'deck', player },
+    startMs: actionAnimationStartMs(batch, event),
+    durationMs: actionAnimationTiming.coinFlipMs,
+    toDeck: false,
+    fromDeck: false,
+    waitForDestinationCard: false,
+    hide: [],
+    coinHead: params.head === true,
+    coinIndex: index,
+    coinCount: count,
+  }];
 }
 
 function announceEffects(event: ActionTimelineEvent, batch: ActionTimelineEvent[]): TargetEffect[] {
