@@ -150,6 +150,35 @@ describe('cabtReplayToSnapshot', () => {
     expect(snapshot.views[0].players[1].stadium.map((card) => card.serial)).toEqual([62]);
   });
 
+  it('announces a YesNo-confirmed triggered ability and merges its prompt-chained effect', () => {
+    const opponent = { active: [], bench: [], benchMax: 5, handCount: 0, deckCount: 60, prize: [] };
+    const me = { active: [{ id: 648, serial: 71, hp: 300, maxHp: 300 }], bench: [], benchMax: 5, hand: [], deckCount: 40, discard: [], prize: [] };
+    const current = { turn: 2, yourIndex: 1, result: -1, players: [opponent, me] };
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        select: { type: 'YesNo', contextCard: { id: 648, playerIndex: 1, serial: 71 }, option: [{ type: 'Yes' }, { type: 'No' }] },
+        current,
+      }, {
+        action: [[], [0]],
+        logs: [],
+        select: { type: 'Card', option: [{ type: 'Card', area: 1, index: 3 }] },
+        current,
+      }, {
+        action: [[], [0]],
+        logs: [
+          { type: 'Attach', playerIndex: 1, cardId: 7, serial: 116, cardIdTarget: 648, serialTarget: 71 },
+          { type: 'Shuffle', playerIndex: 1 },
+        ],
+        select: { type: 'Main', option: [{ type: 'End' }] },
+        current,
+      }],
+    });
+
+    const step = snapshot.steps.find((candidate) => candidate.actionTimeline?.some((event) => event.kind === 'Ability'));
+    expect(step?.label).toBe("Player 2 used Punk Up with Marnie's Grimmsnarl ex.");
+    expect(step?.actionTimeline?.map((event) => event.kind)).toEqual(['Ability', 'Attach', 'Shuffle']);
+  });
+
   it('merges a used stadium search into one announced step', () => {
     const players = (deckCount: number, hand: Array<{ id: number; serial: number }>) => [{
       active: [{ id: 66, serial: 14, hp: 140, maxHp: 140 }],

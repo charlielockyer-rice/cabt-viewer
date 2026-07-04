@@ -251,8 +251,45 @@ function logsWithSynthesizedAbility(
     return logs;
   }
   const abilityLog = abilityLogForSelectedOption(previousFrame, frame)
+    ?? abilityLogForConfirmedTrigger(previousFrame, frame)
     ?? abilityLogForTriggeredEvolution(previousFrame, logs);
   return abilityLog ? [abilityLog, ...logs] : logs;
+}
+
+// Triggered abilities (e.g. Punk Up after evolving) are offered as a YesNo
+// confirmation whose contextCard names the source; no Ability option is ever
+// selected, so answering Yes is the only signal to announce from.
+function abilityLogForConfirmedTrigger(
+  previousFrame: CabtVisualizeFrame,
+  frame: CabtVisualizeFrame,
+): Record<string, unknown> | null {
+  const select = previousFrame.select as Record<string, unknown> | null | undefined;
+  if (!select || String(select.type) !== 'YesNo') {
+    return null;
+  }
+  const contextCard = select.contextCard as Record<string, unknown> | null | undefined;
+  const cardId = numberField(contextCard?.id);
+  const playerIndex = numberField(contextCard?.playerIndex);
+  if (cardId === undefined || playerIndex === undefined) {
+    return null;
+  }
+  const data = cardDatabase.get(cardId);
+  const kind = data?.kind ?? '';
+  if (kind === 'Item' || kind === 'Supporter' || !data?.skills?.length) {
+    return null;
+  }
+  const selected = selectedOptionFromAction(previousFrame.select, frame.action);
+  const optionType = selected?.option?.type;
+  if (optionType !== 'Yes' && optionType !== CabtOptionType.YES) {
+    return null;
+  }
+  return {
+    type: 'Ability',
+    playerIndex,
+    cardId,
+    serial: numberField(contextCard?.serial),
+    abilityName: abilityNameForCard(data),
+  };
 }
 
 function abilityLogForSelectedOption(
@@ -478,9 +515,9 @@ function cardEffectContinuation(entries: ReplayFrameEntry[], startIndex: number)
   if (triggeredEvolutionContinuation) {
     return triggeredEvolutionContinuation;
   }
-  const stadiumContinuation = stadiumAbilitySearchContinuationFrom(entries, startIndex, firstGroup);
-  if (stadiumContinuation) {
-    return stadiumContinuation;
+  const abilityContinuation = abilityEffectContinuationFrom(entries, startIndex, firstGroup);
+  if (abilityContinuation) {
+    return abilityContinuation;
   }
   if (!isCardEffectStartGroup(firstGroup)) {
     return null;
@@ -540,50 +577,60 @@ function cardEffectContinuation(entries: ReplayFrameEntry[], startIndex: number)
   return null;
 }
 
-// A used stadium (a synthesized Ability event with a stadium area) behaves
-// like a search trainer: the chosen card arrives from the deck in a later
-// frame, then the deck shuffles. Merge those frames into one step so the
-// whole effect reads as a single action. Continuation frames must contain
-// only deck-to-hand moves or shuffles by the same player, so an unrelated
-// following action can never be swallowed.
-function stadiumAbilitySearchContinuationFrom(
+// An announced ability (used or triggered) brackets an effect: prompt frames
+// follow until the player is back at the main action menu. Merge every frame
+// inside the bracket into one step, so a search, an energy attachment, or a
+// cost-then-draw effect reads as a single action. Guards: every merged event
+// must belong to the ability's player, the walk is capped, and frames after
+// the main menu returns are never touched.
+function abilityEffectContinuationFrom(
   entries: ReplayFrameEntry[],
   startIndex: number,
   firstGroup: ReplayActionGroup,
 ): CardEffectContinuation | null {
   const abilityEvent = firstGroup.events.find((event) => {
     const params = event.params as Record<string, unknown> | undefined;
-    return event.kind === 'Ability' && Number(params?.area) === CabtAreaType.STADIUM;
+    return event.kind === 'Ability' && !params?.trigger;
   });
   const playerIndex = abilityEvent?.playerIndex;
   if (!abilityEvent || playerIndex === undefined) {
     return null;
   }
-  if (firstGroup.events.some((event) => event.kind === 'Shuffle')) {
-    return { endIndex: startIndex, group: firstGroup };
+  // The effect completed within its own frame: the select is already back at
+  // the main menu (Run Away Draw style), so there is nothing to merge.
+  const startSelect = entries[startIndex].frame.select as Record<string, unknown> | null | undefined;
+  if (startSelect && selectHasEndOption(startSelect)) {
+    return null;
   }
 
   const events = [...firstGroup.events];
-  for (let index = startIndex + 1; index < entries.length; index += 1) {
-    const groups = entries[index].groups;
-    if (!groups.length) {
-      continue;
+  let endIndex = startIndex;
+  const maxLookahead = Math.min(entries.length, startIndex + 12);
+  for (let index = startIndex + 1; index < maxLookahead; index += 1) {
+    const entry = entries[index];
+    const frameEvents = entry.groups.flatMap((group) => group.events);
+    if (!frameEvents.every((event) => event.playerIndex === undefined || event.playerIndex === playerIndex)) {
+      break;
     }
-    if (groups.length !== 1 || !isDeckSearchContinuationGroup(groups[0], playerIndex)) {
-      return null;
+    if (frameEvents.length) {
+      events.push(...frameEvents);
+      endIndex = index;
     }
-    events.push(...groups[0].events);
-    if (groups[0].events.some((event) => event.kind === 'Shuffle')) {
-      return {
-        endIndex: index,
-        group: {
-          ...firstGroup,
-          events,
-        },
-      };
+    const select = entry.frame.select as Record<string, unknown> | null | undefined;
+    if (!select || selectHasEndOption(select)) {
+      break;
     }
   }
-  return null;
+  if (endIndex === startIndex) {
+    return null;
+  }
+  return {
+    endIndex,
+    group: {
+      ...firstGroup,
+      events,
+    },
+  };
 }
 
 function triggeredEvolutionAbilityContinuationFrom(
