@@ -63,7 +63,7 @@
   const resetMoveMs = 360;
   const prizeTakeDirectMs = 520;
   const prizePlaceHandoffMs = 304;
-  const coinSizePx = 64;
+  const coinSizePx = 132;
   const cardRatio = 88 / 63;
 
   let {
@@ -292,7 +292,7 @@
         `--coin-size: ${coinSizePx}px`,
         `--coin-delay: ${motion.startMs}ms`,
         `--coin-duration: ${motion.durationMs}ms`,
-        `--coin-end-rotation: ${coinHead ? 1800 : 1980}deg`,
+        `--coin-end-rotation: ${coinHead ? 3240 : 3420}deg`,
       ].join('; '),
     }];
     const timer = setTimeout(() => {
@@ -933,8 +933,8 @@
     {#each coinSprites as sprite (sprite.id)}
       <span class="coin-flip-sprite" style={sprite.css}>
         <span class="coin-flip-coin">
-          <span class="coin-face coin-heads"></span>
-          <span class="coin-face coin-tails">×</span>
+          <span class="coin-face coin-heads">H</span>
+          <span class="coin-face coin-tails">T</span>
         </span>
         <span class="coin-result-caption">{sprite.text}</span>
       </span>
@@ -1121,13 +1121,12 @@
       radial-gradient(circle at 38% 30%, #fff7ad 0 0, #facc15 38%, #d97706 72%, #92400e 100%);
   }
 
-  .coin-heads::after {
-    content: "";
-    width: 42%;
-    height: 42%;
-    border: 4px solid rgba(255, 255, 255, 0.92);
-    border-radius: 50%;
-    box-shadow: 0 0 0 2px rgba(146, 64, 14, 0.18);
+  .coin-heads {
+    color: rgba(120, 53, 15, 0.92);
+    font-size: calc(var(--coin-size, 64px) * 0.46);
+    font-weight: 950;
+    line-height: 1;
+    text-shadow: 0 2px 4px rgba(255, 255, 255, 0.4);
   }
 
   .coin-tails {
@@ -1137,8 +1136,8 @@
       radial-gradient(circle at 34% 26%, rgba(255, 255, 255, 0.36) 0 9%, transparent 10%),
       radial-gradient(circle at 50% 50%, #64748b 0 0, #334155 48%, #0f172a 100%);
     color: rgba(255, 255, 255, 0.92);
-    font-size: 36px;
-    font-weight: 900;
+    font-size: calc(var(--coin-size, 64px) * 0.46);
+    font-weight: 950;
     line-height: 1;
     text-shadow: 0 2px 6px rgba(15, 23, 42, 0.38);
   }
