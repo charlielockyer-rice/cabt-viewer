@@ -3,7 +3,7 @@ import attackRows from './attackData.generated.json';
 import { actionAnimationTiming } from '../anim/timing';
 import { displayName, energySymbolToType } from './cardView';
 import { cabtLogsToTimeline } from './logFormat';
-import { CabtAreaType, CabtOptionType, CabtSelectContext } from './types';
+import { CabtAreaType, CabtOptionType } from './types';
 import { resolveCardImageUrl } from '../game/cardImages';
 import { SlotType, targetFor, type ActionTimelineEvent, type CardView, type GameView, type LogView, type PlayerView, type PokemonSlotView } from '../game/types';
 import type { ReplayAnimationPhase, ReplaySnapshot, ReplayStep } from '../game/replay';
@@ -122,7 +122,6 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
   const environment = replayEnvironment(input);
   const players = playerNames(input);
   const views: GameView[] = [];
-  const steps: ReplayStep[] = [];
   const logs: LogView[] = [];
   let logId = 1;
   let timelineId = 1;
@@ -142,62 +141,7 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
     frameEntries.push({ frame, view, groups });
   });
 
-  for (let index = 0; index < frameEntries.length; index += 1) {
-    const { frame, view, groups } = frameEntries[index];
-    const continuation = cardEffectContinuation(frameEntries, index);
-    if (continuation) {
-      const currentView = frameEntries[continuation.endIndex].view;
-      steps.push(replayStepForFrame({
-        view: currentView,
-        stateIndex: continuation.endIndex,
-        label: continuation.group.label,
-        type: continuation.group.type,
-        actionTimeline: continuation.group.events,
-        displayView: groupedStepDisplayView(views[index - 1], currentView, [continuation.group], 0),
-        animationPhases: groupedStepAnimationPhases(views[index - 1], currentView, [continuation.group], 0),
-        payload: {
-          events: continuation.group.events,
-          select: frameEntries[continuation.endIndex].frame.select,
-          selected: frameEntries[continuation.endIndex].frame.selected,
-          action: frameEntries[continuation.endIndex].frame.action,
-        },
-      }));
-      index = continuation.endIndex;
-      continue;
-    }
-
-    if (groups.length) {
-      for (const [groupIndex, group] of groups.entries()) {
-        steps.push(replayStepForFrame({
-          view,
-          stateIndex: index,
-          label: group.label,
-          type: group.type,
-          actionTimeline: group.events,
-          displayView: groupedStepDisplayView(views[index - 1], view, groups, groupIndex),
-          animationPhases: groupedStepAnimationPhases(views[index - 1], view, groups, groupIndex),
-          payload: {
-            events: group.events,
-            select: frame.select,
-            selected: frame.selected,
-            action: frame.action,
-          },
-        }));
-      }
-    } else {
-      steps.push(replayStepForFrame({
-        view,
-        stateIndex: index,
-        label: stepLabel(frame, index),
-        type: String(frame.select?.type ?? 'frame'),
-        payload: {
-          select: frame.select,
-          selected: frame.selected,
-          action: frame.action,
-        },
-      }));
-    }
-  }
+  const steps = buildDecisionSteps(frameEntries, views);
 
   applyResolvingPlayedCards(steps, views);
   applyKnockOutDiscardTopOrdering(steps);
@@ -235,11 +179,6 @@ type ReplayFrameEntry = {
   frame: CabtVisualizeFrame;
   view: GameView;
   groups: ReplayActionGroup[];
-};
-
-type CardEffectContinuation = {
-  endIndex: number;
-  group: ReplayActionGroup;
 };
 
 function logsWithSynthesizedAbility(
@@ -536,375 +475,208 @@ function numberField(value: unknown): number | undefined {
   return Number.isFinite(number) ? number : undefined;
 }
 
-function cardEffectContinuation(entries: ReplayFrameEntry[], startIndex: number): CardEffectContinuation | null {
-  const firstGroup = entries[startIndex].groups[0];
-  if (!firstGroup || entries[startIndex].groups.length !== 1) {
-    return null;
-  }
-  const triggeredEvolutionContinuation = triggeredEvolutionAbilityContinuationFrom(entries, startIndex, firstGroup);
-  if (triggeredEvolutionContinuation) {
-    return triggeredEvolutionContinuation;
-  }
-  const abilityContinuation = abilityEffectContinuationFrom(entries, startIndex, firstGroup);
-  if (abilityContinuation) {
-    return abilityContinuation;
-  }
-  const evolvedContinuation = evolvedTriggeredAbilityContinuationFrom(entries, startIndex, firstGroup);
-  if (evolvedContinuation) {
-    return evolvedContinuation;
-  }
-  if (!isCardEffectStartGroup(firstGroup)) {
-    return null;
-  }
-  const playEvent = resolvingTrainerPlayEvent(firstGroup);
-  const playerIndex = playEvent?.playerIndex;
-  if (!playEvent || playerIndex === undefined) {
-    return null;
-  }
+// ---------------------------------------------------------------------------
+// Decision-based step splitting.
+//
+// A replay step is one root decision and everything it caused. The frame
+// stream records decisions directly: each frame's `action` answers the
+// previous frame's `select`. A select offering an End option is the main
+// action menu, so a frame that answers it starts a new step (play, attach,
+// evolve, ability, attack, retreat, end turn). Any other select is a
+// sub-decision whose consequences belong to the current step, and a frame
+// without a select is engine auto-resolution that also continues the current
+// step. Forced transitions (turn end/start, checkup, result) always cut, even
+// mid-frame. The pre-game setup region (turn 0) keeps its per-group step
+// shapes.
+// ---------------------------------------------------------------------------
 
-  // A turn-long trainer (e.g. "during this turn" items) parks as a continual
-  // effect instead of resolving; merging would swallow the rest of the turn.
-  if (playedCardIsContinualEffect(entries, startIndex, playEvent)) {
-    return null;
-  }
+type OpenReplayStep = {
+  startIndex: number;
+  endIndex: number;
+  group: ReplayActionGroup;
+};
 
-  if (startGroupHasTerminalResolvingEffect(firstGroup)) {
-    return null;
-  }
+function buildDecisionSteps(entries: ReplayFrameEntry[], views: GameView[]): ReplayStep[] {
+  const steps: ReplayStep[] = [];
+  let open: OpenReplayStep | null = null;
 
-  if (isCompleteDeckSearchEffect(firstGroup.events, playerIndex)) {
-    return { endIndex: startIndex, group: firstGroup };
-  }
-
-  const deckSearchContinuation = deckSearchContinuationFrom(entries, startIndex, firstGroup, playerIndex);
-  if (deckSearchContinuation) {
-    return deckSearchContinuation;
-  }
-
-  const deckRevealContinuation = deckRevealContinuationFrom(entries, startIndex, firstGroup, playerIndex);
-  if (deckRevealContinuation) {
-    return deckRevealContinuation;
-  }
-
-  const resolvingContinuation = resolvingTrainerContinuationFrom(entries, startIndex, firstGroup, playEvent);
-  if (resolvingContinuation) {
-    return triggeredEvolutionAbilityContinuationFrom(entries, resolvingContinuation.endIndex, resolvingContinuation.group)
-      ?? evolvedTriggeredAbilityContinuationFrom(entries, resolvingContinuation.endIndex, resolvingContinuation.group)
-      ?? resolvingContinuation;
-  }
-
-  for (let index = startIndex + 1; index < entries.length; index += 1) {
-    const groups = entries[index].groups;
-    if (!groups.length) {
-      continue;
-    }
-    if (groups.length === 1 && isCardEffectContinuationGroup(groups[0], playerIndex, firstGroup)) {
-      return {
-        endIndex: index,
-        group: {
-          ...firstGroup,
-          events: [...firstGroup.events, ...groups[0].events],
-        },
-      };
-    }
-    return null;
-  }
-  return null;
-}
-
-// An evolution can trigger an ability (Punk Up after evolving): the announce
-// lands on a following frame after a YesNo confirm. Fold that announced
-// ability - and its own effect bracket - into the evolve step, so evolving
-// and the triggered effect read as one action.
-function evolvedTriggeredAbilityContinuationFrom(
-  entries: ReplayFrameEntry[],
-  evolveEndIndex: number,
-  groupSoFar: ReplayActionGroup,
-): CardEffectContinuation | null {
-  const evolveEvent = [...groupSoFar.events].reverse().find((event) => event.kind === 'Evolve');
-  if (!evolveEvent) {
-    return null;
-  }
-  const evolveParams = evolveEvent.params as Record<string, unknown> | undefined;
-  const evolvedSerial = numberField(evolveParams?.serial);
-  const evolvedCardId = numberField(evolveParams?.cardId);
-
-  for (let index = evolveEndIndex + 1; index < entries.length; index += 1) {
-    const groups = entries[index].groups;
-    if (!groups.length) {
-      continue;
-    }
-    if (groups.length !== 1) {
+  const closeOpenStep = (): ReplayActionGroup | null => {
+    if (!open) {
       return null;
     }
-    const abilityEvent = groups[0].events.find((event) => {
-      const params = event.params as Record<string, unknown> | undefined;
-      return event.kind === 'Ability'
-        && !params?.trigger
-        && (
-          (evolvedSerial !== undefined && numberField(params?.serial) === evolvedSerial)
-          || (evolvedCardId !== undefined && numberField(params?.cardId) === evolvedCardId)
-        );
-    });
-    if (!abilityEvent) {
-      return null;
-    }
-    const abilityContinuation = abilityEffectContinuationFrom(entries, index, groups[0]);
-    return {
-      endIndex: abilityContinuation?.endIndex ?? index,
-      group: {
-        ...groupSoFar,
-        events: [...groupSoFar.events, ...(abilityContinuation?.group ?? groups[0]).events],
-      },
-    };
-  }
-  return null;
-}
+    steps.push(openStepToReplayStep(entries, views, open));
+    const group = open.group;
+    open = null;
+    return group;
+  };
 
-// An announced ability (used or triggered) brackets an effect: prompt frames
-// follow until the player is back at the main action menu. Merge every frame
-// inside the bracket into one step, so a search, an energy attachment, or a
-// cost-then-draw effect reads as a single action. Guards: every merged event
-// must belong to the ability's player, the walk is capped, and frames after
-// the main menu returns are never touched.
-function abilityEffectContinuationFrom(
-  entries: ReplayFrameEntry[],
-  startIndex: number,
-  firstGroup: ReplayActionGroup,
-): CardEffectContinuation | null {
-  const abilityEvent = firstGroup.events.find((event) => {
-    const params = event.params as Record<string, unknown> | undefined;
-    return (event.kind === 'Ability' && !params?.trigger) || event.kind === 'Attack';
-  });
-  const playerIndex = abilityEvent?.playerIndex;
-  if (!abilityEvent || playerIndex === undefined) {
-    return null;
-  }
-  // The effect completed within its own frame: the select is already back at
-  // the main menu (Run Away Draw style), so there is nothing to merge.
-  const startSelect = entries[startIndex].frame.select as Record<string, unknown> | null | undefined;
-  if (startSelect && selectHasEndOption(startSelect)) {
-    return null;
-  }
-
-  const events = [...firstGroup.events];
-  let endIndex = startIndex;
-  // Attack consequences (damage, knockouts, prize takes) land on the
-  // defender, so attack brackets admit consequence kinds for either player;
-  // ability brackets stay owner-only.
-  const attackBracket = abilityEvent.kind === 'Attack';
-  const admissibleGroup = (group: ReplayActionGroup) => attackBracket
-    ? group.events.every((event) => isAttackConsequenceKind(event.kind))
-    : group.events.every((event) => event.playerIndex === undefined || event.playerIndex === playerIndex);
-  const maxLookahead = Math.min(entries.length, startIndex + 12);
-  for (let index = startIndex + 1; index < maxLookahead; index += 1) {
+  for (let index = 0; index < entries.length; index += 1) {
     const entry = entries[index];
     const groups = entry.groups;
-    if (groups.length) {
-      // The tail of an effect can share a frame with the next turn's events
-      // (second damage hit + TurnEnd + draw). Take the leading consequence
-      // groups and leave the rest of the frame to step normally.
-      let taken = 0;
-      while (taken < groups.length && admissibleGroup(groups[taken])) {
-        taken += 1;
-      }
-      if (!taken) {
-        break;
-      }
-      events.push(...groups.slice(0, taken).flatMap((group) => group.events));
-      if (taken < groups.length) {
-        entry.groups = groups.slice(taken);
-        endIndex = index - 1;
-        break;
-      }
-      endIndex = index;
+    const setupFrame = entry.frame.current.turn === 0;
+    const rootFrame = !setupFrame && index > 0 && frameShowsMainMenu(entries[index - 1].frame);
+    if (setupFrame || rootFrame) {
+      closeOpenStep();
     }
-    const select = entry.frame.select as Record<string, unknown> | null | undefined;
-    if (!select || selectHasEndOption(select)) {
-      break;
+
+    if (!groups.length) {
+      if (!open) {
+        steps.push(fallbackStepForFrame(entry, index));
+      }
+      continue;
     }
+
+    if (setupFrame) {
+      steps.push(...stepsForFrameGroups(entry, views, index, groups, 0));
+      continue;
+    }
+
+    const firstForced = groups.findIndex(isForcedStepGroup);
+    const leadingCount = firstForced < 0 ? groups.length : firstForced;
+
+    if (rootFrame) {
+      if (leadingCount > 0) {
+        open = {
+          startIndex: index,
+          endIndex: index,
+          group: mergedGroup(groups.slice(0, leadingCount)),
+        };
+      }
+      if (leadingCount < groups.length) {
+        const consumedGroup = closeOpenStep();
+        const consumed = consumedGroup ? [consumedGroup] : [];
+        steps.push(...stepsForFrameGroups(entry, views, index, [...consumed, ...groups.slice(leadingCount)], consumed.length));
+      }
+      continue;
+    }
+
+    if (open) {
+      if (leadingCount > 0) {
+        open.group.events.push(...groups.slice(0, leadingCount).flatMap((group) => group.events));
+        // The tail of an effect can share a frame with the next turn's events
+        // (second damage hit + TurnEnd + draw). The merged step keeps the
+        // previous frame as its state; the rest of the frame steps normally.
+        open.endIndex = leadingCount === groups.length ? index : index - 1;
+      }
+      if (leadingCount < groups.length) {
+        closeOpenStep();
+        steps.push(...stepsForFrameGroups(entry, views, index, groups.slice(leadingCount), 0));
+      }
+      continue;
+    }
+
+    // No decision context and nothing open: keep per-group steps. A lone
+    // non-forced group stays open so auto-resolution frames can extend it.
+    if (groups.length === 1 && leadingCount === 1) {
+      open = { startIndex: index, endIndex: index, group: mergedGroup(groups) };
+      continue;
+    }
+    steps.push(...stepsForFrameGroups(entry, views, index, groups, 0));
   }
-  if (events.length === firstGroup.events.length) {
-    return null;
-  }
+
+  closeOpenStep();
+  return steps;
+}
+
+const forcedStepTypes = new Set(['TurnEnd', 'TurnStart', 'PokemonCheckup', 'Result']);
+
+function isForcedStepGroup(group: ReplayActionGroup): boolean {
+  return forcedStepTypes.has(group.type);
+}
+
+function frameShowsMainMenu(frame: CabtVisualizeFrame): boolean {
+  const select = frame.select as Record<string, unknown> | null | undefined;
+  return !!select && selectHasEndOption(select);
+}
+
+function mergedGroup(groups: ReplayActionGroup[]): ReplayActionGroup {
   return {
-    endIndex,
-    group: {
-      ...firstGroup,
-      events,
-    },
+    ...groups[0],
+    events: groups.flatMap((group) => group.events),
   };
 }
 
-function triggeredEvolutionAbilityContinuationFrom(
-  entries: ReplayFrameEntry[],
-  startIndex: number,
-  startGroup: ReplayActionGroup,
-): CardEffectContinuation | null {
-  const evolveEvent = [...startGroup.events].reverse().find(isTriggeredAbilityEvolveEvent);
-  if (!evolveEvent || evolveEvent.playerIndex === undefined) {
-    return null;
-  }
-  for (let index = startIndex + 1; index < entries.length; index += 1) {
-    const groups = entries[index].groups;
-    if (!groups.length) {
-      continue;
-    }
-    if (groups.length !== 1 || !isTriggeredEvolutionAbilityGroup(groups[0], evolveEvent)) {
-      return null;
-    }
-    return {
-      endIndex: index,
-      group: {
-        ...startGroup,
-        events: [...startGroup.events, ...groups[0].events],
-      },
-    };
-  }
-  return null;
-}
-
-function isTriggeredAbilityEvolveEvent(event: ActionTimelineEvent): boolean {
-  const params = event.params as Record<string, unknown> | undefined;
-  const cardId = Number(params?.cardId);
-  return event.kind === 'Evolve'
-    && event.playerIndex !== undefined
-    && Number.isFinite(cardId)
-    && !!evolutionTriggeredDrawSkill(cardDatabase.get(cardId));
-}
-
-function isTriggeredEvolutionAbilityGroup(group: ReplayActionGroup, evolveEvent: ActionTimelineEvent): boolean {
-  const ability = group.events[0];
-  const abilityParams = ability?.params as Record<string, unknown> | undefined;
-  const evolveParams = evolveEvent.params as Record<string, unknown> | undefined;
-  const expectedSerial = Number(evolveParams?.serial);
-  return ability?.kind === 'Ability'
-    && ability.playerIndex === evolveEvent.playerIndex
-    && abilityParams?.trigger === 'Evolve'
-    && Number(abilityParams?.cardId) === Number(evolveParams?.cardId)
-    && (!Number.isFinite(expectedSerial) || Number(abilityParams?.serial) === expectedSerial)
-    && group.events.slice(1).length > 0
-    && group.events.slice(1).every((event) =>
-      (event.kind === 'Draw' || event.kind === 'DrawReverse')
-      && event.playerIndex === evolveEvent.playerIndex);
-}
-
-function isCardEffectStartGroup(group: ReplayActionGroup): boolean {
-  return !!resolvingTrainerPlayEvent(group);
-}
-
-function resolvingTrainerPlayEvent(group: ReplayActionGroup): ActionTimelineEvent | undefined {
-  return group.events.find((event) => {
-    const params = event.params as Record<string, unknown> | undefined;
-    const cardId = Number(params?.cardId);
-    return event.kind === 'Play'
-      && event.playerIndex !== undefined
-      && Number.isFinite(cardId)
-      && isResolvingTrainerCard(cardId);
+function openStepToReplayStep(entries: ReplayFrameEntry[], views: GameView[], open: OpenReplayStep): ReplayStep {
+  const entry = entries[open.endIndex];
+  // Finalize the merged group on the open step so callers that reuse it as
+  // projection context see the same event order the step presents.
+  const group = groupWithRevealResolutionOrdering(open.group);
+  open.group = group;
+  return replayStepForFrame({
+    view: entry.view,
+    stateIndex: open.endIndex,
+    label: group.label,
+    type: group.type,
+    actionTimeline: group.events,
+    displayView: groupedStepDisplayView(views[open.startIndex - 1], entry.view, [group], 0),
+    animationPhases: groupedStepAnimationPhases(views[open.startIndex - 1], entry.view, [group], 0),
+    payload: {
+      events: group.events,
+      select: entry.frame.select,
+      selected: entry.frame.selected,
+      action: entry.frame.action,
+    },
   });
 }
 
-function resolvingTrainerContinuationFrom(
-  entries: ReplayFrameEntry[],
-  startIndex: number,
-  startGroup: ReplayActionGroup,
-  playEvent: ActionTimelineEvent,
-): CardEffectContinuation | null {
-  // Archive hardening: add negative samples before widening this heuristic. A trainer
-  // that is already discarded in its Play frame should not swallow the next unrelated action.
-  const playerIndex = playEvent.playerIndex;
-  if (playerIndex === undefined) {
-    return null;
-  }
-
-  const continuationEvents: ActionTimelineEvent[] = [];
-  for (let index = startIndex + 1; index < entries.length; index += 1) {
-    const groups = entries[index].groups;
-    if (!groups.length) {
-      continue;
-    }
-    const cardIsDiscardedInView = viewHasEventCardInDiscard(entries[index].view, playEvent);
-    if (groups.length !== 1 || !isResolvingTrainerContinuationGroup(groups[0])) {
-      return null;
-    }
-
-    const nextEvents = [...continuationEvents, ...groups[0].events];
-    if (
-      groupHasDeckSearchStyleMove(groups[0])
-      && !cardIsDiscardedInView
-      && !isResolvingTrainerTerminalGroup(groups[0], nextEvents)
-    ) {
-      return null;
-    }
-
-    continuationEvents.push(...groups[0].events);
-    if (cardIsDiscardedInView || isResolvingTrainerTerminalGroup(groups[0], continuationEvents)) {
-      return {
-        endIndex: index,
-        group: {
-          ...startGroup,
-          events: [...startGroup.events, ...continuationEvents],
-        },
-      };
-    }
-  }
-  return null;
+function stepsForFrameGroups(
+  entry: ReplayFrameEntry,
+  views: GameView[],
+  index: number,
+  contextGroups: ReplayActionGroup[],
+  startAt: number,
+): ReplayStep[] {
+  return contextGroups.slice(startAt).map((group, offset) => replayStepForFrame({
+    view: entry.view,
+    stateIndex: index,
+    label: group.label,
+    type: group.type,
+    actionTimeline: group.events,
+    displayView: groupedStepDisplayView(views[index - 1], entry.view, contextGroups, startAt + offset),
+    animationPhases: groupedStepAnimationPhases(views[index - 1], entry.view, contextGroups, startAt + offset),
+    payload: {
+      events: group.events,
+      select: entry.frame.select,
+      selected: entry.frame.selected,
+      action: entry.frame.action,
+    },
+  }));
 }
 
-function playedCardIsContinualEffect(
-  entries: ReplayFrameEntry[],
-  startIndex: number,
-  playEvent: ActionTimelineEvent,
-): boolean {
-  const params = playEvent.params as Record<string, unknown> | undefined;
-  const cardId = Number(params?.cardId);
-  const serial = Number(params?.serial);
-  for (const entry of entries.slice(startIndex, startIndex + 2)) {
-    const select = entry.frame.select as Record<string, unknown> | null | undefined;
-    const effect = select?.effect as Record<string, unknown> | null | undefined;
-    // The engine reports select.effect during ANY card's resolution. A card is
-    // only parked for the turn when the effect persists while the player is
-    // already back at the main action menu (the select with an End option);
-    // mid-effect choice prompts never offer End.
-    if (!effect || !select || !selectHasEndOption(select)) {
-      continue;
-    }
-    const effectSerial = Number(effect.serial);
-    const effectCardId = Number(effect.id);
-    if (
-      (Number.isFinite(serial) && effectSerial === serial)
-      || (!Number.isFinite(serial) && Number.isFinite(cardId) && effectCardId === cardId)
-    ) {
-      return true;
-    }
-  }
-  return false;
+function fallbackStepForFrame(entry: ReplayFrameEntry, index: number): ReplayStep {
+  return replayStepForFrame({
+    view: entry.view,
+    stateIndex: index,
+    label: stepLabel(entry.frame, index),
+    type: String(entry.frame.select?.type ?? 'frame'),
+    payload: {
+      select: entry.frame.select,
+      selected: entry.frame.selected,
+      action: entry.frame.action,
+    },
+  });
 }
 
-function isAttackConsequenceKind(kind: string | undefined): boolean {
-  // Anything an attack's own resolution can produce, for either player:
-  // damage, knockouts and prize movement, status, coin flips, self-switches
-  // (Jetting Blow), energy/tool movement, and effect draws. Kinds that start
-  // a new action (Play, Attack, Ability, TurnEnd/TurnStart) end the bracket.
-  return [
-    'HpChange',
-    'HPChange',
-    'MoveCard',
-    'MoveCardReverse',
-    'Switch',
-    'Attach',
-    'Draw',
-    'DrawReverse',
-    'Poisoned',
-    'Burned',
-    'Asleep',
-    'Paralyzed',
-    'Confused',
-    'Coin',
-    'Devolve',
-    'MoveAttached',
-    'Shuffle',
-  ].includes(kind ?? '');
+// A reveal effect can put the picked card into the hand before returning the
+// rest to the deck. Present returns before takes so the reveal session reads
+// the way the table plays out: unpicked cards go back, the picked card lands
+// in hand, then the deck shuffles.
+function groupWithRevealResolutionOrdering(group: ReplayActionGroup): ReplayActionGroup {
+  const takeEvents = group.events.filter((event) => isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.HAND));
+  if (
+    !takeEvents.length
+    || !group.events.some((event) => isMoveBetween(event, CabtAreaType.DECK, CabtAreaType.LOOKING))
+    || !group.events.some((event) => isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.DECK))
+  ) {
+    return group;
+  }
+  const shuffleEvents = group.events.filter((event) => event.kind === 'Shuffle');
+  const beforeTakeEvents = group.events.filter((event) =>
+    event.kind !== 'Shuffle' && !isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.HAND));
+  return {
+    ...group,
+    events: [...beforeTakeEvents, ...takeEvents, ...shuffleEvents],
+  };
 }
 
 function selectHasEndOption(select: Record<string, unknown>): boolean {
@@ -913,316 +685,6 @@ function selectHasEndOption(select: Record<string, unknown>): boolean {
     const type = (option as Record<string, unknown> | null | undefined)?.type;
     return type === CabtOptionType.END || type === 'End';
   });
-}
-
-function startGroupHasTerminalResolvingEffect(group: ReplayActionGroup): boolean {
-  return group.events.some((event) => event.kind !== 'Play')
-    && isResolvingTrainerTerminalGroup(group, group.events);
-}
-
-function isResolvingTrainerTerminalGroup(group: ReplayActionGroup, continuationEvents: ActionTimelineEvent[]): boolean {
-  if (group.events.some((event) => ['Draw', 'DrawReverse', 'Switch', 'Evolve', 'Devolve', 'Attach'].includes(event.kind ?? ''))) {
-    return true;
-  }
-  if (group.events.some((event) => ['HpChange', 'HPChange', 'Poisoned', 'Burned', 'Asleep', 'Paralyzed', 'Confused', 'Coin'].includes(event.kind ?? ''))) {
-    return true;
-  }
-  if (group.events.some(isTerminalResolvingMoveEvent)) {
-    return true;
-  }
-  if (group.events.some((event) => event.kind === 'Shuffle')) {
-    return !continuationEvents.some((event) => isMoveBetween(event, CabtAreaType.HAND, CabtAreaType.DECK));
-  }
-  return false;
-}
-
-function isTerminalResolvingMoveEvent(event: ActionTimelineEvent): boolean {
-  const params = event.params as Record<string, unknown> | undefined;
-  const fromArea = Number(params?.fromArea);
-  const toArea = Number(params?.toArea);
-  return isMoveCardKind(event.kind)
-    && (
-      toArea === CabtAreaType.DISCARD
-      || isBoardPositionMove(fromArea, toArea)
-      || isAttachedCardArea(fromArea)
-    );
-}
-
-function isResolvingTrainerContinuationGroup(group: ReplayActionGroup): boolean {
-  return group.events.length > 0
-    && group.events.every(isResolvingTrainerContinuationEvent);
-}
-
-function isResolvingTrainerContinuationEvent(event: ActionTimelineEvent): boolean {
-  if (isMoveCardKind(event.kind)) {
-    return true;
-  }
-  return [
-    'Attach',
-    'Evolve',
-    'Devolve',
-    'Switch',
-    'Draw',
-    'DrawReverse',
-    'Shuffle',
-    'HpChange',
-    'HPChange',
-    'Poisoned',
-    'Burned',
-    'Asleep',
-    'Paralyzed',
-    'Confused',
-    'Coin',
-  ].includes(event.kind ?? '');
-}
-
-function groupHasDeckSearchStyleMove(group: ReplayActionGroup): boolean {
-  return group.events.some(isDeckSearchStyleMove);
-}
-
-function isDeckSearchStyleMove(event: ActionTimelineEvent): boolean {
-  if (!isMoveCardKind(event.kind)) {
-    return false;
-  }
-  const params = event.params as Record<string, unknown> | undefined;
-  const fromArea = Number(params?.fromArea);
-  const toArea = Number(params?.toArea);
-  return (fromArea === CabtAreaType.DECK && (
-    toArea === CabtAreaType.HAND
-    || toArea === CabtAreaType.ACTIVE
-    || toArea === CabtAreaType.BENCH
-    || toArea === CabtAreaType.LOOKING
-  ))
-    || (fromArea === CabtAreaType.LOOKING && (
-      toArea === CabtAreaType.HAND
-      || toArea === CabtAreaType.DECK
-    ));
-}
-
-function viewHasEventCardInDiscard(view: GameView, event: ActionTimelineEvent): boolean {
-  const playerIndex = event.playerIndex;
-  if (playerIndex === undefined) {
-    return false;
-  }
-  return view.players[playerIndex]?.discard.some((card) => eventCardMatches(card, event)) ?? false;
-}
-
-function deckSearchContinuationFrom(
-  entries: ReplayFrameEntry[],
-  startIndex: number,
-  startGroup: ReplayActionGroup,
-  playerIndex: number,
-): CardEffectContinuation | null {
-  if (startGroup.events.some((event) => isMoveBetween(event, CabtAreaType.DECK, CabtAreaType.LOOKING))) {
-    return null;
-  }
-
-  const continuationEvents: ActionTimelineEvent[] = [];
-  let sawDeckSearchPrompt = isDeckSearchPrompt(entries[startIndex].frame);
-  let sawDeckToHand = false;
-  for (let index = startIndex + 1; index < entries.length; index += 1) {
-    const groups = entries[index].groups;
-    if (!groups.length) {
-      sawDeckSearchPrompt ||= isDeckSearchPrompt(entries[index].frame);
-      continue;
-    }
-    if (!sawDeckSearchPrompt) {
-      return null;
-    }
-    if (groups.length !== 1 || !isDeckSearchContinuationGroup(groups[0], playerIndex)) {
-      return null;
-    }
-    if (!deckSearchContinuationOrderIsValid(groups[0].events, sawDeckToHand)) {
-      return null;
-    }
-
-    continuationEvents.push(...groups[0].events);
-    sawDeckToHand ||= groups[0].events.some((event) => isMoveBetween(event, CabtAreaType.DECK, CabtAreaType.HAND));
-    const events = [...startGroup.events, ...continuationEvents];
-    if (isCompleteDeckSearchEffect(events, playerIndex)) {
-      return {
-        endIndex: index,
-        group: {
-          ...startGroup,
-          events,
-        },
-      };
-    }
-  }
-  return null;
-}
-
-function deckRevealContinuationFrom(
-  entries: ReplayFrameEntry[],
-  startIndex: number,
-  startGroup: ReplayActionGroup,
-  playerIndex: number,
-): CardEffectContinuation | null {
-  if (!startGroup.events.some((event) => isMoveBetween(event, CabtAreaType.DECK, CabtAreaType.LOOKING))) {
-    return null;
-  }
-
-  const revealedSerials = new Set(
-    startGroup.events
-      .filter((event) => isMoveBetween(event, CabtAreaType.DECK, CabtAreaType.LOOKING))
-      .map(eventSerial)
-      .filter((serial): serial is number => Number.isFinite(serial)),
-  );
-  if (!revealedSerials.size) {
-    return null;
-  }
-
-  const continuationEvents: ActionTimelineEvent[] = [];
-  for (let index = startIndex + 1; index < entries.length; index += 1) {
-    const groups = entries[index].groups;
-    if (!groups.length) {
-      continue;
-    }
-    if (!groups.every((group) => isDeckRevealContinuationGroup(group, playerIndex, revealedSerials))) {
-      return null;
-    }
-
-    continuationEvents.push(...groups.flatMap((group) => group.events));
-    const events = [...startGroup.events, ...continuationEvents];
-    if (isCompleteDeckRevealEffect(events, revealedSerials)) {
-      const orderedEvents = orderedDeckRevealResolutionEvents(startGroup.events, continuationEvents);
-      return {
-        endIndex: index,
-        group: {
-          ...startGroup,
-          events: orderedEvents,
-        },
-      };
-    }
-  }
-  return null;
-}
-
-function orderedDeckRevealResolutionEvents(
-  revealEvents: ActionTimelineEvent[],
-  continuationEvents: ActionTimelineEvent[],
-): ActionTimelineEvent[] {
-  const takeEvents = continuationEvents.filter((event) => isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.HAND));
-  if (!takeEvents.length || !continuationEvents.some((event) => isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.DECK))) {
-    return [...revealEvents, ...continuationEvents];
-  }
-
-  const shuffleEvents = continuationEvents.filter((event) => event.kind === 'Shuffle');
-  const beforeTakeEvents = continuationEvents.filter((event) =>
-    event.kind !== 'Shuffle' && !isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.HAND));
-  return [...revealEvents, ...beforeTakeEvents, ...takeEvents, ...shuffleEvents];
-}
-
-function isDeckRevealContinuationGroup(
-  group: ReplayActionGroup,
-  playerIndex: number,
-  revealedSerials: ReadonlySet<number>,
-): boolean {
-  return group.events.length > 0
-    && group.events.every((event) => {
-      if (event.playerIndex !== undefined && event.playerIndex !== playerIndex) {
-        return false;
-      }
-      if (event.kind === 'Shuffle') {
-        return true;
-      }
-      if (event.kind === 'Attach') {
-        const serial = eventSerial(event);
-        return serial !== undefined && revealedSerials.has(serial);
-      }
-      return isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.HAND)
-        || isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.DECK);
-    });
-}
-
-function isCompleteDeckRevealEffect(events: ActionTimelineEvent[], revealedSerials: ReadonlySet<number>): boolean {
-  const resolvedSerials = new Set<number>();
-  let returnedToDeck = false;
-  let shuffled = false;
-
-  for (const event of events) {
-    const serial = eventSerial(event);
-    if (event.kind === 'Shuffle') {
-      shuffled = true;
-      continue;
-    }
-    if (serial === undefined || !revealedSerials.has(serial)) {
-      continue;
-    }
-    if (event.kind === 'Attach'
-      || isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.HAND)
-      || isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.DECK)) {
-      resolvedSerials.add(serial);
-    }
-    if (isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.DECK)) {
-      returnedToDeck = true;
-    }
-  }
-
-  return resolvedSerials.size === revealedSerials.size && (!returnedToDeck || shuffled);
-}
-
-function eventSerial(event: ActionTimelineEvent): number | undefined {
-  const params = event.params as Record<string, unknown> | undefined;
-  const serial = Number(params?.serial);
-  return Number.isFinite(serial) ? serial : undefined;
-}
-
-function deckSearchContinuationOrderIsValid(events: ActionTimelineEvent[], sawDeckToHand: boolean): boolean {
-  let hasSeenDeckToHand = sawDeckToHand;
-  for (const event of events) {
-    if (isMoveBetween(event, CabtAreaType.DECK, CabtAreaType.HAND)) {
-      hasSeenDeckToHand = true;
-      continue;
-    }
-    if (event.kind === 'Shuffle' && !hasSeenDeckToHand) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function isDeckSearchPrompt(frame: CabtVisualizeFrame): boolean {
-  const context = frame.select?.context;
-  if (context === CabtSelectContext.TO_HAND || context === CabtSelectContext.TO_HAND_ENERGY) {
-    return true;
-  }
-  const normalizedContext = String(context ?? '').toLowerCase().replace(/[_\s-]+/g, '');
-  return normalizedContext.includes('searchdeck') || normalizedContext.includes('tohand');
-}
-
-function isDeckSearchContinuationGroup(group: ReplayActionGroup, playerIndex: number): boolean {
-  return group.events.every((event) =>
-    (event.playerIndex === undefined || event.playerIndex === playerIndex)
-    && (
-      event.kind === 'Shuffle'
-      || isMoveBetween(event, CabtAreaType.DECK, CabtAreaType.HAND)
-    ));
-}
-
-function isCompleteDeckSearchEffect(events: ActionTimelineEvent[], playerIndex: number): boolean {
-  return events.every((event) => event.playerIndex === undefined || event.playerIndex === playerIndex)
-    && events.some((event) => event.kind === 'Play')
-    && events.some((event) => isMoveBetween(event, CabtAreaType.DECK, CabtAreaType.HAND))
-    && events.some((event) => event.kind === 'Shuffle');
-}
-
-function isCardEffectContinuationGroup(
-  group: ReplayActionGroup,
-  playerIndex: number,
-  startGroup: ReplayActionGroup,
-): boolean {
-  if (startGroup.events.some((event) => isMoveBetween(event, CabtAreaType.DECK, CabtAreaType.LOOKING))) {
-    return isDeckRevealResolutionGroup(group, playerIndex);
-  }
-  return false;
-}
-
-function isDeckRevealResolutionGroup(group: ReplayActionGroup, playerIndex: number): boolean {
-  return group.events.every((event) => event.playerIndex === undefined || event.playerIndex === playerIndex)
-    && group.events.some((event) => event.kind === 'Attach')
-    && group.events.some((event) => isMoveBetween(event, CabtAreaType.LOOKING, CabtAreaType.DECK))
-    && group.events.some((event) => event.kind === 'Shuffle');
 }
 
 function isMoveBetween(event: ActionTimelineEvent, fromArea: number, toArea: number): boolean {

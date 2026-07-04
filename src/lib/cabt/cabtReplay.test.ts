@@ -1672,7 +1672,7 @@ describe('cabtReplayToSnapshot', () => {
     expect(step.animationPhases?.[2].view.players[0].hand.map((card) => card.serial)).toEqual([46, 13]);
   });
 
-  it('does not coalesce unrelated played cards with later deck-to-hand movement', () => {
+  it('does not coalesce a played card with actions taken after the main menu returned', () => {
     const snapshot = cabtReplayToSnapshot({
       visualize: [{
         current: {
@@ -1700,6 +1700,9 @@ describe('cabtReplayToSnapshot', () => {
           }],
         },
       }, {
+        // The played card resolves within its own frame: the select is already
+        // back at the main menu, so the next answered frame is a new decision.
+        select: { type: 'Main', option: [{ type: 'End' }] },
         logs: [
           { type: 'Play', playerIndex: 0, cardId: 1145, serial: 14 },
         ],
@@ -3108,6 +3111,9 @@ describe('cabtReplayToSnapshot', () => {
           }],
         },
       }, {
+        // The attack fully resolved: the defender's next play answers the
+        // main menu, so it is a new root decision rather than a consequence.
+        select: { type: 'Main', option: [{ type: 'End' }] },
         logs: [
           { type: 'Attack', playerIndex: 0, cardId: 723, serial: 13, attackId: 1046 },
           { type: 'HpChange', playerIndex: 1, cardId: 721, serial: 64, value: -400, putDamageCounter: false },
