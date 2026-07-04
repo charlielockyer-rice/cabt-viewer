@@ -1384,6 +1384,7 @@
 
         <RevealSessionLayer
           events={game.actionTimeline ?? []}
+          stepEvents={animationStepEvents}
           scopeKey={animationScopeKey}
           {replayMode}
           players={game.players}

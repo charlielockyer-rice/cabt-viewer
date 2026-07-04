@@ -1545,7 +1545,7 @@ function groupedStepAnimationPhases(
         actionTimeline: phase.events,
       },
       actionTimeline: phase.events,
-      durationMs: phase.durationMs,
+      durationMs: phase.durationMs + deckAttachRevealExtraMs(phase, phaseStartView),
     });
     phaseStartView = projectedViewForEvents(phaseStartView, currentView, phase.events);
   }
@@ -1818,6 +1818,24 @@ function mergedKnownCards(left: CardView[], right: CardView[]): CardView[] {
     ...left,
     ...right.filter((card) => !left.some((existing) => sameKnownCard(existing, card))),
   ];
+}
+
+// Attaches whose card was never in a hand present as a deck reveal before
+// flying onto the Pokemon, so the phase needs the reveal flight's time too.
+function deckAttachRevealExtraMs(phase: AnimationEventPhase, phaseStartView: GameView): number {
+  if (!phase.key.startsWith('Attach:')) {
+    return 0;
+  }
+  const attachEvents = phase.events.filter((event) => event.kind === 'Attach');
+  if (!attachEvents.length) {
+    return 0;
+  }
+  const fromHand = attachEvents.some((event) => {
+    const serial = Number((event.params as Record<string, unknown> | undefined)?.serial);
+    return Number.isFinite(serial)
+      && phaseStartView.players.some((player) => player.hand.some((card) => card.serial === serial));
+  });
+  return fromHand ? 0 : actionAnimationTiming.deckRevealMs;
 }
 
 function animationPhaseDurationMs(key: string, count: number): number {

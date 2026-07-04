@@ -263,6 +263,18 @@ describe('choreograph viewport family', () => {
     expect(effects[0].anchor).toEqual({ kind: 'stadium', player: 0, serial: 62 });
   });
 
+  it('presents ability deck-attaches as a reveal followed by the attach handoff', () => {
+    const players = [player(0, card(100, 1)), player(1)];
+    const batch = [event('Attach', 0, { cardId: 500, serial: 11, cardIdTarget: 100, serialTarget: 1 })];
+    const context = [event('Ability', 0, { cardId: 648, serial: 2, abilityName: 'Punk Up' }), ...batch];
+
+    const { motions, effects } = choreograph(batch, players, context);
+    expect(motions.map((motion) => [motion.style, motion.revealSerial])).toEqual([['reveal', 11]]);
+    expect(effects).toHaveLength(1);
+    expect(effects[0].kind).toBe('attach-under');
+    expect(effects[0].startMs).toBe(motions[0].durationMs);
+  });
+
   it('emits attach-under target effects for Attach events', () => {
     const players = [player(0, card(100, 1)), player(1)];
     const events = [event('Attach', 0, { cardId: 500, serial: 11, cardIdTarget: 100, serialTarget: 1 })];

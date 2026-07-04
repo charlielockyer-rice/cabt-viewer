@@ -12,6 +12,7 @@
 
   type Props = {
     events?: ActionTimelineEvent[];
+    stepEvents?: ActionTimelineEvent[];
     scopeKey?: string | number;
     replayMode?: boolean;
     players?: PlayerView[];
@@ -52,6 +53,7 @@
 
   let {
     events = [],
+    stepEvents = [],
     scopeKey = '',
     replayMode = false,
     players = [],
@@ -72,14 +74,15 @@
 
   $effect(() => {
     const { scopeChanged, batch } = gate.update(events, scopeKey, replayMode);
-    const { motions, effects } = choreograph(batch, players);
+    const { motions, effects } = choreograph(batch, players, stepEvents.length ? stepEvents : batch);
     const revealMotions = motions.filter(isRevealMotion);
-    const attachEffects = effects.filter(isSessionAttachEffect);
+    const attachCandidates = effects.filter((effect) => effect.kind === 'attach-under');
+    const existingSessionAttaches = attachCandidates.filter(isSessionAttachEffect);
 
-    if (replayMode && scopeChanged && !revealMotions.length && !attachEffects.length) {
+    if (replayMode && scopeChanged && !revealMotions.length && !existingSessionAttaches.length) {
       clearSession();
     }
-    if (!revealMotions.length && !attachEffects.length) {
+    if (!revealMotions.length && !existingSessionAttaches.length) {
       return;
     }
 
@@ -87,8 +90,12 @@
     if (startMotions.length) {
       startReveal(startMotions);
     }
-    for (const effect of attachEffects) {
-      attachRevealedCard(effect);
+    // Membership is re-checked after startReveal: a deck-attach ability
+    // creates its session sprite and consumes the attach in the same batch.
+    for (const effect of attachCandidates) {
+      if (isSessionAttachEffect(effect)) {
+        attachRevealedCard(effect);
+      }
     }
     for (const motion of revealMotions.filter((item) => item.style === 'reveal-take')) {
       takeRevealedCard(motion);
@@ -151,6 +158,28 @@
   }
 
   function attachRevealedCard(effect: TargetEffect) {
+    const serial = effect.sourceSerial;
+    const sprite = serial !== undefined ? revealSprite(serial) : undefined;
+    if (!sprite || serial === undefined) {
+      return;
+    }
+    // A deck-attach ability reveals and attaches in one batch: let the fan
+    // flight finish before switching the sprite into its attach motion.
+    if (sprite.mode === 'revealing' || sprite.mode === 'searching') {
+      const startedGeneration = generation;
+      const timer = setTimeout(() => {
+        if (startedGeneration !== generation) {
+          return;
+        }
+        applyRevealAttach({ ...effect, startMs: 0 });
+      }, effect.startMs);
+      timers.push(timer);
+      return;
+    }
+    applyRevealAttach(effect);
+  }
+
+  function applyRevealAttach(effect: TargetEffect) {
     const serial = effect.sourceSerial;
     const sprite = serial !== undefined ? revealSprite(serial) : undefined;
     const target = resolveAnchor(effect.anchor);

@@ -147,7 +147,9 @@ export function choreograph(
       continue;
     }
     if (event.kind === 'Attach') {
-      effects.push(...attachEffects(event, events));
+      const result = attachChoreography(event, events, players, context);
+      motions.push(...result.motions);
+      effects.push(...result.effects);
       continue;
     }
     if (event.kind === 'Attack' || event.kind === 'Ability') {
@@ -746,7 +748,12 @@ function handPlayMotions(event: ActionTimelineEvent, batch: ActionTimelineEvent[
   }];
 }
 
-function attachEffects(event: ActionTimelineEvent, batch: ActionTimelineEvent[]): TargetEffect[] {
+function attachChoreography(
+  event: ActionTimelineEvent,
+  batch: ActionTimelineEvent[],
+  players: PlayerView[],
+  context: ActionTimelineEvent[],
+): Choreography {
   const params = eventParams(event);
   const player = event.playerIndex;
   const cardId = num(params.cardId);
@@ -754,9 +761,10 @@ function attachEffects(event: ActionTimelineEvent, batch: ActionTimelineEvent[])
   const serialTarget = num(params.serialTarget);
   const cardIdTarget = num(params.cardIdTarget);
   if (player === undefined || cardId === undefined) {
-    return [];
+    return { motions: [], effects: [] };
   }
-  return [{
+  const startMs = actionAnimationStartMs(batch, event);
+  const effect: TargetEffect = {
     id: `${event.id}-attach-${serial ?? cardId}`,
     kind: 'attach-under',
     anchor: { kind: 'pokemon', player, serial: serialTarget, cardId: cardIdTarget },
@@ -764,9 +772,38 @@ function attachEffects(event: ActionTimelineEvent, batch: ActionTimelineEvent[])
     card: cabtCardToView(cardId),
     sourceSerial: serial,
     order: 0,
-    startMs: actionAnimationStartMs(batch, event),
+    startMs,
     durationMs: actionAnimationTiming.handMoveMs,
-  }];
+  };
+
+  // An ability that attaches from the deck (Punk Up style) has no hand
+  // source: present it as a reveal — the energy fans out from the deck, then
+  // flies onto its Pokemon through the reveal session's attach handoff.
+  const abilityContext = context.some((candidate) => candidate.kind === 'Ability');
+  const inHand = serial !== undefined
+    && players.some((candidate) => candidate.hand.some((card) => card.serial === serial));
+  if (abilityContext && !inHand && serial !== undefined) {
+    return {
+      motions: [{
+        id: `${event.id}-attach-reveal-${serial}`,
+        style: 'reveal',
+        space: 'viewport',
+        player,
+        sprite: { kind: 'card', card: cabtCardToView(cardId) },
+        from: { kind: 'deck', player },
+        to: { kind: 'deck', player },
+        startMs,
+        durationMs: actionAnimationTiming.deckRevealMs,
+        toDeck: false,
+        fromDeck: true,
+        waitForDestinationCard: false,
+        hide: [],
+        revealSerial: serial,
+      }],
+      effects: [{ ...effect, startMs: startMs + actionAnimationTiming.deckRevealMs }],
+    };
+  }
+  return { motions: [], effects: [effect] };
 }
 
 function drawMotions(
