@@ -519,6 +519,10 @@ function cardEffectContinuation(entries: ReplayFrameEntry[], startIndex: number)
   if (abilityContinuation) {
     return abilityContinuation;
   }
+  const evolvedContinuation = evolvedTriggeredAbilityContinuationFrom(entries, startIndex, firstGroup);
+  if (evolvedContinuation) {
+    return evolvedContinuation;
+  }
   if (!isCardEffectStartGroup(firstGroup)) {
     return null;
   }
@@ -555,6 +559,7 @@ function cardEffectContinuation(entries: ReplayFrameEntry[], startIndex: number)
   const resolvingContinuation = resolvingTrainerContinuationFrom(entries, startIndex, firstGroup, playEvent);
   if (resolvingContinuation) {
     return triggeredEvolutionAbilityContinuationFrom(entries, resolvingContinuation.endIndex, resolvingContinuation.group)
+      ?? evolvedTriggeredAbilityContinuationFrom(entries, resolvingContinuation.endIndex, resolvingContinuation.group)
       ?? resolvingContinuation;
   }
 
@@ -573,6 +578,55 @@ function cardEffectContinuation(entries: ReplayFrameEntry[], startIndex: number)
       };
     }
     return null;
+  }
+  return null;
+}
+
+// An evolution can trigger an ability (Punk Up after evolving): the announce
+// lands on a following frame after a YesNo confirm. Fold that announced
+// ability - and its own effect bracket - into the evolve step, so evolving
+// and the triggered effect read as one action.
+function evolvedTriggeredAbilityContinuationFrom(
+  entries: ReplayFrameEntry[],
+  evolveEndIndex: number,
+  groupSoFar: ReplayActionGroup,
+): CardEffectContinuation | null {
+  const evolveEvent = [...groupSoFar.events].reverse().find((event) => event.kind === 'Evolve');
+  if (!evolveEvent) {
+    return null;
+  }
+  const evolveParams = evolveEvent.params as Record<string, unknown> | undefined;
+  const evolvedSerial = numberField(evolveParams?.serial);
+  const evolvedCardId = numberField(evolveParams?.cardId);
+
+  for (let index = evolveEndIndex + 1; index < entries.length; index += 1) {
+    const groups = entries[index].groups;
+    if (!groups.length) {
+      continue;
+    }
+    if (groups.length !== 1) {
+      return null;
+    }
+    const abilityEvent = groups[0].events.find((event) => {
+      const params = event.params as Record<string, unknown> | undefined;
+      return event.kind === 'Ability'
+        && !params?.trigger
+        && (
+          (evolvedSerial !== undefined && numberField(params?.serial) === evolvedSerial)
+          || (evolvedCardId !== undefined && numberField(params?.cardId) === evolvedCardId)
+        );
+    });
+    if (!abilityEvent) {
+      return null;
+    }
+    const abilityContinuation = abilityEffectContinuationFrom(entries, index, groups[0]);
+    return {
+      endIndex: abilityContinuation?.endIndex ?? index,
+      group: {
+        ...groupSoFar,
+        events: [...groupSoFar.events, ...(abilityContinuation?.group ?? groups[0]).events],
+      },
+    };
   }
   return null;
 }

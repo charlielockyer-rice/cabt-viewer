@@ -163,6 +163,10 @@
     if (!sprite || serial === undefined) {
       return;
     }
+    // The phase view already renders the arriving energy badge; keep it
+    // hidden until the attach handoff animation takes ownership of it.
+    const badge = resolveAnchor({ kind: 'attached', attached: 'energy', serial });
+    const badgeRelease = badge ? claimTarget(badge.element) : undefined;
     // A deck-attach ability reveals and attaches in one batch: let the fan
     // flight finish before switching the sprite into its attach motion.
     if (sprite.mode === 'revealing' || sprite.mode === 'searching') {
@@ -171,15 +175,15 @@
         if (startedGeneration !== generation) {
           return;
         }
-        applyRevealAttach({ ...effect, startMs: 0 });
+        applyRevealAttach({ ...effect, startMs: 0 }, badgeRelease);
       }, effect.startMs);
       timers.push(timer);
       return;
     }
-    applyRevealAttach(effect);
+    applyRevealAttach(effect, badgeRelease);
   }
 
-  function applyRevealAttach(effect: TargetEffect) {
+  function applyRevealAttach(effect: TargetEffect, badgeRelease?: ReleaseClaim) {
     const serial = effect.sourceSerial;
     const sprite = serial !== undefined ? revealSprite(serial) : undefined;
     const target = resolveAnchor(effect.anchor);
@@ -194,7 +198,7 @@
     const sourceCenter = spriteCenter(sprite);
     const targetCenter = centerOf(targetRect);
     const delayMs = effect.startMs;
-    markAttachTarget(target.element, serial, delayMs, startedGeneration);
+    markAttachTarget(target.element, serial, delayMs, startedGeneration, badgeRelease);
     updateSprites((item) => item.serial === serial
       ? {
           ...item,
@@ -355,13 +359,20 @@
 
   }
 
-  function markAttachTarget(target: HTMLElement, serial: number, delayMs: number, startedGeneration: number) {
+  function markAttachTarget(
+    target: HTMLElement,
+    serial: number,
+    delayMs: number,
+    startedGeneration: number,
+    badgeRelease?: ReleaseClaim,
+  ) {
     const startTimer = setTimeout(() => {
       if (startedGeneration !== generation) {
         return;
       }
       const energyBadge = attachedEnergyElement(target, serial);
       energyBadge?.classList.add('reveal-attach-handoff-energy');
+      badgeRelease?.();
       if (energyBadge) {
         activeAttachElements.add(energyBadge);
       }
