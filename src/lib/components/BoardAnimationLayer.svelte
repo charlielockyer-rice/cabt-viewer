@@ -50,7 +50,8 @@
   const timers: ReturnType<typeof setTimeout>[] = [];
   const settleTimers: ReturnType<typeof setTimeout>[] = [];
   const settleFrameIds: number[] = [];
-  const scopeReleases: ReleaseClaim[] = [];
+  type ScopeClaim = { release: ReleaseClaim; element: HTMLElement; signature: string };
+  const scopeClaims: ScopeClaim[] = [];
   const motionReleases = new Map<string, ReleaseClaim[]>();
   let generation = 0;
   let discardOrder = 0;
@@ -362,7 +363,7 @@
       }
       const release = animVisibility.claim(resolved.element, claim.mode);
       releases.push(release);
-      scopeReleases.push(release);
+      scopeClaims.push({ release, element: resolved.element, signature: claimSignature(resolved.element) });
     }
     motionReleases.set(motion.id, releases);
   }
@@ -424,10 +425,22 @@
       clearTimeout(timer);
     }
     timers.length = 0;
-    const releases = [...scopeReleases];
-    scopeReleases.length = 0;
+    const claims = [...scopeClaims];
+    scopeClaims.length = 0;
     motionReleases.clear();
     const spriteIds = new Set(sprites.map((sprite) => sprite.id));
+
+    // Svelte reuses slot elements across view swaps: if a claimed element now
+    // shows a different card (bench reshuffled after a switch), holding the
+    // claim through the settle window would hide the wrong occupant.
+    const releases: ReleaseClaim[] = [];
+    for (const claim of claims) {
+      if (claimSignature(claim.element) !== claim.signature) {
+        claim.release();
+      } else {
+        releases.push(claim.release);
+      }
+    }
 
     if (settle && (releases.length || spriteIds.size)) {
       const timer = setTimeout(() => {
@@ -502,6 +515,10 @@
 
   function isOpponentSide(element: HTMLElement): boolean {
     return !!element.closest('.top-active-slot, .bench-row.opponent, .top-stadium-card');
+  }
+
+  function claimSignature(element: HTMLElement): string {
+    return element.dataset.pokemonSerial ?? element.dataset.cardSerial ?? '';
   }
 
   function planeElement(): HTMLElement | null {

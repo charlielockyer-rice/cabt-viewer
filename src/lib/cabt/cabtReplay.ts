@@ -693,18 +693,30 @@ function abilityEffectContinuationFrom(
   // defender, so attack brackets admit consequence kinds for either player;
   // ability brackets stay owner-only.
   const attackBracket = abilityEvent.kind === 'Attack';
+  const admissibleGroup = (group: ReplayActionGroup) => attackBracket
+    ? group.events.every((event) => isAttackConsequenceKind(event.kind))
+    : group.events.every((event) => event.playerIndex === undefined || event.playerIndex === playerIndex);
   const maxLookahead = Math.min(entries.length, startIndex + 12);
   for (let index = startIndex + 1; index < maxLookahead; index += 1) {
     const entry = entries[index];
-    const frameEvents = entry.groups.flatMap((group) => group.events);
-    const admissible = attackBracket
-      ? frameEvents.every((event) => isAttackConsequenceKind(event.kind))
-      : frameEvents.every((event) => event.playerIndex === undefined || event.playerIndex === playerIndex);
-    if (!admissible) {
-      break;
-    }
-    if (frameEvents.length) {
-      events.push(...frameEvents);
+    const groups = entry.groups;
+    if (groups.length) {
+      // The tail of an effect can share a frame with the next turn's events
+      // (second damage hit + TurnEnd + draw). Take the leading consequence
+      // groups and leave the rest of the frame to step normally.
+      let taken = 0;
+      while (taken < groups.length && admissibleGroup(groups[taken])) {
+        taken += 1;
+      }
+      if (!taken) {
+        break;
+      }
+      events.push(...groups.slice(0, taken).flatMap((group) => group.events));
+      if (taken < groups.length) {
+        entry.groups = groups.slice(taken);
+        endIndex = index - 1;
+        break;
+      }
       endIndex = index;
     }
     const select = entry.frame.select as Record<string, unknown> | null | undefined;
@@ -712,7 +724,7 @@ function abilityEffectContinuationFrom(
       break;
     }
   }
-  if (endIndex === startIndex) {
+  if (events.length === firstGroup.events.length) {
     return null;
   }
   return {
