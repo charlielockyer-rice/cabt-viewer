@@ -515,7 +515,7 @@ function buildDecisionSteps(entries: ReplayFrameEntry[], views: GameView[]): Rep
     const groups = entry.groups;
     const setupFrame = entry.frame.current.turn === 0;
     const rootFrame = !setupFrame && index > 0 && frameShowsMainMenu(entries[index - 1].frame);
-    if (setupFrame || rootFrame) {
+    if (rootFrame) {
       closeOpenStep();
     }
 
@@ -527,7 +527,28 @@ function buildDecisionSteps(entries: ReplayFrameEntry[], views: GameView[]): Rep
     }
 
     if (setupFrame) {
-      steps.push(...stepsForFrameGroups(entry, views, index, groups, 0));
+      // A mulligan's shuffle-back and redraw can arrive as separate groups or
+      // in separate frames; both join as one step.
+      const coalesced = coalesceMulliganGroups(groups);
+      if (open && isMulliganReturnGroup(open.group) && mulliganRedrawContinues(coalesced[0], open.group)) {
+        open.group.events.push(...coalesced[0].events);
+        open.group.label = labelForGroup(open.group);
+        open.endIndex = coalesced.length === 1 ? index : index - 1;
+        if (coalesced.length > 1) {
+          const consumedGroup = closeOpenStep();
+          const consumed = consumedGroup ? [consumedGroup] : [];
+          steps.push(...stepsForFrameGroups(entry, views, index, [...consumed, ...coalesced.slice(1)], consumed.length));
+        }
+        continue;
+      }
+      closeOpenStep();
+      const last = coalesced[coalesced.length - 1];
+      if (isMulliganReturnGroup(last)) {
+        steps.push(...stepsForFrameGroups(entry, views, index, coalesced, 0).slice(0, -1));
+        open = { startIndex: index, endIndex: index, group: last };
+        continue;
+      }
+      steps.push(...stepsForFrameGroups(entry, views, index, coalesced, 0));
       continue;
     }
 
@@ -579,6 +600,48 @@ function buildDecisionSteps(entries: ReplayFrameEntry[], views: GameView[]): Rep
 }
 
 const forcedStepTypes = new Set(['TurnEnd', 'TurnStart', 'PokemonCheckup', 'Result']);
+
+function isHandToDeckMove(event: ActionTimelineEvent): boolean {
+  const params = event.params as Record<string, unknown> | undefined;
+  return isMoveCardKind(event.kind)
+    && Number(params?.fromArea) === CabtAreaType.HAND
+    && Number(params?.toArea) === CabtAreaType.DECK;
+}
+
+// A turn-0 shuffle-back that has not redrawn yet — the redraw belongs to it.
+function isMulliganReturnGroup(group: ReplayActionGroup): boolean {
+  if (group.turn !== 0) {
+    return false;
+  }
+  const firstReturn = group.events.findIndex(isHandToDeckMove);
+  return firstReturn >= 0
+    && group.events.some((event) => event.kind === 'Shuffle')
+    && !group.events.slice(firstReturn).some((event) => event.kind === 'Draw');
+}
+
+// The redraw after a shuffle-back: starts with that player's draws and stays
+// within mulligan vocabulary (a failed redraw can shuffle back again).
+function mulliganRedrawContinues(group: ReplayActionGroup, openGroup: ReplayActionGroup): boolean {
+  const player = openGroup.events.find(isHandToDeckMove)?.playerIndex;
+  const first = group.events[0];
+  return first?.kind === 'Draw' && first.playerIndex === player
+    && group.events.every((event) => event.playerIndex === player
+      && (event.kind === 'Draw' || event.kind === 'HasBasicPokemon' || event.kind === 'Shuffle' || isHandToDeckMove(event)));
+}
+
+function coalesceMulliganGroups(groups: ReplayActionGroup[]): ReplayActionGroup[] {
+  const coalesced: ReplayActionGroup[] = [];
+  for (const group of groups) {
+    const previous = coalesced[coalesced.length - 1];
+    if (previous && isMulliganReturnGroup(previous) && mulliganRedrawContinues(group, previous)) {
+      previous.events = [...previous.events, ...group.events];
+      previous.label = labelForGroup(previous);
+      continue;
+    }
+    coalesced.push({ ...group });
+  }
+  return coalesced;
+}
 
 function isForcedStepGroup(group: ReplayActionGroup): boolean {
   return forcedStepTypes.has(group.type);
@@ -898,6 +961,9 @@ function moveCardGroupLabel(events: ActionTimelineEvent[], turn: number): string
     && events.some((event) => event.kind === 'Shuffle')
   ) {
     if (turn === 0) {
+      if (events.some((event) => event.kind === 'Draw')) {
+        return `Player ${playerIndex + 1} redrew their opening hand.`;
+      }
       return `Player ${playerIndex + 1} shuffled their opening hand into their deck.`;
     }
     return `Player ${playerIndex + 1} shuffled ${moveEvents.length} cards from hand into their deck.`;

@@ -3079,6 +3079,65 @@ describe('cabtReplayToSnapshot', () => {
     expect(snapshot.steps[0].actionTimeline).toHaveLength(24);
   });
 
+  it('merges a mulligan shuffle-back and redraw arriving in separate frames into one step', () => {
+    const setupState = {
+      turn: 0,
+      yourIndex: 0,
+      result: -1,
+      players: [{
+        active: [],
+        bench: [],
+        benchMax: 5,
+        handCount: 7,
+        deckCount: 53,
+        prize: [],
+      }, {
+        active: [],
+        bench: [],
+        benchMax: 5,
+        handCount: 7,
+        deckCount: 53,
+        prize: [],
+      }],
+    };
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        logs: [
+          ...Array.from({ length: 7 }, (_unused, index) => ({ type: 'Draw', playerIndex: 0, cardId: index + 21, serial: index + 21 })),
+          { type: 'HasBasicPokemon', playerIndex: 0, hasBasicPokemon: true },
+          ...Array.from({ length: 7 }, (_unused, index) => ({ type: 'Draw', playerIndex: 1, cardId: index + 1, serial: index + 1 })),
+          { type: 'HasBasicPokemon', playerIndex: 1, hasBasicPokemon: false },
+        ],
+        current: setupState,
+      }, {
+        logs: [
+          ...Array.from({ length: 7 }, (_unused, index) => ({
+            type: 'MoveCard',
+            playerIndex: 1,
+            cardId: index + 1,
+            serial: index + 1,
+            fromArea: CabtAreaType.HAND,
+            toArea: CabtAreaType.DECK,
+          })),
+          { type: 'Shuffle', playerIndex: 1 },
+        ],
+        current: setupState,
+      }, {
+        logs: [
+          ...Array.from({ length: 7 }, (_unused, index) => ({ type: 'Draw', playerIndex: 1, cardId: index + 11, serial: index + 11 })),
+          { type: 'HasBasicPokemon', playerIndex: 1, hasBasicPokemon: true },
+        ],
+        current: setupState,
+      }],
+    });
+
+    expect(snapshot.steps.map((step) => step.label)).toEqual([
+      'Players drew opening hands.',
+      'Player 2 redrew their opening hand.',
+    ]);
+    expect(snapshot.steps[1].actionTimeline).toHaveLength(16);
+  });
+
   it('uses attack names in replay step labels when card metadata has them', () => {
     const snapshot = cabtReplayToSnapshot({
       visualize: [{
