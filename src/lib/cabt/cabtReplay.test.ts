@@ -1672,7 +1672,7 @@ describe('cabtReplayToSnapshot', () => {
     expect(step.animationPhases?.[2].view.players[0].hand.map((card) => card.serial)).toEqual([46, 13]);
   });
 
-  it('does not coalesce unrelated played cards with later deck-to-hand movement', () => {
+  it('does not coalesce a played card with actions taken after the main menu returned', () => {
     const snapshot = cabtReplayToSnapshot({
       visualize: [{
         current: {
@@ -1700,6 +1700,9 @@ describe('cabtReplayToSnapshot', () => {
           }],
         },
       }, {
+        // The played card resolves within its own frame: the select is already
+        // back at the main menu, so the next answered frame is a new decision.
+        select: { type: 'Main', option: [{ type: 'End' }] },
         logs: [
           { type: 'Play', playerIndex: 0, cardId: 1145, serial: 14 },
         ],
@@ -1818,6 +1821,121 @@ describe('cabtReplayToSnapshot', () => {
     expect(playStep?.actionTimeline?.map((event) => event.kind)).toEqual(['Play']);
     expect(playStep?.animationPhases?.some((phase) => phase.key.startsWith('DeckSearchReveal:')) ?? false).toBe(false);
     expect(snapshot.steps.some((step) => step.actionTimeline?.some((event) => event.kind === 'MoveCard'))).toBe(true);
+  });
+
+  it('coalesces a coin-flip trainer with its cross-player discard consequence', () => {
+    const me = (hand: Array<{ id: number; serial: number }>, discard: Array<{ id: number; serial: number }>) => ({
+      active: [{ id: 66, serial: 14, hp: 140, maxHp: 140 }],
+      bench: [],
+      benchMax: 5,
+      hand,
+      deckCount: 40,
+      discard,
+      prize: [],
+    });
+    const opponent = (energyCards: Array<{ id: number; serial: number }>, discard: Array<{ id: number; serial: number }>) => ({
+      active: [{ id: 722, serial: 6, hp: 70, maxHp: 70, energyCards }],
+      bench: [],
+      benchMax: 5,
+      handCount: 0,
+      deckCount: 60,
+      discard,
+      prize: [],
+    });
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: { turn: 1, yourIndex: 0, result: -1, players: [me([{ id: 1120, serial: 80 }], []), opponent([{ id: 3, serial: 70 }], [])] },
+      }, {
+        logs: [
+          { type: 'Play', playerIndex: 0, cardId: 1120, serial: 80 },
+        ],
+        select: { type: 'YesNo', context: 'CoinHead', option: [{ type: 'Yes' }, { type: 'No' }] },
+        current: { turn: 1, yourIndex: 0, result: -1, players: [me([], []), opponent([{ id: 3, serial: 70 }], [])] },
+      }, {
+        action: [[0], []],
+        logs: [
+          { type: 'Coin', playerIndex: 0, head: true },
+        ],
+        select: { type: 'Card', context: 'DiscardEnergy' },
+        current: { turn: 1, yourIndex: 0, result: -1, players: [me([], []), opponent([{ id: 3, serial: 70 }], [])] },
+      }, {
+        action: [[0], []],
+        logs: [
+          { type: 'MoveCard', playerIndex: 1, cardId: 3, serial: 70, fromArea: CabtAreaType.ENERGY, toArea: CabtAreaType.DISCARD },
+        ],
+        select: { type: 'Main', option: [{ type: 'End' }] },
+        current: { turn: 1, yourIndex: 0, result: -1, players: [me([], [{ id: 1120, serial: 80 }]), opponent([], [{ id: 3, serial: 70 }])] },
+      }],
+    });
+
+    expect(snapshot.steps).toHaveLength(2);
+    const step = snapshot.steps[1];
+    expect(step.label).toBe('Player 1 played Crushing Hammer.');
+    expect(step.stateIndex).toBe(3);
+    expect(step.actionTimeline?.map((event) => event.kind)).toEqual(['Play', 'Coin', 'MoveCard']);
+    expect(step.animationPhases?.map((phase) => phase.key)).toEqual(['Play:0', 'Coin:0', 'AttachedMove:1:8->3']);
+    expect(step.animationPhases?.[0].view.players[0].playZone.map((card) => card.serial)).toEqual([80]);
+    expect(step.animationPhases?.[2].view.players[1].active.energy.map((card) => card.serial)).toEqual([70]);
+    expect(step.displayView?.players[0].discard.map((card) => card.serial)).toEqual([80]);
+    expect(snapshot.views[step.stateIndex].players[1].discard.map((card) => card.serial)).toEqual([70]);
+  });
+
+  it('merges a prompt-chained ability and cuts its shared frame at the turn boundary', () => {
+    const me = {
+      active: [{ id: 66, serial: 14, hp: 140, maxHp: 140 }],
+      bench: [],
+      benchMax: 5,
+      hand: [],
+      deckCount: 40,
+      discard: [],
+      prize: [],
+    };
+    const opponent = (hp: number, handCount: number) => ({
+      active: [{ id: 722, serial: 6, hp, maxHp: 70 }],
+      bench: [],
+      benchMax: 5,
+      handCount,
+      deckCount: 60,
+      discard: [],
+      prize: [],
+    });
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        select: {
+          type: 'Main',
+          option: [
+            { type: 'Ability', area: CabtAreaType.ACTIVE, index: 0 },
+            { type: 'End' },
+          ],
+        },
+        current: { turn: 2, yourIndex: 0, result: -1, players: [me, opponent(70, 6)] },
+      }, {
+        action: [[0], []],
+        logs: [],
+        select: { type: 'Card', context: 'Damage' },
+        current: { turn: 2, yourIndex: 0, result: -1, players: [me, opponent(70, 6)] },
+      }, {
+        action: [[0], []],
+        logs: [
+          { type: 'HpChange', playerIndex: 1, cardId: 722, serial: 6, value: -30 },
+          { type: 'TurnEnd', playerIndex: 0 },
+          { type: 'TurnStart', playerIndex: 1 },
+          { type: 'Draw', playerIndex: 1, cardId: 3, serial: 101 },
+        ],
+        current: { turn: 3, yourIndex: 1, result: -1, players: [me, opponent(40, 7)] },
+      }],
+    });
+
+    expect(snapshot.steps.map((step) => step.type)).toEqual(['Main', 'Ability', 'TurnEnd', 'TurnStart']);
+    const abilityStep = snapshot.steps[1];
+    expect(abilityStep.label).toBe('Player 1 used Run Away Draw with Dudunsparce.');
+    // The effect tail shares its frame with the turn transition; the step keeps
+    // the tail but leaves the turn boundary to step on its own.
+    expect(abilityStep.stateIndex).toBe(1);
+    expect(abilityStep.actionTimeline?.map((event) => event.kind)).toEqual(['Ability', 'HpChange']);
+    expect(snapshot.steps[2].actionTimeline?.map((event) => event.kind)).toEqual(['TurnEnd']);
+    expect(snapshot.steps[3].label).toBe('Player 2 turn started.');
+    expect(snapshot.steps[3].actionTimeline?.map((event) => event.kind)).toEqual(['TurnStart', 'Draw']);
   });
 
   it('does not project played Pokemon cards into discard when they enter play', () => {
@@ -3108,6 +3226,9 @@ describe('cabtReplayToSnapshot', () => {
           }],
         },
       }, {
+        // The attack fully resolved: the defender's next play answers the
+        // main menu, so it is a new root decision rather than a consequence.
+        select: { type: 'Main', option: [{ type: 'End' }] },
         logs: [
           { type: 'Attack', playerIndex: 0, cardId: 723, serial: 13, attackId: 1046 },
           { type: 'HpChange', playerIndex: 1, cardId: 721, serial: 64, value: -400, putDamageCounter: false },
