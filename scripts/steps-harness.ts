@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { cabtReplayToSnapshot } from './src/lib/cabt/cabtReplay';
+import { cabtReplayToSnapshot } from '../src/lib/cabt/cabtReplay';
 
 const [, , path] = process.argv;
 const raw = JSON.parse(readFileSync(path, 'utf8'));
