@@ -193,7 +193,11 @@ function logsWithSynthesizedAbility(
     ?? retreatLogForSelectedOption(previousFrame, frame)
     ?? abilityLogForConfirmedTrigger(previousFrame, frame)
     ?? abilityLogForTriggeredEvolution(previousFrame, logs);
-  return abilityLog ? [abilityLog, ...logs] : logs;
+  if (abilityLog) {
+    return [abilityLog, ...logs];
+  }
+  const attachAbilityLog = abilityLogForTriggeredAttach(previousFrame, logs);
+  return attachAbilityLog ? logsWithInsertedLog(logs, attachAbilityLog.afterIndex, attachAbilityLog.log) : logs;
 }
 
 // Triggered abilities (e.g. Punk Up after evolving) are offered as a YesNo
@@ -412,6 +416,62 @@ function logsAreMatchingTriggeredDraws(logs: Array<Record<string, unknown>>, tri
   });
 }
 
+function abilityLogForTriggeredAttach(
+  previousFrame: CabtVisualizeFrame,
+  logs: Array<Record<string, unknown>>,
+): { afterIndex: number; log: Record<string, unknown> } | null {
+  const attachIndex = logs.findIndex((log, index) =>
+    normalizedFrameLogType(log.type) === 'Attach'
+    && logs.slice(index + 1).some((candidate) => normalizedFrameLogType(candidate.type) !== 'Attach')
+    && attachedCardWasInHand(previousFrame, log));
+  if (attachIndex < 0) {
+    return null;
+  }
+  const attach = logs[attachIndex];
+  const cardId = numberField(attach.cardId);
+  const playerIndex = numberField(attach.playerIndex);
+  if (cardId === undefined || playerIndex === undefined) {
+    return null;
+  }
+  return {
+    afterIndex: attachIndex,
+    log: {
+      type: 'Ability',
+      playerIndex,
+      cardId,
+      serial: numberField(attach.serial),
+      cardIdTarget: numberField(attach.cardIdTarget),
+      serialTarget: numberField(attach.serialTarget),
+      abilityName: cardName(cardId),
+      trigger: 'Attach',
+    },
+  };
+}
+
+function attachedCardWasInHand(frame: CabtVisualizeFrame, log: Record<string, unknown>): boolean {
+  const playerIndex = numberField(log.playerIndex);
+  const player = playerIndex === undefined ? undefined : frame.current.players[playerIndex];
+  if (!player) {
+    return false;
+  }
+  const serial = numberField(log.serial);
+  const cardId = numberField(log.cardId);
+  return (player.hand ?? []).some((card) =>
+    serial !== undefined ? card.serial === serial : cardId !== undefined && card.id === cardId);
+}
+
+function logsWithInsertedLog(
+  logs: Array<Record<string, unknown>>,
+  afterIndex: number,
+  log: Record<string, unknown>,
+): Array<Record<string, unknown>> {
+  return [
+    ...logs.slice(0, afterIndex + 1),
+    log,
+    ...logs.slice(afterIndex + 1),
+  ];
+}
+
 function selectedOptionFromAction(
   select: Record<string, unknown> | null | undefined,
   action: unknown,
@@ -493,6 +553,7 @@ function numberField(value: unknown): number | undefined {
 type OpenReplayStep = {
   startIndex: number;
   endIndex: number;
+  consumedIndex: number;
   group: ReplayActionGroup;
 };
 
@@ -534,6 +595,7 @@ function buildDecisionSteps(entries: ReplayFrameEntry[], views: GameView[]): Rep
         open.group.events.push(...coalesced[0].events);
         open.group.label = labelForGroup(open.group);
         open.endIndex = coalesced.length === 1 ? index : index - 1;
+        open.consumedIndex = index;
         if (coalesced.length > 1) {
           const consumedGroup = closeOpenStep();
           const consumed = consumedGroup ? [consumedGroup] : [];
@@ -545,7 +607,7 @@ function buildDecisionSteps(entries: ReplayFrameEntry[], views: GameView[]): Rep
       const last = coalesced[coalesced.length - 1];
       if (isMulliganReturnGroup(last)) {
         steps.push(...stepsForFrameGroups(entry, views, index, coalesced, 0).slice(0, -1));
-        open = { startIndex: index, endIndex: index, group: last };
+        open = { startIndex: index, endIndex: index, consumedIndex: index, group: last };
         continue;
       }
       steps.push(...stepsForFrameGroups(entry, views, index, coalesced, 0));
@@ -560,6 +622,7 @@ function buildDecisionSteps(entries: ReplayFrameEntry[], views: GameView[]): Rep
         open = {
           startIndex: index,
           endIndex: index,
+          consumedIndex: index,
           group: mergedGroup(groups.slice(0, leadingCount)),
         };
       }
@@ -578,6 +641,7 @@ function buildDecisionSteps(entries: ReplayFrameEntry[], views: GameView[]): Rep
         // (second damage hit + TurnEnd + draw). The merged step keeps the
         // previous frame as its state; the rest of the frame steps normally.
         open.endIndex = leadingCount === groups.length ? index : index - 1;
+        open.consumedIndex = index;
       }
       if (leadingCount < groups.length) {
         closeOpenStep();
@@ -589,7 +653,7 @@ function buildDecisionSteps(entries: ReplayFrameEntry[], views: GameView[]): Rep
     // No decision context and nothing open: keep per-group steps. A lone
     // non-forced group stays open so auto-resolution frames can extend it.
     if (groups.length === 1 && leadingCount === 1) {
-      open = { startIndex: index, endIndex: index, group: mergedGroup(groups) };
+      open = { startIndex: index, endIndex: index, consumedIndex: index, group: mergedGroup(groups) };
       continue;
     }
     steps.push(...stepsForFrameGroups(entry, views, index, groups, 0));
@@ -661,6 +725,7 @@ function mergedGroup(groups: ReplayActionGroup[]): ReplayActionGroup {
 
 function openStepToReplayStep(entries: ReplayFrameEntry[], views: GameView[], open: OpenReplayStep): ReplayStep {
   const entry = entries[open.endIndex];
+  const consumedEntry = entries[open.consumedIndex] ?? entry;
   // Finalize the merged group on the open step so callers that reuse it as
   // projection context see the same event order the step presents.
   const group = groupWithRevealResolutionOrdering(open.group);
@@ -671,7 +736,13 @@ function openStepToReplayStep(entries: ReplayFrameEntry[], views: GameView[], op
     label: group.label,
     type: group.type,
     actionTimeline: group.events,
-    displayView: groupedStepDisplayView(views[open.startIndex - 1], entry.view, [group], 0),
+    displayView: groupedStepDisplayView(
+      views[open.startIndex - 1],
+      consumedEntry.view,
+      [group],
+      0,
+      open.consumedIndex !== open.endIndex,
+    ),
     animationPhases: groupedStepAnimationPhases(views[open.startIndex - 1], entry.view, [group], 0),
     payload: {
       events: group.events,
@@ -1130,12 +1201,13 @@ function groupedStepDisplayView(
   currentView: GameView,
   groups: ReplayActionGroup[],
   groupIndex: number,
+  forceProjection = false,
 ): GameView | undefined {
   const group = groups[groupIndex];
   if (!previousView || !group) {
     return undefined;
   }
-  const needsProjection = groups.length >= 2 || shouldProjectSingleGroup(currentView, group);
+  const needsProjection = forceProjection || groups.length >= 2 || shouldProjectSingleGroup(currentView, group);
   if (!needsProjection) {
     return undefined;
   }
@@ -1207,7 +1279,7 @@ function groupedStepAnimationPhases(
         actionTimeline: phase.events,
       },
       actionTimeline: phase.events,
-      durationMs: phase.durationMs + deckAttachRevealExtraMs(phase, phaseStartView),
+      durationMs: phase.durationMs + attachPhaseExtraMs(phase, phaseStartView),
     });
     phaseStartView = projectedViewForEvents(phaseStartView, currentView, phase.events);
   }
@@ -1233,7 +1305,7 @@ function animationEventPhases(events: ActionTimelineEvent[]): AnimationEventPhas
       continue;
     }
     const last = phases.at(-1);
-    if (last && last.key === key) {
+    if (last && last.key === key && shouldContinueAnimationPhase(last, event)) {
       last.events.push(event);
       last.durationMs = animationPhaseDurationMs(key, last.events.length);
       continue;
@@ -1246,6 +1318,14 @@ function animationEventPhases(events: ActionTimelineEvent[]): AnimationEventPhas
     });
   }
   return phases.filter((phase) => phase.events.some((event) => animationPhaseKey(event)));
+}
+
+function shouldContinueAnimationPhase(phase: AnimationEventPhase, event: ActionTimelineEvent): boolean {
+  const previousEvent = phase.events.at(-1);
+  if (!isMoveCardKind(previousEvent?.kind) || !isMoveCardKind(event.kind)) {
+    return true;
+  }
+  return sameMoveCardBatch(previousEvent, event) || sameBoardPositionMoveBatch(previousEvent, event);
 }
 
 function animationPhaseKeyForReplayEvent(event: ActionTimelineEvent, phases: AnimationEventPhase[]): string | null {
@@ -1300,6 +1380,9 @@ function animationPhaseLabel(phase: AnimationEventPhase): string | undefined {
     return cardEventCount === 1
       ? event.message
       : `${actor} put ${cardEventCount} revealed cards into their hand.`;
+  }
+  if (phase.key.startsWith('PrizeTake:')) {
+    return cardEventCount === 1 ? event.message : `${actor} took ${cardEventCount} Prize cards.`;
   }
   if (phase.key.startsWith('DeckSearchReveal:')) {
     return cardEventCount === 1
@@ -1383,6 +1466,9 @@ function animationPhaseKey(event: ActionTimelineEvent): string | null {
     if (fromArea === CabtAreaType.LOOKING && toArea === CabtAreaType.HAND) {
       return `DeckRevealTake:${playerKey}`;
     }
+    if (fromArea === CabtAreaType.PRIZE && toArea === CabtAreaType.HAND) {
+      return `PrizeTake:${playerKey}`;
+    }
     if (isAttachedCardArea(fromArea) && isAttachedCardMoveDestination(toArea)) {
       return `AttachedMove:${playerKey}:${fromArea}->${toArea}`;
     }
@@ -1406,6 +1492,7 @@ function animationPhaseUsesSourceView(key: string): boolean {
     || key.startsWith('Attack:')
     || key.startsWith('Damage:')
     || key.startsWith('KnockOut:')
+    || key.startsWith('PrizeTake:')
     || key.startsWith('BoardToDeck:')
     || key.startsWith('BoardMove:')
     || key.startsWith('AttachedMove:')
@@ -1513,9 +1600,9 @@ function gameViewWithDeferredAttachments(view: GameView, futureEvents: ActionTim
   };
 }
 
-// Attaches whose card was never in a hand present as a deck reveal before
-// flying onto the Pokemon, so the phase needs the reveal flight's time too.
-function deckAttachRevealExtraMs(phase: AnimationEventPhase, phaseStartView: GameView): number {
+// Hand/deck sourced attachments finish with attach-under after their departure
+// motion, so the phase keeps owning the visual until that handoff completes.
+function attachPhaseExtraMs(phase: AnimationEventPhase, phaseStartView: GameView): number {
   if (!phase.key.startsWith('Attach:')) {
     return 0;
   }
@@ -1528,7 +1615,7 @@ function deckAttachRevealExtraMs(phase: AnimationEventPhase, phaseStartView: Gam
     return Number.isFinite(serial)
       && phaseStartView.players.some((player) => player.hand.some((card) => card.serial === serial));
   });
-  return fromHand ? 0 : actionAnimationTiming.deckRevealMs;
+  return fromHand ? actionAnimationTiming.handMoveMs : actionAnimationTiming.deckRevealMs;
 }
 
 function animationPhaseDurationMs(key: string, count: number): number {
@@ -1561,6 +1648,9 @@ function animationPhaseCardDurationMs(key: string): number {
   }
   if (key.startsWith('DeckRevealTake:')) {
     return actionAnimationTiming.handMoveMs;
+  }
+  if (key.startsWith('PrizeTake:')) {
+    return actionAnimationTiming.prizeTakeMs;
   }
   if (key.startsWith('AttachedMove:')) {
     return actionAnimationTiming.handMoveMs;
@@ -1616,6 +1706,9 @@ function animationPhaseStepMs(key: string): number {
   }
   if (key.startsWith('DeckRevealTake:')) {
     return actionAnimationTiming.handMoveStepMs;
+  }
+  if (key.startsWith('PrizeTake:')) {
+    return actionAnimationTiming.prizeTakeStepMs;
   }
   if (key.startsWith('AttachedMove:')) {
     return actionAnimationTiming.handMoveStepMs;
@@ -1995,6 +2088,16 @@ function applyReplayEvent(
     return;
   }
 
+  if (event.kind === 'Attach') {
+    player.hand = removeCardFromHandIfPresent(player.hand, event);
+    if (!options.deferBoardStateEvents) {
+      player.active = currentPlayer.active;
+      player.bench = currentPlayer.bench;
+      player.discard = currentPlayer.discard;
+    }
+    return;
+  }
+
   if (event.kind === 'HpChange' || event.kind === 'HPChange') {
     if (options.deferBoardStateEvents) {
       return;
@@ -2188,6 +2291,24 @@ function removeMovedCardFromHand(hand: CardView[], event: ActionTimelineEvent | 
   }
 
   return resizedHand(hand, hand.length - 1);
+}
+
+function removeCardFromHandIfPresent(hand: CardView[], event: ActionTimelineEvent | undefined): CardView[] {
+  const params = event?.params as Record<string, unknown> | undefined;
+  const serial = Number(params?.serial);
+  if (Number.isFinite(serial) && hand.some((card) => card.serial === serial)) {
+    return hand.filter((card) => card.serial !== serial);
+  }
+
+  const cardId = Number(params?.cardId);
+  if (Number.isFinite(cardId)) {
+    const index = hand.findIndex((card) => card.id === cardId);
+    if (index >= 0) {
+      return removeAt(hand, index);
+    }
+  }
+
+  return hand;
 }
 
 function removeAt<T>(items: T[], index: number): T[] {

@@ -130,7 +130,7 @@ describe('choreographBoardMotions', () => {
     expect(choreographBoardMotions(events, players)).toHaveLength(0);
   });
 
-  it('builds deck-to-board placements with the destination stack and hidden landing slot', () => {
+  it('builds deck-to-board placements with the destination stack and early hidden landing slot', () => {
     const placed: CardView = card(300, 5);
     const players = [player(0, card(100, 1), [placed]), player(1)];
     const events = [moveCard(0, CabtAreaType.DECK, CabtAreaType.BENCH, 300, 5)];
@@ -139,11 +139,19 @@ describe('choreographBoardMotions', () => {
     expect(motions).toHaveLength(1);
     const motion = motions[0];
     expect(motion.fromDeck).toBe(true);
+    expect(motion.style).toBe('board-move');
+    expect(motion.space).toBe('board');
     expect(motion.from).toEqual({ kind: 'deck', player: 0 });
     expect(motion.to).toEqual({ kind: 'pokemon', player: 0, serial: 5, cardId: 300 });
-    expect(motion.hide).toEqual([{ anchor: { kind: 'pokemon', player: 0, serial: 5, cardId: 300 }, mode: 'contents' }]);
+    expect(motion.hide).toEqual([{
+      anchor: { kind: 'pokemon', player: 0, serial: 5, cardId: 300 },
+      mode: 'contents',
+      early: true,
+    }]);
+    expect(motion.durationMs).toBe(actionAnimationTiming.boardMoveMs);
     if (motion.sprite.kind === 'slot') {
       expect(motion.sprite.slot.pokemon?.serial).toBe(5);
+      expect(motion.sprite.activeSize).toBe(false);
     } else {
       throw new Error('expected slot sprite');
     }
@@ -295,6 +303,27 @@ describe('choreograph viewport family', () => {
     expect(effects[0].startMs).toBe(motions[0].durationMs);
   });
 
+  it('flies hand attachments to the target before the attach-under effect', () => {
+    const active = card(100, 1);
+    const energy = card(500, 11);
+    const players = [{ ...player(0, active), hand: [energy] }, player(1)];
+    const events = [event('Attach', 0, { cardId: 500, serial: 11, cardIdTarget: 100, serialTarget: 1 })];
+
+    const { motions, effects } = choreograph(events, players);
+    expect(motions).toHaveLength(1);
+    expect(motions[0]).toMatchObject({
+      style: 'hand-play',
+      space: 'viewport',
+      from: { kind: 'hand-slot', player: 0, serial: 11 },
+      to: { kind: 'pokemon', player: 0, serial: 1, cardId: 100 },
+      durationMs: actionAnimationTiming.handMoveMs,
+      hideResolvedTarget: false,
+    });
+    expect(effects).toHaveLength(1);
+    expect(effects[0].kind).toBe('attach-under');
+    expect(effects[0].startMs).toBe(motions[0].startMs + motions[0].durationMs);
+  });
+
   it('emits attach-under target effects for Attach events', () => {
     const players = [player(0, card(100, 1)), player(1)];
     const events = [event('Attach', 0, { cardId: 500, serial: 11, cardIdTarget: 100, serialTarget: 1 })];
@@ -305,6 +334,24 @@ describe('choreograph viewport family', () => {
     expect(effects[0].kind).toBe('attach-under');
     expect(effects[0].anchor).toEqual({ kind: 'pokemon', player: 0, serial: 1, cardId: 100 });
     expect(effects[0].sourceSerial).toBe(11);
+  });
+
+  it('anchors attach-trigger announces to the target Pokemon', () => {
+    const players = [player(0, card(100, 1)), player(1)];
+    const { effects } = choreograph([
+      event('Ability', 0, {
+        cardId: 500,
+        serial: 11,
+        cardIdTarget: 100,
+        serialTarget: 1,
+        abilityName: 'Enriching Energy',
+      }),
+    ], players);
+
+    expect(effects).toHaveLength(1);
+    expect(effects[0].kind).toBe('announce-ability');
+    expect(effects[0].anchor).toEqual({ kind: 'pokemon', player: 0, serial: 1, cardId: 100 });
+    expect(effects[0].label).toBe('Enriching Energy');
   });
 
   it('targets draw motions at the end of the hand, or by serial during a mulligan', () => {

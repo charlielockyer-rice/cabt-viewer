@@ -129,6 +129,9 @@
     const startedGeneration = generation;
     const latestDeckPlacementStartMs = Math.max(0, ...motions.filter((motion) => motion.fromDeck).map((motion) => motion.startMs));
     for (const motion of motions) {
+      applyClaims(motion, (claim) => claim.early === true);
+    }
+    for (const motion of motions) {
       const timer = setTimeout(() => {
         void beginMotion(motion, startedGeneration, latestDeckPlacementStartMs);
       }, motion.startMs);
@@ -244,7 +247,7 @@
     }
 
     const correction = measureSpriteCorrection(sprite, to.geometry);
-    applyClaims(motion);
+    applyClaims(motion, (claim) => claim.early !== true);
     sprites = sprites.map((item) => item.id === sprite.id
       ? { ...item, vars: boardMoveVars(fromRect, toRect, correction.x, correction.y), measuring: false }
       : item);
@@ -277,7 +280,7 @@
     const targetScale = Math.min(toRect.width / fromRect.width, toRect.height / fromRect.height);
     const targetRotation = to.element.closest('.top-piles') ? 180 : 0;
     const startRotation = from?.element.closest('.top-active-slot, .bench-row.opponent') ? 180 : targetRotation;
-    applyClaims(motion);
+    applyClaims(motion, (claim) => claim.early !== true);
     sprites = [...sprites, {
       id: motion.id,
       motion,
@@ -354,9 +357,12 @@
     timers.push(cleanupTimer);
   }
 
-  function applyClaims(motion: CardMotion) {
+  function applyClaims(motion: CardMotion, includeClaim: (claim: CardMotion['hide'][number]) => boolean) {
     const releases = motionReleases.get(motion.id) ?? [];
     for (const claim of motion.hide) {
+      if (!includeClaim(claim)) {
+        continue;
+      }
       const resolved = resolveAnchor(claim.anchor);
       if (!resolved) {
         continue;

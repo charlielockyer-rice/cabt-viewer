@@ -15,6 +15,7 @@ export type SpriteSpec =
 export type HideClaim = {
   anchor: Anchor;
   mode: HideMode;
+  early?: boolean;
 };
 
 export type MotionStyle =
@@ -229,6 +230,8 @@ function announceEffects(event: ActionTimelineEvent, batch: ActionTimelineEvent[
   const player = event.playerIndex;
   const serial = num(params.serial);
   const cardId = num(params.cardId);
+  const targetSerial = num(params.serialTarget);
+  const targetCardId = num(params.cardIdTarget);
   if (player === undefined || (serial === undefined && cardId === undefined)) {
     return [];
   }
@@ -239,7 +242,7 @@ function announceEffects(event: ActionTimelineEvent, batch: ActionTimelineEvent[
     kind: attack ? 'announce-attack' : 'announce-ability',
     anchor: stadium
       ? { kind: 'stadium', player, serial }
-      : { kind: 'pokemon', player, serial, cardId },
+      : { kind: 'pokemon', player, serial: targetSerial ?? serial, cardId: targetCardId ?? cardId },
     player,
     order: 0,
     label: announceLabel(event),
@@ -654,7 +657,7 @@ function moveCardChoreography(
       toDeck: false,
       fromDeck: true,
       waitForDestinationCard: false,
-      hide: [{ anchor: identity, mode: 'contents' }],
+      hide: [{ anchor: identity, mode: 'contents', early: true }],
     }], effects: [] };
   }
 
@@ -813,6 +816,7 @@ function attachChoreography(
     return { motions: [], effects: [] };
   }
   const startMs = actionAnimationStartMs(batch, event);
+  const attachMoveMs = actionAnimationTiming.handMoveMs;
   const effect: TargetEffect = {
     id: `${event.id}-attach-${serial ?? cardId}`,
     kind: 'attach-under',
@@ -822,7 +826,7 @@ function attachChoreography(
     sourceSerial: serial,
     order: 0,
     startMs,
-    durationMs: actionAnimationTiming.handMoveMs,
+    durationMs: attachMoveMs,
   };
 
   // An ability that attaches from the deck (Punk Up style) has no hand
@@ -850,6 +854,27 @@ function attachChoreography(
         revealSerial: serial,
       }],
       effects: [{ ...effect, startMs: startMs + actionAnimationTiming.deckRevealMs }],
+    };
+  }
+  if (inHand && serial !== undefined) {
+    return {
+      motions: [{
+        id: `${event.id}-attach-hand-${serial}`,
+        style: 'hand-play',
+        space: 'viewport',
+        player,
+        sprite: { kind: 'card', card: cabtCardToView(cardId) },
+        from: { kind: 'hand-slot', player, serial },
+        to: { kind: 'pokemon', player, serial: serialTarget, cardId: cardIdTarget },
+        startMs,
+        durationMs: attachMoveMs,
+        toDeck: false,
+        fromDeck: false,
+        waitForDestinationCard: false,
+        hide: [],
+        hideResolvedTarget: false,
+      }],
+      effects: [{ ...effect, startMs: startMs + attachMoveMs }],
     };
   }
   return { motions: [], effects: [effect] };

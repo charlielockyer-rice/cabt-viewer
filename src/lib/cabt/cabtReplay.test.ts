@@ -462,6 +462,85 @@ describe('cabtReplayToSnapshot', () => {
     expect(snapshot.views[step.stateIndex].players[0].deckCount).toBe(39);
   });
 
+  it('synthesizes attach-trigger announces after hand attachments with follow-up effects', () => {
+    const target = { id: 722, serial: 6, hp: 90, maxHp: 90 };
+    const opponent = { active: [], bench: [], benchMax: 5, handCount: 0, deckCount: 60, prize: [] };
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        select: {
+          type: 'Main',
+          option: [
+            { type: 'Attach', area: CabtAreaType.HAND, index: 0, playerIndex: 0 },
+            { type: 'End' },
+          ],
+        },
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [target],
+            bench: [],
+            benchMax: 5,
+            hand: [{ id: 3, serial: 32 }],
+            deckCount: 40,
+            discard: [],
+            prize: [],
+          }, opponent],
+        },
+      }, {
+        action: [[0], []],
+        logs: [
+          { type: 'Attach', playerIndex: 0, cardId: 3, serial: 32, cardIdTarget: 722, serialTarget: 6 },
+          { type: 'Draw', playerIndex: 0, cardId: 4, serial: 101 },
+          { type: 'Draw', playerIndex: 0, cardId: 5, serial: 102 },
+          { type: 'Draw', playerIndex: 0, cardId: 6, serial: 103 },
+          { type: 'Draw', playerIndex: 0, cardId: 7, serial: 104 },
+        ],
+        select: { type: 'Main', option: [{ type: 'End' }] },
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{
+              ...target,
+              energyCards: [{ id: 3, serial: 32 }],
+            }],
+            bench: [],
+            benchMax: 5,
+            hand: [
+              { id: 4, serial: 101 },
+              { id: 5, serial: 102 },
+              { id: 6, serial: 103 },
+              { id: 7, serial: 104 },
+            ],
+            deckCount: 36,
+            discard: [],
+            prize: [],
+          }, opponent],
+        },
+      }],
+    });
+
+    const step = snapshot.steps[1];
+    expect(step.label).toBe('Player 1 attached Basic Water Energy to Snover.');
+    expect(step.actionTimeline?.map((event) => event.kind)).toEqual(['Attach', 'Ability', 'Draw', 'Draw', 'Draw', 'Draw']);
+    expect(step.actionTimeline?.[1].params).toMatchObject({
+      type: 'Ability',
+      cardId: 3,
+      serial: 32,
+      cardIdTarget: 722,
+      serialTarget: 6,
+      abilityName: 'Basic Water Energy',
+      trigger: 'Attach',
+    });
+    expect(step.animationPhases?.map((phase) => phase.key)).toEqual(['Attach:0', 'Ability:0', 'Draw:0']);
+    expect(step.animationPhases?.[0].view.players[0].hand).toHaveLength(0);
+    expect(step.animationPhases?.[1].actionTimeline.map((event) => event.kind)).toEqual(['Ability']);
+    expect(step.animationPhases?.[2].actionTimeline.map((event) => event.kind)).toEqual(['Draw', 'Draw', 'Draw', 'Draw']);
+  });
+
   it('keeps played Stadium cards in the stadium zone instead of the resolving discard path', () => {
     const snapshot = cabtReplayToSnapshot({
       visualize: [{
@@ -3257,6 +3336,164 @@ describe('cabtReplayToSnapshot', () => {
     expect(snapshot.views[step.stateIndex].players[1].active.empty).toBe(true);
     expect(snapshot.views[step.stateIndex].players[1].discard.map((card) => card.serial)).toEqual([64, 96]);
     expect(snapshot.views[step.stateIndex].players[1].discard.at(-1)?.serial).toBe(96);
+  });
+
+  it('keeps KO prize and promotion consequences sequential inside the attack step', () => {
+    const attacker = { id: 723, serial: 13, hp: 350, maxHp: 350 };
+    const knockedOut = { id: 721, serial: 64, hp: 150, maxHp: 150 };
+    const promoted = { id: 722, serial: 67, hp: 90, maxHp: 90 };
+    const prize = { id: 3, serial: 120 };
+    const p1Base = {
+      active: [attacker],
+      bench: [],
+      benchMax: 5,
+      hand: [],
+      deckCount: 45,
+      discard: [],
+      prize: [prize],
+    };
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        select: { type: 'Main', option: [{ type: 'Attack', attackId: 1046 }, { type: 'End' }] },
+        current: {
+          turn: 3,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [knockedOut],
+            bench: [promoted],
+            benchMax: 5,
+            hand: [],
+            deckCount: 46,
+            discard: [],
+            prize: [],
+          }, p1Base],
+        },
+      }, {
+        action: [[], [0]],
+        logs: [
+          { type: 'Attack', playerIndex: 1, cardId: 723, serial: 13, attackId: 1046 },
+          { type: 'HpChange', playerIndex: 0, cardId: 721, serial: 64, value: -120, putDamageCounter: false },
+        ],
+        select: { type: 'Card', option: [{ type: 'Card', area: CabtAreaType.PRIZE, index: 0 }] },
+        current: {
+          turn: 3,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ ...knockedOut, hp: 30 }],
+            bench: [promoted],
+            benchMax: 5,
+            hand: [],
+            deckCount: 46,
+            discard: [],
+            prize: [],
+          }, p1Base],
+        },
+      }, {
+        action: [[], [0]],
+        logs: [
+          { type: 'HpChange', playerIndex: 0, cardId: 721, serial: 64, value: -30, putDamageCounter: false },
+          { type: 'MoveCard', playerIndex: 0, cardId: 721, serial: 64, fromArea: CabtAreaType.ACTIVE, toArea: CabtAreaType.DISCARD },
+        ],
+        select: { type: 'Card', option: Array.from({ length: 6 }, (_unused, index) => ({ type: 'Card', area: CabtAreaType.PRIZE, index })) },
+        current: {
+          turn: 3,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [promoted],
+            benchMax: 5,
+            hand: [],
+            deckCount: 46,
+            discard: [{ id: 721, serial: 64 }],
+            prize: [],
+          }, p1Base],
+        },
+      }, {
+        action: [[], [0]],
+        logs: [
+          { type: 'MoveCard', playerIndex: 1, cardId: 3, serial: 120, fromArea: CabtAreaType.PRIZE, toArea: CabtAreaType.HAND },
+        ],
+        select: { type: 'Card', option: [{ type: 'Card', area: CabtAreaType.BENCH, index: 0 }, { type: 'Card', area: CabtAreaType.BENCH, index: 1 }] },
+        current: {
+          turn: 3,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [promoted],
+            benchMax: 5,
+            hand: [],
+            deckCount: 46,
+            discard: [{ id: 721, serial: 64 }],
+            prize: [],
+          }, {
+            ...p1Base,
+            hand: [prize],
+            prize: [],
+          }],
+        },
+      }, {
+        action: [[0], []],
+        logs: [
+          { type: 'MoveCard', playerIndex: 0, cardId: 722, serial: 67, fromArea: CabtAreaType.BENCH, toArea: CabtAreaType.ACTIVE },
+          { type: 'TurnEnd', playerIndex: 1 },
+          { type: 'TurnStart', playerIndex: 0 },
+          { type: 'Draw', playerIndex: 0, cardId: 4, serial: 121 },
+        ],
+        select: { type: 'Main', option: [{ type: 'End' }] },
+        current: {
+          turn: 4,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [promoted],
+            bench: [],
+            benchMax: 5,
+            hand: [{ id: 4, serial: 121 }],
+            deckCount: 45,
+            discard: [{ id: 721, serial: 64 }],
+            prize: [],
+          }, {
+            ...p1Base,
+            hand: [prize],
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    const attackStep = snapshot.steps.find((step) => step.type === 'Attack');
+    expect(attackStep).toBeDefined();
+    expect(attackStep?.actionTimeline?.map((event) => event.kind)).toEqual([
+      'Attack',
+      'HpChange',
+      'HpChange',
+      'MoveCard',
+      'MoveCard',
+      'MoveCard',
+    ]);
+    expect(attackStep?.displayView?.players[0].active.pokemon?.serial).toBe(67);
+    expect(attackStep?.displayView?.players[0].hand).toHaveLength(0);
+    expect(attackStep?.animationPhases?.map((phase) => phase.key)).toEqual([
+      'Attack:1',
+      'Damage:0',
+      'KnockOut:0',
+      'PrizeTake:1',
+      'BoardMove:0',
+    ]);
+    expect(attackStep?.animationPhases?.[2].actionTimeline.map((event) => event.kind)).toEqual(['MoveCard']);
+    expect(attackStep?.animationPhases?.[3].actionTimeline.map((event) => event.kind)).toEqual(['MoveCard']);
+    expect(attackStep?.animationPhases?.[4].actionTimeline.map((event) => event.kind)).toEqual(['MoveCard']);
+    expect(snapshot.views[attackStep!.stateIndex].players[0].active.empty).toBe(true);
+
+    const turnSteps = snapshot.steps.filter((step) => step.type === 'TurnEnd' || step.type === 'TurnStart');
+    expect(turnSteps.map((step) => step.actionTimeline?.map((event) => event.kind))).toEqual([
+      ['TurnEnd'],
+      ['TurnStart', 'Draw'],
+    ]);
   });
 
   it('does not let knockout discard presentation rewrite later discard piles', () => {
