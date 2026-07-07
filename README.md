@@ -182,6 +182,12 @@ merges these into the agent picker and serves each paired deck at
 `/local-engine/agent-decks/<id>`. Missing manifest or missing env var simply
 means no extra agents.
 
+Set `"anyDeck": true` for deck-general agents: the paired deck becomes a
+default instead of a lock, so the deck picker stays editable for that seat.
+Before battle start the bridge calls the agent module's optional
+`set_deck(deck, seat)` hook with the seat's actual 60-card list, letting
+deck-conditioned models adapt to whatever they're given.
+
 If you only want to inspect the UI without CABT native engine resources, use
 the replay viewer or set `CABT_ENGINE_MODE=demo` before running `npm run dev`.
 

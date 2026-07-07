@@ -44,9 +44,12 @@ def first_legal_agent(obs: dict[str, Any]) -> list[int]:
     return list(range(select["maxCount"]))
 
 
-def load_agent(agent_path: str | None) -> AgentFn:
+def load_agent(agent_path: str | None) -> tuple[AgentFn, Callable | None]:
+    """Returns (agent, set_deck). set_deck is an optional module hook
+    called as set_deck(deck, seat) before battle start so deck-general
+    agents can condition on whatever deck their seat was given."""
     if not agent_path:
-        return first_legal_agent
+        return first_legal_agent, None
 
     raw_path = Path(agent_path)
     if raw_path.is_absolute():
@@ -78,7 +81,8 @@ def load_agent(agent_path: str | None) -> AgentFn:
     agent = getattr(module, "agent", None)
     if not callable(agent):
         raise AttributeError(f"{path} does not export callable agent(obs)")
-    return agent
+    set_deck = getattr(module, "set_deck", None)
+    return agent, set_deck if callable(set_deck) else None
 
 
 class Session:
@@ -97,7 +101,11 @@ class Session:
     ) -> dict[str, Any]:
         self.close()
         self.agent_controlled = normalize_agent_controlled(agent_controlled)
-        self.agents = [load_agent(path) for path in normalize_agent_paths(agent_paths)]
+        loaded = [load_agent(path) for path in normalize_agent_paths(agent_paths)]
+        self.agents = [agent for agent, _ in loaded]
+        for seat, (deck, (_, set_deck)) in enumerate(zip((deck0, deck1), loaded)):
+            if set_deck is not None:
+                set_deck(list(deck), seat)
         obs, start_data = battle_start(deck0, deck1)
         if obs is None or not start_data.battlePtr:
             return {

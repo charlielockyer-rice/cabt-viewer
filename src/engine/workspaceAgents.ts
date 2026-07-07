@@ -7,6 +7,7 @@ export type WorkspaceAgent = {
   description?: string;
   path?: string;
   deck?: string;
+  anyDeck?: boolean;
 };
 
 export type WorkspaceAgentOption = {
@@ -14,6 +15,7 @@ export type WorkspaceAgentOption = {
   name: string;
   description?: string;
   deckUrl?: string;
+  anyDeck?: boolean;
 };
 
 type LoadedManifest = {
@@ -51,6 +53,7 @@ export function workspaceAgentOptions(file = process.env.CABT_AGENTS_FILE): Work
     name: agent.name,
     description: agent.description,
     deckUrl: agent.deck ? `/local-engine/agent-decks/${encodeURIComponent(agent.id)}` : undefined,
+    anyDeck: agent.anyDeck || undefined,
   }));
 }
 

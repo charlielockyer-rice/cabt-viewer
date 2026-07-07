@@ -10,7 +10,7 @@ fs.writeFileSync(
   manifestFile,
   JSON.stringify({
     agents: [
-      { id: 'demo', name: 'Demo agent', description: 'test', path: 'demo/main.py', deck: 'decks/demo.csv' },
+      { id: 'demo', name: 'Demo agent', description: 'test', path: 'demo/main.py', deck: 'decks/demo.csv', anyDeck: true },
       { id: 'no-deck', name: 'No deck' },
       { name: 'missing id, dropped' },
     ],
@@ -35,8 +35,10 @@ describe('workspaceAgents', () => {
       name: 'Demo agent',
       description: 'test',
       deckUrl: '/local-engine/agent-decks/demo',
+      anyDeck: true,
     });
     expect(options[1].deckUrl).toBeUndefined();
+    expect(options[1].anyDeck).toBeUndefined();
   });
 
   it('resolves agent and deck paths relative to the manifest', () => {

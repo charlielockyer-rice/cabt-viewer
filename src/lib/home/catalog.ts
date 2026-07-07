@@ -4,6 +4,8 @@ export type AgentOption = {
   description?: string;
   path?: string;
   deckUrl?: string;
+  // Deck-general agent: the paired deck is only a default, not a lock.
+  anyDeck?: boolean;
 };
 
 export type GameLogEntry = {

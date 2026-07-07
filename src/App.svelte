@@ -175,13 +175,33 @@
       document.body.classList.remove('logs-home-page');
     };
   });
+  // Locked agents (deck-specific bots) always play their paired deck; anyDeck
+  // agents get it as a default when first selected but the picker stays free.
+  let player1DefaultedAgentId = $state('');
+  let player2DefaultedAgentId = $state('');
   $effect(() => {
-    if (player1Control === 'agent' && selectedPlayer1Agent?.deckUrl && player1DeckSource !== selectedPlayer1Agent.id) {
+    if (player1Control !== 'agent' || !selectedPlayer1Agent?.deckUrl) {
+      return;
+    }
+    if (selectedPlayer1Agent.anyDeck) {
+      if (player1DefaultedAgentId !== selectedPlayer1Agent.id) {
+        player1DefaultedAgentId = selectedPlayer1Agent.id;
+        player1DeckSource = selectedPlayer1Agent.id;
+      }
+    } else if (player1DeckSource !== selectedPlayer1Agent.id) {
       player1DeckSource = selectedPlayer1Agent.id;
     }
   });
   $effect(() => {
-    if (player2Control === 'agent' && selectedPlayer2Agent?.deckUrl && player2DeckSource !== selectedPlayer2Agent.id) {
+    if (player2Control !== 'agent' || !selectedPlayer2Agent?.deckUrl) {
+      return;
+    }
+    if (selectedPlayer2Agent.anyDeck) {
+      if (player2DefaultedAgentId !== selectedPlayer2Agent.id) {
+        player2DefaultedAgentId = selectedPlayer2Agent.id;
+        player2DeckSource = selectedPlayer2Agent.id;
+      }
+    } else if (player2DeckSource !== selectedPlayer2Agent.id) {
       player2DeckSource = selectedPlayer2Agent.id;
     }
   });
@@ -543,7 +563,7 @@
   }
 
   function forcedDeckSource(control: PlayerControl, agent: AgentOption | undefined, deckSource: string) {
-    return control === 'agent' && agent?.deckUrl ? agent.id : deckSource;
+    return control === 'agent' && agent?.deckUrl && !agent.anyDeck ? agent.id : deckSource;
   }
 
   async function loadSelectedDeck(deckUrl: string, deckSource: string, playerIndex: number) {
@@ -1213,8 +1233,8 @@
         {gameLogs}
         player1DeckLocked={player1DeckSource !== 'import'}
         player2DeckLocked={player2DeckSource !== 'import'}
-        player1AgentHasPairedDeck={player1Control === 'agent' && !!selectedPlayer1Agent?.deckUrl}
-        player2AgentHasPairedDeck={player2Control === 'agent' && !!selectedPlayer2Agent?.deckUrl}
+        player1AgentHasPairedDeck={player1Control === 'agent' && !!selectedPlayer1Agent?.deckUrl && !selectedPlayer1Agent.anyDeck}
+        player2AgentHasPairedDeck={player2Control === 'agent' && !!selectedPlayer2Agent?.deckUrl && !selectedPlayer2Agent.anyDeck}
         busy={sessionBusy || player1DeckLoading || player2DeckLoading}
         {catalogBusy}
         {error}
