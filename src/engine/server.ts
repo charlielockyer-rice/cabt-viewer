@@ -1,5 +1,7 @@
+import fs from 'node:fs';
 import http from 'node:http';
 import { LocalEngineController } from './localEngine';
+import { workspaceAgentDeckFile, workspaceAgentOptions } from './workspaceAgents';
 
 const port = Number(process.env.LOCAL_ENGINE_PORT ?? 8095);
 const host = process.env.LOCAL_ENGINE_HOST ?? '127.0.0.1';
@@ -35,6 +37,28 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'GET' && url.pathname === '/local-engine/health') {
     writeJson(res, 200, { ok: true });
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/local-engine/agents') {
+    try {
+      writeJson(res, 200, { agents: workspaceAgentOptions() });
+    } catch (error) {
+      writeJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname.startsWith('/local-engine/agent-decks/')) {
+    const id = decodeURIComponent(url.pathname.slice('/local-engine/agent-decks/'.length));
+    const deckFile = workspaceAgentDeckFile(id);
+    if (!deckFile || !fs.existsSync(deckFile)) {
+      writeJson(res, 404, { ok: false, error: `No deck for agent ${id}` });
+      return;
+    }
+    const csv = fs.readFileSync(deckFile, 'utf8');
+    res.writeHead(200, { 'Content-Type': 'text/csv', 'Content-Length': Buffer.byteLength(csv) });
+    res.end(csv);
     return;
   }
 

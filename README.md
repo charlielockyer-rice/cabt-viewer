@@ -151,7 +151,36 @@ box and make it read-only so the agent and deck stay paired.
 
 On Linux, the bridge uses your local Python. On macOS, it starts Docker with
 `--platform linux/amd64` and mounts `CABT_SAMPLE_SUBMISSION_DIR` read-only into
-the container.
+the container. Set `CABT_ENGINE_MODE=native` to skip Docker and run the bridge
+on your local Python instead (requires a sample_submission with a native
+`libcg.dylib`); set `PYTHON` to choose the interpreter — useful when agents
+need extra packages such as torch.
+
+### Workspace agents
+
+Besides the bundled agents in `public/agents/agents.json`, the local engine
+server can offer agents defined outside this repo. Point `CABT_AGENTS_FILE` at
+a JSON manifest:
+
+```json
+{
+  "agents": [
+    {
+      "id": "my-agent",
+      "name": "My agent",
+      "description": "Shown in the picker.",
+      "path": "my_agent.py",
+      "deck": "decks/my-deck.csv"
+    }
+  ]
+}
+```
+
+`path` (the python file exporting `agent(obs) -> list[int]`) and `deck` (one
+card id per line) are resolved relative to the manifest file. The server
+merges these into the agent picker and serves each paired deck at
+`/local-engine/agent-decks/<id>`. Missing manifest or missing env var simply
+means no extra agents.
 
 If you only want to inspect the UI without CABT native engine resources, use
 the replay viewer or set `CABT_ENGINE_MODE=demo` before running `npm run dev`.

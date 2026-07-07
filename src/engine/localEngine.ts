@@ -5,6 +5,7 @@ import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { CabtDemoController, cabtCardToView, cabtObservationToGameView, promptIdForObservation, type CabtDataMaps } from '../lib/cabt/demoEngine';
 import { cabtLogsToTimeline } from '../lib/cabt/logFormat';
+import { workspaceAgentPath } from './workspaceAgents';
 import {
   CabtAreaType,
   CabtLogType,
@@ -927,11 +928,14 @@ function agentPathForId(agentId: string | undefined): string | undefined {
     return undefined;
   }
   const manifestPath = path.join(FRONTEND_ROOT, 'public', 'agents', 'agents.json');
-  if (!fs.existsSync(manifestPath)) {
-    return undefined;
+  if (fs.existsSync(manifestPath)) {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as AgentManifest;
+    const bundled = manifest.agents?.find((agent) => agent.id === agentId)?.path;
+    if (bundled) {
+      return bundled;
+    }
   }
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as AgentManifest;
-  return manifest.agents?.find((agent) => agent.id === agentId)?.path;
+  return workspaceAgentPath(agentId);
 }
 
 function attachedCardForOption(pokemonCard: { energyCards?: CabtCard[]; tools?: CabtCard[] } | null | undefined, option: CabtOption) {

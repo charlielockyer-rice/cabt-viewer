@@ -22,7 +22,18 @@ const FALLBACK_AGENT: AgentOption = {
 };
 
 export async function loadAgentOptions(): Promise<AgentOption[]> {
-  const agents = await loadJsonList<AgentOption>('/agents/agents.json', 'agents');
+  const [bundled, workspace] = await Promise.all([
+    loadJsonList<AgentOption>('/agents/agents.json', 'agents'),
+    // Optional extra agents served by the local engine server from
+    // CABT_AGENTS_FILE; absent (or server down) is not an error.
+    loadJsonList<AgentOption>('/local-engine/agents', 'agents').catch(() => [] as AgentOption[]),
+  ]);
+  const agents = [...bundled];
+  for (const agent of workspace) {
+    if (!agents.some((existing) => existing.id === agent.id)) {
+      agents.push(agent);
+    }
+  }
   return agents.length ? agents : [FALLBACK_AGENT];
 }
 
