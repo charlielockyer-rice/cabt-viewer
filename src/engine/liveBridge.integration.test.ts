@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest';
 import { LiveObservationNormalizer } from './liveSteps';
 import { LocalEngineController } from './localEngine';
 import { cabtObservationToGameView } from '../lib/cabt/cabtProjection';
-import { CabtLogType, type CabtObservation } from '../lib/cabt/types';
+import { CabtAreaType, CabtLogType, type CabtObservation } from '../lib/cabt/types';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FRONTEND_ROOT = path.resolve(__dirname, '..', '..');
@@ -238,6 +238,74 @@ describe.skipIf(!enabled)('live pipeline against the real CABT engine', () => {
       delete process.env.CABT_ENGINE_MODE;
     }
   }, 300_000);
+
+  it('event-sourced hands track ground truth across a whole game', async () => {
+    const bridge = spawnBridge();
+    try {
+      const deck = readDeck();
+      const response = await bridge.request({
+        id: 1,
+        command: 'start',
+        deck0: deck,
+        deck1: deck,
+        agentPaths: [null, probeAgent ?? null],
+        agentControlled: [true, true],
+      });
+      expect(response.ok).toBe(true);
+
+      // Human at seat 0. Between seat-0 observations the hand is tracked from
+      // events; every seat-0 observation is a ground-truth checkpoint for
+      // what the tracker predicted through the opponent's window.
+      const normalizer = new LiveObservationNormalizer(new Set([1]));
+      let checkpoints = 0;
+      let trackedSteps = 0;
+      let removalsSinceSnapshot = 0;
+      let previousFixedHand: Array<{ id: number; serial?: number }> | null = null;
+      const isHandRemoval = (log: Record<string, unknown>) =>
+        log.playerIndex === 0
+        && (((log.type === CabtLogType.MOVE_CARD || log.type === CabtLogType.MOVE_CARD_REVERSE) && log.fromArea === CabtAreaType.HAND)
+          || log.type === CabtLogType.PLAY
+          || log.type === CabtLogType.ATTACH
+          || log.type === CabtLogType.EVOLVE);
+      for (const observation of response.autoSteps as CabtObservation[]) {
+        const raw = observation.current!.players[0];
+        const { observation: fixed, newLogs } = normalizer.push(observation);
+        const fixedHand = fixed.current!.players[0].hand!;
+
+        removalsSinceSnapshot += newLogs.filter(isHandRemoval).length;
+
+        // Invariant: the human hand is always materialized at exactly
+        // handCount, with a serial on every card.
+        expect(fixedHand.length).toBe(raw.handCount);
+        expect(fixedHand.every((card) => typeof card.serial === 'number')).toBe(true);
+
+        if (raw.hand) {
+          // Ground-truth checkpoint: everything the tracker showed as a
+          // concrete card through the opponent window must really be in the
+          // hand now — a wrong face can only be the residue of a removal
+          // event whose exact card the stream hadn't identified yet.
+          if (previousFixedHand) {
+            checkpoints += 1;
+            const real = new Set(raw.hand.map((card) => card.serial));
+            const wrongFaces = previousFixedHand.filter((card) => card.id !== 0 && !real.has(card.serial)).length;
+            expect(wrongFaces).toBeLessThanOrEqual(removalsSinceSnapshot);
+          }
+          previousFixedHand = null;
+          // The authoritative hand clears any guess residue.
+          removalsSinceSnapshot = 0;
+        } else {
+          trackedSteps += 1;
+          previousFixedHand = fixedHand.map((card) => ({ id: card.id, serial: card.serial }));
+        }
+      }
+      // Game length varies with the RNG; the per-step invariants above are
+      // the teeth — just ensure they actually exercised tracked windows.
+      expect(checkpoints).toBeGreaterThanOrEqual(1);
+      expect(trackedSteps).toBeGreaterThanOrEqual(1);
+    } finally {
+      bridge.close();
+    }
+  }, 120_000);
 
   it('conceals a human opponent seat: agent draws arrive downgraded', async () => {
     const bridge = spawnBridge();

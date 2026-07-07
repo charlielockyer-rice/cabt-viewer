@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LiveObservationNormalizer } from './liveSteps';
-import { CabtLogType, type CabtObservation, type CabtPlayerState } from '../lib/cabt/types';
+import { CabtAreaType, CabtLogType, type CabtObservation, type CabtPlayerState } from '../lib/cabt/types';
 
 describe('LiveObservationNormalizer', () => {
   describe('canonical event stream (positional dedupe)', () => {
@@ -73,6 +73,79 @@ describe('LiveObservationNormalizer', () => {
       const draw = { type: CabtLogType.DRAW, playerIndex: 1, cardId: 42, serial: 7 };
 
       expect(normalizer.push(observation(1, [draw])).newLogs).toEqual([draw]);
+    });
+  });
+
+  describe('event-sourced hands', () => {
+    it('removes the exact discarded card from a tracked hand', () => {
+      const normalizer = new LiveObservationNormalizer();
+      normalizer.push(observation(0, [], {
+        seat0Hand: [
+          { id: 10, serial: 1, playerIndex: 0 },
+          { id: 11, serial: 2, playerIndex: 0 },
+          { id: 12, serial: 3, playerIndex: 0 },
+        ],
+      }));
+
+      // Opponent's observation: seat 0 is forced to discard a specific card
+      // (public, so the log is concrete).
+      const result = normalizer.push(observation(1, [
+        { type: CabtLogType.MOVE_CARD, playerIndex: 0, cardId: 11, serial: 2, fromArea: CabtAreaType.HAND, toArea: CabtAreaType.DISCARD },
+      ], { seat0HandCount: 2 }));
+
+      expect(result.observation.current!.players[0].hand!.map((card) => card.serial)).toEqual([1, 3]);
+    });
+
+    it('keeps hands exact through same-count discard-and-draw sequences', () => {
+      const normalizer = new LiveObservationNormalizer();
+      normalizer.push(observation(0, [], {
+        seat0Hand: [
+          { id: 10, serial: 1, playerIndex: 0 },
+          { id: 11, serial: 2, playerIndex: 0 },
+        ],
+      }));
+
+      // Discard one known card, draw one unknown: same count, new contents.
+      // The old length-matching heuristic showed the stale hand here.
+      const result = normalizer.push(observation(1, [
+        { type: CabtLogType.MOVE_CARD, playerIndex: 0, cardId: 10, serial: 1, fromArea: CabtAreaType.HAND, toArea: CabtAreaType.DISCARD },
+        { type: CabtLogType.DRAW_REVERSE, playerIndex: 0 },
+      ], { seat0HandCount: 2 }));
+
+      const hand = result.observation.current!.players[0].hand!;
+      expect(hand[0]).toEqual({ id: 11, serial: 2, playerIndex: 0 });
+      expect(hand[1].id).toBe(0);
+      expect(hand[1].serial).toBeLessThan(0);
+    });
+
+    it('applies play/attach/evolve announcements as exact hand removals', () => {
+      const normalizer = new LiveObservationNormalizer();
+      normalizer.push(observation(0, [], {
+        seat0Hand: [
+          { id: 10, serial: 1, playerIndex: 0 },
+          { id: 11, serial: 2, playerIndex: 0 },
+        ],
+      }));
+
+      const result = normalizer.push(observation(1, [
+        { type: CabtLogType.ATTACH, playerIndex: 0, cardId: 10, serial: 1, cardIdTarget: 99, serialTarget: 50 },
+      ], { seat0HandCount: 1 }));
+
+      expect(result.observation.current!.players[0].hand).toEqual([{ id: 11, serial: 2, playerIndex: 0 }]);
+    });
+
+    it('takes an unknown first when a hidden removal arrives', () => {
+      const normalizer = new LiveObservationNormalizer();
+      normalizer.push(observation(0, [], {
+        seat0Hand: [{ id: 10, serial: 1, playerIndex: 0 }],
+      }));
+      // Unknown card enters, then a hidden card leaves: the unknown goes.
+      const result = normalizer.push(observation(1, [
+        { type: CabtLogType.MOVE_CARD_REVERSE, playerIndex: 0, fromArea: CabtAreaType.PRIZE, toArea: CabtAreaType.HAND },
+        { type: CabtLogType.MOVE_CARD_REVERSE, playerIndex: 0, fromArea: CabtAreaType.HAND, toArea: CabtAreaType.DECK },
+      ], { seat0HandCount: 1 }));
+
+      expect(result.observation.current!.players[0].hand).toEqual([{ id: 10, serial: 1, playerIndex: 0 }]);
     });
   });
 

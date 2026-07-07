@@ -290,8 +290,12 @@ export class LocalEngineController {
         this.logs = [...this.logs, { id: this.logId++, message: event.message }];
       }
       // Steps are history frames: projected without a decision, so playback
-      // never renders an interactive affordance.
-      steps.push(cabtObservationToGameView(observation, this.logs, this.dataMaps, result.events));
+      // never renders an interactive affordance. They carry seats like the
+      // interactive view does — hand concealment reads them.
+      steps.push({
+        ...cabtObservationToGameView(observation, this.logs, this.dataMaps, result.events),
+        seats: this.seats(),
+      });
     }
     return steps;
   }

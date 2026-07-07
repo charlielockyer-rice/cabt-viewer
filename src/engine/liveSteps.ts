@@ -1,12 +1,11 @@
-import { CabtLogType, type CabtCard, type CabtObservation } from '../lib/cabt/types';
+import { CabtAreaType, CabtLogType, type CabtCard, type CabtObservation } from '../lib/cabt/types';
 
 type BridgeLog = Record<string, unknown>;
 
 export type NormalizedObservation = {
   // The observation with both hands made explicit: the acting seat's hand is
-  // the engine's, the other seat's is reconstructed (cached cards padded or
-  // trimmed to handCount with synthetic-serial placeholders) so views never
-  // flip between real cards and identity-less card backs.
+  // the engine's, the other seat's is the event-sourced tracked hand, so
+  // views never flip between real cards and identity-less card backs.
   observation: CabtObservation;
   // Log lines this observation contributes to the canonical event stream:
   // re-deliveries are dropped, hidden-information encodings are downgraded
@@ -29,7 +28,7 @@ export type NormalizedObservation = {
 export class LiveObservationNormalizer {
   private delivered = [0, 0];
   private canonicalCount = 0;
-  private hands: Array<CabtCard[] | null> = [null, null];
+  private hands: [CabtCard[], CabtCard[]] = [[], []];
   private nextSyntheticSerial = -1;
 
   constructor(private readonly concealedSeats: ReadonlySet<number> = new Set()) {}
@@ -45,9 +44,18 @@ export class LiveObservationNormalizer {
     this.delivered[seat] = streamStart + logs.length;
     const freshFrom = Math.max(0, this.canonicalCount - streamStart);
     this.canonicalCount = Math.max(this.canonicalCount, streamStart + logs.length);
-    const newLogs = logs.slice(freshFrom).map((log) => this.applyVisibility(log));
+    const rawNewLogs = logs.slice(freshFrom);
 
-    return { observation: this.withStableHands(observation), newLogs };
+    // Event-source hands from the raw (pre-downgrade) canonical events, so
+    // both hands stay concrete wherever the stream has delivered the cards.
+    for (const log of rawNewLogs) {
+      this.applyHandEvent(log);
+    }
+
+    return {
+      observation: this.withStableHands(observation),
+      newLogs: rawNewLogs.map((log) => this.applyVisibility(log)),
+    };
   }
 
   // A concealed seat's draws arrive card-first in that seat's own
@@ -67,43 +75,104 @@ export class LiveObservationNormalizer {
     return log;
   }
 
+  // Exact event-sourced hand state. The mapping is validated against real
+  // engine games (every own-observation checkpoint across full games matches
+  // with zero drift): DRAW / MOVE_CARD-to-hand append the concrete card;
+  // their REVERSE encodings append an unknown; MOVE_CARD-from-hand removes by
+  // serial; a reversed removal takes an unknown first (we may not know which
+  // card left until the seat's own observation refreshes the hand); and the
+  // PLAY / ATTACH / EVOLVE announcements are the only record of in-turn hand
+  // plays, removing by exact serial.
+  private applyHandEvent(log: BridgeLog): void {
+    const seat = log.playerIndex;
+    if (seat !== 0 && seat !== 1) {
+      return;
+    }
+    const hand = this.hands[seat];
+    const type = log.type;
+    const serial = typeof log.serial === 'number' ? log.serial : undefined;
+    const cardId = typeof log.cardId === 'number' ? log.cardId : 0;
+
+    if (type === CabtLogType.DRAW) {
+      hand.push({ id: cardId, serial, playerIndex: seat });
+      return;
+    }
+    if (type === CabtLogType.DRAW_REVERSE) {
+      hand.push(this.placeholder(seat));
+      return;
+    }
+    if (type === CabtLogType.MOVE_CARD || type === CabtLogType.MOVE_CARD_REVERSE) {
+      const reversed = type === CabtLogType.MOVE_CARD_REVERSE;
+      if (log.toArea === CabtAreaType.HAND) {
+        hand.push(reversed ? this.placeholder(seat) : { id: cardId, serial, playerIndex: seat });
+        return;
+      }
+      if (log.fromArea === CabtAreaType.HAND) {
+        this.removeFromHand(hand, reversed ? undefined : serial);
+      }
+      return;
+    }
+    if (type === CabtLogType.PLAY || type === CabtLogType.ATTACH || type === CabtLogType.EVOLVE) {
+      const index = serial === undefined ? -1 : hand.findIndex((card) => card.serial === serial);
+      if (index >= 0) {
+        hand.splice(index, 1);
+      }
+    }
+  }
+
+  private removeFromHand(hand: CabtCard[], serial: number | undefined): void {
+    if (serial !== undefined) {
+      const exact = hand.findIndex((card) => card.serial === serial);
+      if (exact >= 0) {
+        hand.splice(exact, 1);
+        return;
+      }
+    }
+    const unknown = hand.findIndex((card) => isPlaceholder(card));
+    if (unknown >= 0) {
+      hand.splice(unknown, 1);
+      return;
+    }
+    // A hidden removal with no unknowns tracked: one known card is actually
+    // gone but the stream hasn't said which. Drop the newest; the seat's own
+    // observation corrects any wrong guess.
+    hand.pop();
+  }
+
+  private placeholder(seat: number): CabtCard {
+    return { id: 0, serial: this.nextSyntheticSerial--, playerIndex: seat };
+  }
+
   private withStableHands(observation: CabtObservation): CabtObservation {
     const current = observation.current!;
-    const players = current.players.map((player, seat) => {
+    const players = current.players.map((player, index) => {
+      const seat = index as 0 | 1;
       if (player.hand) {
-        this.hands[seat] = player.hand;
+        this.hands[seat] = [...player.hand];
         return player;
       }
-      const hand = this.reconciledHand(this.hands[seat] ?? [], player.handCount, seat);
-      this.hands[seat] = hand;
-      return { ...player, hand };
+      this.reconcileToCount(seat, player.handCount);
+      return { ...player, hand: [...this.hands[seat]] };
     });
     return { ...observation, current: { ...current, players } };
   }
 
-  // The engine only sends the acting seat's hand; the other seat's is carried
-  // forward and reconciled against handCount so its length is always right.
-  // Unknown additions become placeholders with stable negative serials (hand
-  // anchors key on serials); removals take placeholders first, then trim from
-  // the back. Contents refresh whenever that seat acts again.
-  private reconciledHand(cards: CabtCard[], handCount: number, seat: number): CabtCard[] {
-    if (cards.length === handCount) {
-      return cards;
+  // Safety net over the event model: if an unmapped engine log ever touches a
+  // hand, the count from the observation is authoritative. Unknown additions
+  // become placeholders; removals take placeholders first, then the newest.
+  private reconcileToCount(seat: 0 | 1, handCount: number): void {
+    const hand = this.hands[seat];
+    while (hand.length < handCount) {
+      hand.push(this.placeholder(seat));
     }
-    if (cards.length < handCount) {
-      const padded = [...cards];
-      while (padded.length < handCount) {
-        padded.push({ id: 0, serial: this.nextSyntheticSerial--, playerIndex: seat });
-      }
-      return padded;
-    }
-    const trimmed = [...cards];
-    for (let index = trimmed.length - 1; index >= 0 && trimmed.length > handCount; index -= 1) {
-      if (isPlaceholder(trimmed[index])) {
-        trimmed.splice(index, 1);
+    for (let index = hand.length - 1; index >= 0 && hand.length > handCount; index -= 1) {
+      if (isPlaceholder(hand[index])) {
+        hand.splice(index, 1);
       }
     }
-    return trimmed.slice(0, handCount);
+    while (hand.length > handCount) {
+      hand.pop();
+    }
   }
 }
 

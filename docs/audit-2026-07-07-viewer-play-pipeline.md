@@ -578,10 +578,21 @@ refined by the findings above. What landed:
   per-seat streams, so the cursor works one layer up with no protocol
   change. Validated live: 544 re-delivered lines across a real game, zero
   positional mismatches (`liveBridge.integration.test.ts`).
-- **Seat-stable hands with synthesized identity.** The non-acting seat's
-  hand is carried forward and reconciled to `handCount`; unknown additions
-  are placeholders with stable negative serials, so hand anchors never see
-  identity-less card backs. One factual correction to yesterday's audit:
+- **Event-sourced hands with synthesized identity for the unknowable.**
+  (Upgraded same day after Charlie's QA.) The non-acting seat's hand is
+  exact event-driven state: the last hand-visible observation is the base,
+  and the canonical stream's hand-mutating events apply on top (DRAW /
+  MOVE_CARD-to-hand append the concrete card; PLAY/ATTACH/EVOLVE
+  announcements and MOVE_CARD-from-hand remove by exact serial; reversed
+  encodings append or take placeholders with stable negative serials). The
+  mapping was validated against real games — zero drift at every
+  own-observation checkpoint across three matchups — and the observation's
+  `handCount` remains a safety net, not the mechanism. Cards whose
+  identity the stream genuinely hasn't delivered yet (e.g. a face-down
+  prize taken just before the turn passed) render as backs until the
+  seat's own observation names them. Playback step views also carry
+  `seats`, so the viewer's own hand is never treated as concealed during
+  opponent-turn playback. One factual correction to yesterday's audit:
   live observations *do* carry serials on every known card (hand, board,
   discard — probe-verified); only hidden cards ever needed synthesis.
 - **Hidden-info visibility policy** (from F4): a concealed seat's `DRAW`
