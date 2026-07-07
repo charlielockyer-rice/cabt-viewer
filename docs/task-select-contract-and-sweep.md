@@ -1,9 +1,15 @@
 # Task: the select-only interaction contract + deletion sweep
 
-Status: **approved by Charlie, not started** (paused 2026-07-07 for token
-budget). This is steps 3 and 5 of the migration plan in
-`audit-2026-07-07-viewer-play-pipeline.md` — read that audit first; it has
-the file:line evidence and the full argument. This doc is the pickup sheet.
+Status: **DONE** (2026-07-07). Step 3 landed as `7b272c9` (the select
+contract: GameView.decision + seats/turnSeat, one `select {seq, indexes}`
+command, decisions.ts gesture mapping, captured gallery fixtures, demo
+mini-engine deleted). Step 5 landed as `37834f6` (the deletion sweep —
+`git show 37834f6` lists everything removed; GameView.prompts and
+PromptView went with it since nothing read them). Verified per the
+discipline below: 178 unit + 6 real-engine integration tests (including a
+full game driven purely through select indexes), tsc + vite build clean,
+cabtReplay suite unchanged. See the audit's migration-order section for
+the live status of all five steps.
 
 ## Context: what already landed (all on anim-backbone, pushed)
 

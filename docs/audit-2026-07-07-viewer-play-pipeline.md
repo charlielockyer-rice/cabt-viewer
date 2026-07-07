@@ -481,9 +481,19 @@ Each step lands green on its own. Status (2026-07-07):
    landed ahead of order): seat-fixed live steps with positional
    per-seat-stream identity; withKnownHands/revealPromptForLogs/
    isAgentDecisionView/logDedupe/gate-live-mode deleted.
-5. **The sweep** (F1/F5) — remove the orphaned ptcg-era prompt components,
-   stores, strategies, target protocols, dead endpoints. Deletion commit
-   hash recorded here when it lands.
+5. **The sweep** (F1/F5) — **DONE** (`37834f6`, following the select
+   contract in `7b272c9`): the ptcg-era prompt taxonomy and components,
+   setup/attach/damage stores and strategies, targets/playTargets/preview,
+   promptLifecycle, dead /replays endpoints, autoConfirmPrompts, and
+   `GameView.prompts`/`PromptView` themselves are deleted outright — git
+   history is the archive (`git show 37834f6` lists everything removed;
+   the demo mini-engine went in `7b272c9`). The prompt gallery survives on
+   decisions captured from real engine games.
+
+All five steps are implemented. The remaining recommendations of this
+audit that are intentionally NOT code changes: the cabt_service verdict
+(converge contracts, don't consume) and the harness-side `set_deck`
+support (F7) live in the other repo.
 
 ## Should the viewer consume cabt_service instead?
 
