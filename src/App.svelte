@@ -120,6 +120,9 @@
   let animationStepEvents = $derived(replayMode
     ? (replayStore.currentStep?.actionTimeline ?? [])
     : (game?.actionTimeline ?? []));
+  // Live turn boundary for the animation layers: stale claims/sprites are
+  // released when the turn counter advances. Constant in replay.
+  let animationTurnKey = $derived(replayMode ? 'replay' : `turn-${game?.turn ?? 0}`);
   let finalEvolutionEvents = $derived(replayMode ? replayFinalEvolutionEvents() : []);
   let error = $derived(homeMode === 'logs' ? replayStore.error : gameStore.error);
   let busy = $derived(replayMode ? replayStore.loading : gameStore.busy);
@@ -1378,6 +1381,7 @@
           {boardLift}
           animationEvents={game.actionTimeline ?? []}
           {animationScopeKey}
+          {animationTurnKey}
           evolutionChromeEvents={finalEvolutionEvents}
           {replayMode}
         />
@@ -1386,6 +1390,7 @@
           events={game.actionTimeline ?? []}
           stepEvents={animationStepEvents}
           scopeKey={animationScopeKey}
+          turnKey={animationTurnKey}
           {replayMode}
           players={game.players}
         />
@@ -1394,6 +1399,7 @@
           events={game.actionTimeline ?? []}
           stepEvents={animationStepEvents}
           scopeKey={animationScopeKey}
+          turnKey={animationTurnKey}
           {replayMode}
           players={game.players}
         />

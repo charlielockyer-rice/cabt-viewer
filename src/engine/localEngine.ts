@@ -5,6 +5,7 @@ import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { CabtDemoController, cabtCardToView, cabtObservationToGameView, promptIdForObservation, type CabtDataMaps } from '../lib/cabt/demoEngine';
 import { cabtLogsToTimeline } from '../lib/cabt/logFormat';
+import { createLogDeduper, type LogDeduper } from './logDedupe';
 import { workspaceAgentPath } from './workspaceAgents';
 import {
   CabtAreaType,
@@ -96,6 +97,7 @@ export class LocalEngineController {
   private logId = 1;
   private actionTimeline: ActionTimelineEvent[] = [];
   private timelineId = 1;
+  private logDeduper: LogDeduper = createLogDeduper();
   private pendingSequence: GameView[] = [];
   private sessionId = '';
   private pendingRetreatTarget: PendingRetreatTarget | null = null;
@@ -221,6 +223,7 @@ export class LocalEngineController {
     this.knownHands.clear();
     this.actionTimeline = [];
     this.timelineId = 1;
+    this.logDeduper = createLogDeduper();
     this.pendingSequence = [];
     this.replayFrames = [];
     this.playerControls = playerControls;
@@ -485,7 +488,10 @@ export class LocalEngineController {
     const observations = response.autoSteps?.length ? response.autoSteps : response.observation ? [response.observation] : [];
     const sequence: GameView[] = [];
     for (const observation of observations) {
-      const logs = observation.logs ?? [];
+      // Per-player delta delivery: actor switches re-deliver logs the other
+      // player's observations already carried. Only fresh lines may become
+      // timeline events, or they get new ids and re-animate (see logDedupe.ts).
+      const logs = this.logDeduper.filterNew(observation.logs ?? []);
       if (logs.length) {
         const result = cabtLogsToTimeline(logs, { nextId: this.timelineId });
         this.timelineId = result.nextId;
@@ -666,6 +672,7 @@ export class LocalEngineController {
     this.knownHands.clear();
     this.actionTimeline = [];
     this.timelineId = 1;
+    this.logDeduper = createLogDeduper();
     this.pendingSequence = [];
     this.replayFrames = [];
     this.logs = [...this.logs, { id: this.logId++, message }];

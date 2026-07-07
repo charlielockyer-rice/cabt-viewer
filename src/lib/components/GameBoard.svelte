@@ -40,6 +40,7 @@
     boardLift?: number;
     animationEvents?: ActionTimelineEvent[];
     animationScopeKey?: string | number;
+    animationTurnKey?: string | number;
     evolutionChromeEvents?: ActionTimelineEvent[];
     replayMode?: boolean;
   };
@@ -77,6 +78,7 @@
     boardLift = 0,
     animationEvents = [],
     animationScopeKey = '',
+    animationTurnKey = '',
     evolutionChromeEvents = [],
     replayMode = false,
   }: Props = $props();
@@ -264,6 +266,7 @@
     <BoardAnimationLayer
       events={animationEvents}
       scopeKey={animationScopeKey}
+      turnKey={animationTurnKey}
       {replayMode}
       players={[topPlayer, bottomPlayer]}
     />

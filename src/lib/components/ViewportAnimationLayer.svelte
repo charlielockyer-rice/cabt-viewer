@@ -24,6 +24,9 @@
     events?: ActionTimelineEvent[];
     stepEvents?: ActionTimelineEvent[];
     scopeKey?: string | number;
+    // Live-only turn boundary: claims and sprites never outlive the turn
+    // that created them. Ignored in replay (scopeKey owns boundaries there).
+    turnKey?: string | number;
     replayMode?: boolean;
     players?: PlayerView[];
   };
@@ -70,10 +73,12 @@
     events = [],
     stepEvents = [],
     scopeKey = '',
+    turnKey = '',
     replayMode = false,
     players = [],
   }: Props = $props();
 
+  let liveTurnKey: string | number | undefined;
   const gate = new AnimationEventGate();
   const timers: ReturnType<typeof setTimeout>[] = [];
   const releases: ReleaseClaim[] = [];
@@ -143,7 +148,9 @@
 
   $effect(() => {
     const { scopeChanged, batch } = gate.update(events, scopeKey, replayMode);
-    if (scopeChanged && replayMode) {
+    const turnChanged = !replayMode && liveTurnKey !== undefined && turnKey !== liveTurnKey;
+    liveTurnKey = turnKey;
+    if ((scopeChanged && replayMode) || turnChanged) {
       endScope();
     }
     if (!batch.length || reduceMotion) {

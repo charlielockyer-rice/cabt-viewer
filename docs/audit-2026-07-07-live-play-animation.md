@@ -196,22 +196,37 @@ simplification you asked for.
 | `cabtLogsToTimeline` (`logFormat.ts`) | **Adapt** | Add content-keyed identity + dedupe cursor |
 | Anchors / visibility / choreograph / layers | **Keep** | Feed them correct data; they already behave |
 
-## Quick fixes for tonight (each under ~an hour, independent)
+## Quick fixes (status as of 2026-07-07 evening)
 
-1. **Dedupe logs in `appendTimeline`** by content signature over a sliding
-   window before calling `cabtLogsToTimeline`. Kills symptom 1 outright and
-   most of the re-fire storms behind 3 and 4. (~20 lines + a unit test; the
-   probe script in this audit's commit message reproduces the duplication.)
-2. **Release animation claims on turn handoff in live**: call the layers'
-   `endScope()` when `activePlayerIndex` flips (or key the layers on it), so
-   no claim can outlive the turn that created it. Bounds symptoms 2 and 4.
-3. **Default Step playback ON for live games** (`viewSettings.svelte.ts:43`)
-   so events animate against near-contemporary boards instead of one burst
-   against the final state. Cheap mitigation until the step builder exists.
-4. **Clear live reveal sessions on scope/turn change**
-   (`RevealSessionLayer.svelte:82` — the clearing is currently replay-gated).
-5. **Dev overlay for stuck hides**: `animVisibility.hiddenCount()` already
-   exists; surface it in the debug settings panel to catch claim leaks early.
+1. **IMPLEMENTED — log dedupe.** `src/engine/logDedupe.ts` (content-signature
+   sliding window, 300 entries) filters every observation's logs in
+   `appendTimeline` before `cabtLogsToTimeline`; the deduper resets with the
+   session. Unit tests in `src/engine/logDedupe.test.ts`. Verified against a
+   live bridge session: 39 of 90 delivered logs were re-deliveries and all
+   were dropped, including the actor-switch observations behind symptom 1
+   (worst case raw=13 → kept=3).
+2. **IMPLEMENTED — turn-boundary claim release.** All three animation layers
+   take a `turnKey` prop (`turn-${game.turn}` in live, constant in replay)
+   and run `endScope()` / `clearSession()` when it changes, so no claim,
+   sprite, or reveal session outlives the turn that created it.
+3. **IMPLEMENTED — Step playback defaults ON** (`viewSettings.svelte.ts`), so
+   live events animate against each intermediate view instead of one burst
+   against the final board.
+4. **IMPLEMENTED — live reveal-session clearing** via the same `turnKey`
+   boundary in `RevealSessionLayer` (replay behavior unchanged; sessions that
+   continue into the incoming batch still survive the boundary).
 
-Quick fixes 1-2 should make tonight's games watchable; the structural path is
-what makes it *good*.
+### Still outstanding
+
+- **Dev overlay for stuck hides**: `animVisibility.hiddenCount()` already
+  exists; surface it in the debug settings panel to catch claim leaks early.
+- **Dedupe caveat**: per-player log variants that differ in *content*
+  (private info — e.g. "you drew Charmander" vs "opponent drew a card") are
+  not exact duplicates and pass the filter; in the probed session every
+  overlap was exact, but occasional double-animated draws remain possible
+  until the structural fix lands.
+- **The entire "Recommended path" section above** — seat-fixed live step
+  builder, synthesized live serials, then deletion of `withKnownHands`,
+  `revealPromptForLogs`, `isAgentDecisionView`, and the gate's live mode.
+  The quick fixes bound the damage; the step builder is what makes live play
+  actually match the architecture.

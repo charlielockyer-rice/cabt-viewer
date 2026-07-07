@@ -14,6 +14,9 @@
     events?: ActionTimelineEvent[];
     stepEvents?: ActionTimelineEvent[];
     scopeKey?: string | number;
+    // Live-only turn boundary: sessions and their claims never outlive the
+    // turn that created them. Ignored in replay (scopeKey owns boundaries).
+    turnKey?: string | number;
     replayMode?: boolean;
     players?: PlayerView[];
   };
@@ -55,10 +58,12 @@
     events = [],
     stepEvents = [],
     scopeKey = '',
+    turnKey = '',
     replayMode = false,
     players = [],
   }: Props = $props();
 
+  let liveTurnKey: string | number | undefined;
   const gate = new AnimationEventGate();
   const timers: ReturnType<typeof setTimeout>[] = [];
   const releases: ReleaseClaim[] = [];
@@ -79,7 +84,10 @@
     const attachCandidates = effects.filter((effect) => effect.kind === 'attach-under');
     const existingSessionAttaches = attachCandidates.filter(isSessionAttachEffect);
 
-    if (replayMode && scopeChanged && !revealMotions.length && !existingSessionAttaches.length) {
+    const turnChanged = !replayMode && liveTurnKey !== undefined && turnKey !== liveTurnKey;
+    liveTurnKey = turnKey;
+    const sessionBoundary = replayMode ? scopeChanged : turnChanged;
+    if (sessionBoundary && !revealMotions.length && !existingSessionAttaches.length) {
       clearSession();
     }
     if (!revealMotions.length && !existingSessionAttaches.length) {

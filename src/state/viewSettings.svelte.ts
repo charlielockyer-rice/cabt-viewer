@@ -40,7 +40,9 @@ class ViewSettingsStore {
   autoConfirmPrompts = $state(true);
   debugZones = $state(false);
   showLogs = $state(false);
-  animateActions = $state(false);
+  // On by default so live games animate against each intermediate view
+  // instead of one burst of the whole turn's events against the final board.
+  animateActions = $state(true);
   showCardImages = $state(true);
   actionStepDelayMs = $state(650);
   viewIndex = $state(0);
