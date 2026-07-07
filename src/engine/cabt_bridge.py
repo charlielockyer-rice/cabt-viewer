@@ -213,10 +213,19 @@ def handle(session: Session, message: dict[str, Any]) -> dict[str, Any]:
 
 
 def main() -> None:
+    # Protocol writes own the real stdout. Everything else that writes to
+    # fd 1 — agent print() calls, native engine output — is redirected to
+    # stderr, so a stray write can never corrupt or interleave with a
+    # protocol line (an agent print without a trailing newline used to glue
+    # itself to the next response and hang the caller forever).
+    protocol = os.fdopen(os.dup(sys.stdout.fileno()), "w")
+    os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
     session = Session()
     for line in sys.stdin:
+        message: dict[str, Any] = {}
         try:
-            message = json.loads(line)
+            parsed = json.loads(line)
+            message = parsed if isinstance(parsed, dict) else {}
             response = handle(session, message)
         except Exception as error:
             response = {
@@ -224,8 +233,8 @@ def main() -> None:
                 "error": str(error),
                 "traceback": traceback.format_exc(),
             }
-        response["id"] = message.get("id") if "message" in locals() else None
-        print(json.dumps(response, ensure_ascii=False), flush=True)
+        response["id"] = message.get("id")
+        print(json.dumps(response, ensure_ascii=False), file=protocol, flush=True)
 
 
 if __name__ == "__main__":

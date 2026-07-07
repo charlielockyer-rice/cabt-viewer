@@ -80,6 +80,8 @@ for (const row of CARD_ROWS) {
   }
 }
 
+const BRIDGE_TIMEOUT_MS = Math.max(1000, Number(process.env.CABT_BRIDGE_TIMEOUT_MS ?? 120_000));
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FRONTEND_ROOT = path.resolve(__dirname, '..', '..');
 const WORKSPACE_ROOT = path.resolve(FRONTEND_ROOT, '..');
@@ -611,7 +613,24 @@ class CabtBridgeClient {
     const id = this.nextId++;
     const message = { id, ...payload };
     const response = new Promise<BridgeResponse>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      // A wedged engine or lost response must surface as an error instead of
+      // an HTTP request that hangs forever.
+      const timer = setTimeout(() => {
+        if (this.pending.delete(id)) {
+          reject(new Error(`CABT bridge did not respond within ${BRIDGE_TIMEOUT_MS}ms.`));
+        }
+      }, BRIDGE_TIMEOUT_MS);
+      timer.unref?.();
+      this.pending.set(id, {
+        resolve: (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        reject: (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      });
     });
     child.stdin.write(`${JSON.stringify(message)}\n`);
     return response;
