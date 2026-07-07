@@ -752,7 +752,14 @@ class CabtBridgeClient {
   }
 
   private handleLine(line: string): void {
-    const response = JSON.parse(line) as BridgeResponse;
+    let response: BridgeResponse;
+    try {
+      response = JSON.parse(line) as BridgeResponse;
+    } catch {
+      // Agents that print to stdout would otherwise corrupt the protocol.
+      process.stderr.write(`[cabt-bridge] ignoring non-JSON output: ${line.slice(0, 200)}\n`);
+      return;
+    }
     const pending = this.pending.get(response.id);
     if (!pending) {
       return;
