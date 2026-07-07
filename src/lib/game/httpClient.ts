@@ -76,10 +76,6 @@ export const localGameApi = {
     });
   },
 
-  state() {
-    return send({ type: 'state' });
-  },
-
   // The one gameplay command: answer the current decision with option indexes.
   select(seq: number, indexes: number[]) {
     return send({ type: 'select', payload: { seq, indexes } });

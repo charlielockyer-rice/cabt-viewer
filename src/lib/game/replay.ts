@@ -54,9 +54,3 @@ export type ReplaySnapshot = {
   views: GameView[];
   steps: ReplayStep[];
 };
-
-export type ReplayLoadResponse = {
-  ok: boolean;
-  replay?: ReplaySnapshot;
-  error?: string;
-};

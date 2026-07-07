@@ -119,19 +119,6 @@ export type PlayerView = {
   availableActions?: AvailableActionsView;
 };
 
-export type PromptView = {
-  id: number;
-  className: string;
-  type: string;
-  playerId: number;
-  playerIndex: number;
-  supported: boolean;
-  unsupportedReason?: string;
-  message?: string;
-  resultSchema: string;
-  fields: Record<string, unknown>;
-};
-
 export type LogView = {
   id: number;
   message: string;
@@ -203,7 +190,6 @@ export type GameView = {
   activePlayerId?: number;
   winner?: number;
   players: PlayerView[];
-  prompts: PromptView[];
   decision?: DecisionView;
   seats?: SeatView[];
   turnSeat?: number;

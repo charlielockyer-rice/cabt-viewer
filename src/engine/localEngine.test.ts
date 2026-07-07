@@ -236,7 +236,7 @@ describe('LocalEngineController', () => {
     expect(response.view.actionTimeline).toHaveLength(3);
   });
 
-  it('strips prompts from playback steps and skips event-less decision frames', () => {
+  it('emits decision-free playback steps and skips event-less decision frames', () => {
     const engine = new LocalEngineController() as any;
 
     engine.applyBridgeResponse({
@@ -279,7 +279,7 @@ describe('LocalEngineController', () => {
     expect(response.ok).toBe(true);
     if (!response.ok) return;
     expect(response.sequence).toHaveLength(1);
-    expect(response.sequence?.[0]?.prompts).toEqual([]);
+    expect(response.sequence?.[0]?.decision).toBeUndefined();
     expect(response.sequence?.[0]?.actionTimeline).toEqual([
       expect.objectContaining({ message: 'Player 2 turn started.' }),
     ]);

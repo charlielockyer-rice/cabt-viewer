@@ -14,10 +14,6 @@ class GameStore {
   playingSequence = $state(false);
   private generation = 0;
 
-  get currentPrompt() {
-    return this.game?.prompts[0];
-  }
-
   get gameFinished() {
     return this.game?.phase === 7;
   }

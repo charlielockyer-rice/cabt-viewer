@@ -2490,7 +2490,6 @@ function frameToGameView(
     activePlayerId: players[activePlayerIndex]?.id,
     winner: projectWinner(current.result),
     players,
-    prompts: [],
     logs: [...logs],
     actionTimeline,
     events: [frame],

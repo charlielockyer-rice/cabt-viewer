@@ -149,7 +149,7 @@ describe.skipIf(!enabled)('live pipeline against the real CABT engine', () => {
       let lastEventId = 0;
       for (const step of sequence) {
         // History frames never prompt.
-        expect(step.prompts).toEqual([]);
+        expect(step.decision).toBeUndefined();
         const events = step.actionTimeline ?? [];
         // Every step animates something, exactly once: ids are fresh and
         // strictly increasing across the whole game.

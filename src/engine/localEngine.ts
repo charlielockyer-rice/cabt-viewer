@@ -14,7 +14,6 @@ import {
 } from '../lib/cabt/types';
 import rawCardRows from '../lib/cabt/cardData.generated.json';
 import type { ActionTimelineEvent, EngineResponse, GameView, LogView, SeatView } from '../lib/game/types';
-import type { ReplayLoadResponse } from '../lib/game/replay';
 
 type Command = {
   type: string;
@@ -119,21 +118,6 @@ export class LocalEngineController {
         view: this.view(),
       };
     }
-  }
-
-  listReplays() {
-    return {
-      ok: true,
-      replays: [],
-    };
-  }
-
-  loadReplay(_id?: string): ReplayLoadResponse {
-    return { ok: false, error: 'Replay loading is not wired for the CABT adapter yet.' };
-  }
-
-  loadReplayData(_replayData?: string, _name?: string): ReplayLoadResponse {
-    return { ok: false, error: 'Replay loading is not wired for the CABT adapter yet.' };
   }
 
   saveReplay(): SaveReplayResponse {
@@ -305,8 +289,9 @@ export class LocalEngineController {
       for (const event of result.events) {
         this.logs = [...this.logs, { id: this.logId++, message: event.message }];
       }
-      const view = cabtObservationToGameView(observation, this.logs, this.dataMaps, result.events);
-      steps.push({ ...view, prompts: [] });
+      // Steps are history frames: projected without a decision, so playback
+      // never renders an interactive affordance.
+      steps.push(cabtObservationToGameView(observation, this.logs, this.dataMaps, result.events));
     }
     return steps;
   }

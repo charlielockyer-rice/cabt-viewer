@@ -189,7 +189,8 @@ Before battle start the bridge calls the agent module's optional
 deck-conditioned models adapt to whatever they're given.
 
 If you only want to inspect the UI without CABT native engine resources, use
-the replay viewer or set `CABT_ENGINE_MODE=demo` before running `npm run dev`.
+the replay viewer, or the prompt gallery (`/?view=prompt-gallery`) for the
+decision dialogs.
 
 Dev servers bind to `127.0.0.1` by default. To test from another device on your
 LAN, run `npm run dev:lan`.

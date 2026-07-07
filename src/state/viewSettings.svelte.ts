@@ -37,7 +37,6 @@ function readSystemTheme(): ResolvedTheme {
 
 class ViewSettingsStore {
   followActive = $state(true);
-  autoConfirmPrompts = $state(true);
   debugZones = $state(false);
   showLogs = $state(false);
   // On by default so live games animate against each intermediate view

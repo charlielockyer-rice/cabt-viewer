@@ -62,33 +62,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === 'GET' && url.pathname === '/local-engine/replays') {
-    writeJson(res, 200, controller.listReplays());
-    return;
-  }
-
-  if (req.method === 'GET' && url.pathname.startsWith('/local-engine/replays/')) {
-    const id = decodeURIComponent(url.pathname.slice('/local-engine/replays/'.length));
-    const response = controller.loadReplay(id);
-    writeJson(res, response.ok ? 200 : 404, response);
-    return;
-  }
-
-  if (req.method === 'POST' && url.pathname === '/local-engine/replays/load') {
-    try {
-      const raw = await readBody(req);
-      const body = raw ? JSON.parse(raw) : {};
-      const response = controller.loadReplayData(body.replayData, body.name);
-      writeJson(res, response.ok ? 200 : 400, response);
-    } catch (error) {
-      writeJson(res, 400, {
-        ok: false,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-    return;
-  }
-
   if (req.method === 'POST' && url.pathname === '/local-engine/save-replay') {
     const response = controller.saveReplay();
     writeJson(res, response.ok ? 200 : 400, response);
