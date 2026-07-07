@@ -180,6 +180,65 @@ describe.skipIf(!enabled)('live pipeline against the real CABT engine', () => {
     }
   }, 180_000);
 
+  it('drives a full game through the select contract: decisions in, indexes out', async () => {
+    process.env.CABT_ENGINE_MODE = 'native';
+    const controller = new LocalEngineController();
+    try {
+      const deck = readDeck();
+      let response = await controller.handle({
+        type: 'startGame',
+        payload: {
+          player1: { name: 'Human A', deck, control: 'self' },
+          player2: { name: 'Human B', deck, control: 'self' },
+        },
+      });
+      expect(response.ok).toBe(true);
+      if (!response.ok) return;
+      const sessionId = response.sessionId!;
+      expect(response.view.seats).toEqual([
+        { control: 'self', name: 'Human A' },
+        { control: 'self', name: 'Human B' },
+      ]);
+
+      let lastSeq = -1;
+      for (let step = 0; step < 2000 && response.ok && response.view.phase !== 7; step += 1) {
+        const decision = response.view.decision;
+        expect(decision).toBeDefined();
+        if (!decision) break;
+        // Every decision is fresh — the seq advances with each engine step.
+        expect(decision.seq).toBeGreaterThan(lastSeq);
+        lastSeq = decision.seq;
+        expect(decision.options.length).toBeGreaterThan(0);
+        // First-legal play: the leading maxCount option indexes.
+        const indexes = Array.from(
+          { length: Math.min(decision.max, decision.options.length) },
+          (_item, index) => index,
+        );
+        response = await controller.handle({
+          type: 'select',
+          payload: { sessionId, seq: decision.seq, indexes },
+        });
+        expect(response.ok).toBe(true);
+      }
+
+      expect(response.ok).toBe(true);
+      if (!response.ok) return;
+      expect(response.view.phase).toBe(7);
+      expect(response.view.decision).toBeUndefined();
+      expect([0, 1, 3]).toContain(response.view.winner);
+
+      // A stale seq is rejected without touching the engine.
+      const stale = await controller.handle({
+        type: 'select',
+        payload: { sessionId, seq: lastSeq, indexes: [0] },
+      });
+      expect(stale.ok).toBe(false);
+    } finally {
+      controller.close();
+      delete process.env.CABT_ENGINE_MODE;
+    }
+  }, 300_000);
+
   it('conceals a human opponent seat: agent draws arrive downgraded', async () => {
     const bridge = spawnBridge();
     try {

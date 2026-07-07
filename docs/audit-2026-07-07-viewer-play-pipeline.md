@@ -458,25 +458,32 @@ against `SETUP_ACTIVE_POKEMON`/`SETUP_BENCH_POKEMON` decisions.
 
 ### Migration order
 
-Each step lands green on its own:
+Each step lands green on its own. Status (2026-07-07):
 
-1. **Bridge hygiene** (F6): stdout→stderr guard, request timeout, `seq` on
-   responses. No UI change; kills the hang class.
-2. **One projector** (F5): merge the two GameViews and three resolvers into
-   `cabtProjection.ts`; fix the winner mapping; replay tests keep passing.
-3. **Decisions** (F2/F1): project `decision` alongside existing prompts;
-   port dialogs, then board gestures, to option indexes; delete matchers,
-   semantic commands, legality guessing, Cancel-on-mandatory.
-4. **Seat model + step builder** (F3/F4): `viewerSeat`/`turnSeat`, canonical
-   bridge events, seat-fixed step stream — this is yesterday's recommended
-   path, now with the data model it needs. Delete the four compensations.
-5. **The sweep** (F1/F5): remove dead prompt components/stores/strategies,
-   demo controller, dead endpoints; regenerate gallery fixtures from
-   captured selects.
-
-Steps 1–2 are pure risk reduction and can land this week; 3 is the big
-unlock; 4 is the animation-contract payoff; 5 is the deletion dividend
-(net LOC strongly negative).
+1. **Bridge hygiene** (F6) — **DONE** (`fb3813f`): protocol fd owned by the
+   bridge (agent prints can't corrupt it), request timeout
+   (CABT_BRIDGE_TIMEOUT_MS), stale-id fix. Sequence numbers landed as
+   controller-side `decisionSeq` (step 3) plus the normalizer's positional
+   cursors (step 4) — no protocol change was needed.
+2. **One projector** (F5) — **DONE** (`267b311`): `cabtProjection.ts` owns
+   observation→GameView for live and replay; winner/draw and stadium
+   drift fixed; third option→card resolver deleted.
+3. **Decisions** (F2/F1) — **DONE**: `GameView.decision` projected 1:1 from
+   every select (main phase included), `GameView.seats`/`turnSeat` as data,
+   one `select {seq, indexes}` command; the eight semantic commands,
+   matchers, client legality guessing, `pendingRetreatTarget`, the
+   DISCARD_ENERGY batching, Cancel-on-mandatory, the demo mini-engine, and
+   the client-side seat-control copy are gone. Board-target decisions (new
+   active after KO, switch/retreat destinations) are now answered by
+   clicking the highlighted slot. Gallery fixtures are captured from real
+   engine selects (`scripts/capture-decision-fixtures.ts`).
+4. **Seat model + step builder** (F3/F4) — **DONE** (`5b8d458`,
+   landed ahead of order): seat-fixed live steps with positional
+   per-seat-stream identity; withKnownHands/revealPromptForLogs/
+   isAgentDecisionView/logDedupe/gate-live-mode deleted.
+5. **The sweep** (F1/F5) — remove the orphaned ptcg-era prompt components,
+   stores, strategies, target protocols, dead endpoints. Deletion commit
+   hash recorded here when it lands.
 
 ## Should the viewer consume cabt_service instead?
 

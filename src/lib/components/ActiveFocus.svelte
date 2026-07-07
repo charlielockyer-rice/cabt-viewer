@@ -2,34 +2,27 @@
   import CardTile from './CardTile.svelte';
   import EnergySymbol from './EnergySymbol.svelte';
   import { normalizedTypeName, pokemonTypeLabelFor } from '../game/energyIcons';
-  import type { AttackView, AvailableActionsView, CardTarget, CardView, PokemonSlotView } from '../game/types';
+  import type { AttackView, AvailableActionsView, CardView, PokemonSlotView } from '../game/types';
 
   type Props = {
     slot: PokemonSlotView;
     availableActions?: AvailableActionsView;
-    benchTargets?: PokemonSlotView[];
     busy?: boolean;
     promptActive?: boolean;
     canAct?: boolean;
-    canRetreatToSlot: (from: PokemonSlotView, to: PokemonSlotView) => boolean;
     close: () => void;
-    useAbility: (name: string, target: CardTarget) => void;
-    attack: (name: string) => void;
-    startRetreat: () => void;
+    // Every action is an engine decision option; clicking selects its index.
+    selectOption: (index: number) => void;
   };
 
   let {
     slot,
     availableActions,
-    benchTargets = [],
     busy = false,
     promptActive = false,
     canAct = false,
-    canRetreatToSlot,
     close,
-    useAbility,
-    attack,
-    startRetreat,
+    selectOption,
   }: Props = $props();
 
   let pokemon = $derived(slot.pokemon);
@@ -48,9 +41,9 @@
     ? availableActions?.active
     : availableActions?.bench.find((item) => item.index === slot.index));
   let retreatCost = $derived(costTokens(slot.retreat, slot.energy));
-  let canPayRetreat = $derived(availableActions?.active?.retreat ? availableActions.active.retreat.legal : retreatCost.every((token) => token.paid));
-  let retreatReason = $derived(availableActions?.active?.retreat.reason);
-  let hasRetreatTarget = $derived(isActive && benchTargets.some(canRetreatToBench));
+  let retreatAction = $derived(availableActions?.active?.retreat);
+  let canRetreat = $derived(!!retreatAction?.legal && retreatAction.optionIndex !== undefined);
+  let retreatReason = $derived(retreatAction?.reason);
 
   function attackAction(name: string) {
     return availableActions?.active?.attacks.find((item) => item.name === name);
@@ -64,12 +57,10 @@
     return [text ?? name, reason].filter(Boolean).join('\n');
   }
 
-  function canRetreatToBench(bench: PokemonSlotView) {
-    const retreatAction = availableActions?.active?.retreat;
-    if (retreatAction) {
-      return retreatAction.targets.includes(bench.index);
+  function selectActionOption(optionIndex: number | undefined) {
+    if (optionIndex !== undefined) {
+      selectOption(optionIndex);
     }
-    return canRetreatToSlot(slot, bench);
   }
 
   function normalizeCost(rawCost: unknown): unknown[] {
@@ -119,8 +110,9 @@
     return costTokens(attack.cost, slot.energy);
   }
 
-  function canPayAttack(attack: AttackView) {
-    return attackAction(attack.name)?.legal ?? attackCost(attack).every((token) => token.paid);
+  function canUseAttack(attack: AttackView) {
+    const action = attackAction(attack.name);
+    return !!action?.legal && action.optionIndex !== undefined;
   }
 
   function sameCard(left: CardView | undefined, right: CardView | undefined) {
@@ -240,10 +232,10 @@
                   <button
                     class="action-card ability-action"
                     class:used={action?.used}
-                    class:unavailable={action?.legal === false}
-                    disabled={actionsDisabled || action?.legal === false}
+                    class:unavailable={action?.legal !== true}
+                    disabled={actionsDisabled || action?.legal !== true || action?.optionIndex === undefined}
                     title={actionTitle(power.text, power.name, action?.reason)}
-                    onclick={() => useAbility(power.name, slot.target)}
+                    onclick={() => selectActionOption(action?.optionIndex)}
                   >
                     <span class="ability-name-line">
                       <span class="ability-badge" class:used={action?.used}>{action?.used ? 'Used' : 'Ability'}</span>
@@ -265,13 +257,13 @@
                 <span>Attacks</span>
                 {#each pokemon.attacks as item}
                   {@const cost = attackCost(item)}
-                  {@const affordable = canPayAttack(item)}
+                  {@const affordable = canUseAttack(item)}
                   <button
                     class="action-card attack-action"
                     class:unavailable={!affordable}
                     disabled={actionsDisabled || !affordable}
                     title={actionTitle(item.text, item.name)}
-                    onclick={() => attack(item.name)}
+                    onclick={() => selectActionOption(attackAction(item.name)?.optionIndex)}
                   >
                     <span class="action-card-topline">
                       <span class="attack-name-line">
@@ -299,10 +291,10 @@
             <div class="retreat-row">
               <button
                 class="retreat-button"
-                class:unavailable={!canPayRetreat || !hasRetreatTarget}
-                disabled={actionsDisabled || !canPayRetreat || !hasRetreatTarget}
+                class:unavailable={!canRetreat}
+                disabled={actionsDisabled || !canRetreat}
                 title={retreatReason}
-                onclick={startRetreat}
+                onclick={() => selectActionOption(retreatAction?.optionIndex)}
               >
                 <span class="energy-cost" aria-label={`${retreatCost.length} retreat cost`}>
                   {#each retreatCost as token (token.key)}

@@ -1,0 +1,475 @@
+[
+  {
+    "key": "choose-option-context-41",
+    "title": "choose-option · Choose Turn Order",
+    "decision": {
+      "seq": 1,
+      "seat": 0,
+      "kind": "choose-option",
+      "message": "Choose Turn Order",
+      "min": 1,
+      "max": 1,
+      "options": [
+        {
+          "index": 0,
+          "type": 1,
+          "label": "Go first"
+        },
+        {
+          "index": 1,
+          "type": 2,
+          "label": "Go second"
+        }
+      ]
+    }
+  },
+  {
+    "key": "choose-cards-context-1",
+    "title": "choose-cards · Choose Active Pokemon",
+    "decision": {
+      "seq": 2,
+      "seat": 1,
+      "kind": "choose-cards",
+      "message": "Choose Active Pokemon",
+      "min": 1,
+      "max": 1,
+      "options": [
+        {
+          "index": 0,
+          "type": 3,
+          "area": 2,
+          "label": "Snover",
+          "card": {
+            "id": 722,
+            "serial": 68,
+            "playerIndex": 1,
+            "name": "Snover",
+            "fullName": "Snover",
+            "set": "MEG",
+            "setNumber": "35",
+            "superType": "Pokemon",
+            "cardType": 3,
+            "stage": 2,
+            "hp": 90,
+            "retreat": [
+              "Colorless",
+              "Colorless",
+              "Colorless"
+            ],
+            "attacks": [
+              {
+                "name": "Beat",
+                "cost": [
+                  "Water"
+                ],
+                "damage": "10",
+                "text": ""
+              },
+              {
+                "name": "Icy Snow",
+                "cost": [
+                  "Water",
+                  "Water"
+                ],
+                "damage": "30",
+                "text": ""
+              }
+            ],
+            "powers": []
+          }
+        }
+      ]
+    }
+  },
+  {
+    "key": "choose-option-context-38",
+    "title": "choose-option · Choose cards to draw",
+    "decision": {
+      "seq": 4,
+      "seat": 1,
+      "kind": "choose-option",
+      "message": "Choose cards to draw",
+      "min": 1,
+      "max": 1,
+      "options": [
+        {
+          "index": 0,
+          "type": 0,
+          "label": "Draw 0",
+          "number": 0
+        },
+        {
+          "index": 1,
+          "type": 0,
+          "label": "Draw 1",
+          "number": 1
+        }
+      ]
+    }
+  },
+  {
+    "key": "main-context-0",
+    "title": "main · Main phase",
+    "decision": {
+      "seq": 5,
+      "seat": 0,
+      "kind": "main",
+      "message": "Main phase",
+      "min": 1,
+      "max": 1,
+      "options": [
+        {
+          "index": 0,
+          "type": 8,
+          "area": 2,
+          "label": "Basic {W} Energy",
+          "card": {
+            "id": 3,
+            "serial": 48,
+            "playerIndex": 0,
+            "name": "Basic {W} Energy",
+            "fullName": "Basic {W} Energy",
+            "set": "SVE",
+            "setNumber": "3",
+            "superType": "Energy",
+            "cardType": 3,
+            "energyType": 3,
+            "hp": 0,
+            "retreat": [],
+            "attacks": [],
+            "powers": []
+          },
+          "hand": {
+            "playerIndex": 0,
+            "handIndex": 0
+          },
+          "boardTarget": {
+            "ownerIndex": 0,
+            "slot": "active",
+            "index": 0
+          }
+        },
+        {
+          "index": 1,
+          "type": 8,
+          "area": 2,
+          "label": "Basic {W} Energy",
+          "card": {
+            "id": 3,
+            "serial": 36,
+            "playerIndex": 0,
+            "name": "Basic {W} Energy",
+            "fullName": "Basic {W} Energy",
+            "set": "SVE",
+            "setNumber": "3",
+            "superType": "Energy",
+            "cardType": 3,
+            "energyType": 3,
+            "hp": 0,
+            "retreat": [],
+            "attacks": [],
+            "powers": []
+          },
+          "hand": {
+            "playerIndex": 0,
+            "handIndex": 2
+          },
+          "boardTarget": {
+            "ownerIndex": 0,
+            "slot": "active",
+            "index": 0
+          }
+        },
+        {
+          "index": 2,
+          "type": 8,
+          "area": 2,
+          "label": "Basic {W} Energy",
+          "card": {
+            "id": 3,
+            "serial": 35,
+            "playerIndex": 0,
+            "name": "Basic {W} Energy",
+            "fullName": "Basic {W} Energy",
+            "set": "SVE",
+            "setNumber": "3",
+            "superType": "Energy",
+            "cardType": 3,
+            "energyType": 3,
+            "hp": 0,
+            "retreat": [],
+            "attacks": [],
+            "powers": []
+          },
+          "hand": {
+            "playerIndex": 0,
+            "handIndex": 3
+          },
+          "boardTarget": {
+            "ownerIndex": 0,
+            "slot": "active",
+            "index": 0
+          }
+        },
+        {
+          "index": 3,
+          "type": 8,
+          "area": 2,
+          "label": "Basic {W} Energy",
+          "card": {
+            "id": 3,
+            "serial": 38,
+            "playerIndex": 0,
+            "name": "Basic {W} Energy",
+            "fullName": "Basic {W} Energy",
+            "set": "SVE",
+            "setNumber": "3",
+            "superType": "Energy",
+            "cardType": 3,
+            "energyType": 3,
+            "hp": 0,
+            "retreat": [],
+            "attacks": [],
+            "powers": []
+          },
+          "hand": {
+            "playerIndex": 0,
+            "handIndex": 4
+          },
+          "boardTarget": {
+            "ownerIndex": 0,
+            "slot": "active",
+            "index": 0
+          }
+        },
+        {
+          "index": 4,
+          "type": 8,
+          "area": 2,
+          "label": "Basic {W} Energy",
+          "card": {
+            "id": 3,
+            "serial": 46,
+            "playerIndex": 0,
+            "name": "Basic {W} Energy",
+            "fullName": "Basic {W} Energy",
+            "set": "SVE",
+            "setNumber": "3",
+            "superType": "Energy",
+            "cardType": 3,
+            "energyType": 3,
+            "hp": 0,
+            "retreat": [],
+            "attacks": [],
+            "powers": []
+          },
+          "hand": {
+            "playerIndex": 0,
+            "handIndex": 5
+          },
+          "boardTarget": {
+            "ownerIndex": 0,
+            "slot": "active",
+            "index": 0
+          }
+        },
+        {
+          "index": 5,
+          "type": 8,
+          "area": 2,
+          "label": "Basic {W} Energy",
+          "card": {
+            "id": 3,
+            "serial": 44,
+            "playerIndex": 0,
+            "name": "Basic {W} Energy",
+            "fullName": "Basic {W} Energy",
+            "set": "SVE",
+            "setNumber": "3",
+            "superType": "Energy",
+            "cardType": 3,
+            "energyType": 3,
+            "hp": 0,
+            "retreat": [],
+            "attacks": [],
+            "powers": []
+          },
+          "hand": {
+            "playerIndex": 0,
+            "handIndex": 6
+          },
+          "boardTarget": {
+            "ownerIndex": 0,
+            "slot": "active",
+            "index": 0
+          }
+        },
+        {
+          "index": 6,
+          "type": 14,
+          "label": "End turn"
+        }
+      ]
+    }
+  },
+  {
+    "key": "choose-cards-context-7",
+    "title": "choose-cards · Choose Card",
+    "decision": {
+      "seq": 13,
+      "seat": 0,
+      "kind": "choose-cards",
+      "message": "Choose Card",
+      "min": 0,
+      "max": 1,
+      "options": [
+        {
+          "index": 0,
+          "type": 3,
+          "area": 1,
+          "label": "Mega Abomasnow ex",
+          "card": {
+            "id": 723,
+            "serial": 10,
+            "playerIndex": 0,
+            "name": "Mega Abomasnow ex",
+            "fullName": "Mega Abomasnow ex",
+            "set": "MEG",
+            "setNumber": "36",
+            "superType": "Pokemon",
+            "cardType": 3,
+            "stage": 3,
+            "evolvesFrom": "Snover",
+            "hp": 350,
+            "retreat": [
+              "Colorless",
+              "Colorless",
+              "Colorless",
+              "Colorless"
+            ],
+            "attacks": [
+              {
+                "name": "Hammer-lanche",
+                "cost": [
+                  "Water",
+                  "Water"
+                ],
+                "damage": "0",
+                "text": "Discard the top 6 cards of your deck, and this attack does 100 damage for each Basic {W} Energy card that you discarded in this way."
+              },
+              {
+                "name": "Frost Barrier",
+                "cost": [
+                  "Water",
+                  "Water",
+                  "Water"
+                ],
+                "damage": "200",
+                "text": "During your opponent’s next turn, this Pokémon takes 30 less damage from attacks (after applying Weakness and Resistance)."
+              }
+            ],
+            "powers": []
+          }
+        },
+        {
+          "index": 1,
+          "type": 3,
+          "area": 1,
+          "label": "Mega Abomasnow ex",
+          "card": {
+            "id": 723,
+            "serial": 11,
+            "playerIndex": 0,
+            "name": "Mega Abomasnow ex",
+            "fullName": "Mega Abomasnow ex",
+            "set": "MEG",
+            "setNumber": "36",
+            "superType": "Pokemon",
+            "cardType": 3,
+            "stage": 3,
+            "evolvesFrom": "Snover",
+            "hp": 350,
+            "retreat": [
+              "Colorless",
+              "Colorless",
+              "Colorless",
+              "Colorless"
+            ],
+            "attacks": [
+              {
+                "name": "Hammer-lanche",
+                "cost": [
+                  "Water",
+                  "Water"
+                ],
+                "damage": "0",
+                "text": "Discard the top 6 cards of your deck, and this attack does 100 damage for each Basic {W} Energy card that you discarded in this way."
+              },
+              {
+                "name": "Frost Barrier",
+                "cost": [
+                  "Water",
+                  "Water",
+                  "Water"
+                ],
+                "damage": "200",
+                "text": "During your opponent’s next turn, this Pokémon takes 30 less damage from attacks (after applying Weakness and Resistance)."
+              }
+            ],
+            "powers": []
+          }
+        }
+      ]
+    }
+  },
+  {
+    "key": "choose-prize-context-7",
+    "title": "choose-prize · Choose Card",
+    "decision": {
+      "seq": 24,
+      "seat": 1,
+      "kind": "choose-prize",
+      "message": "Choose Card",
+      "min": 1,
+      "max": 1,
+      "options": [
+        {
+          "index": 0,
+          "type": 3,
+          "area": 6,
+          "label": "Option 3"
+        },
+        {
+          "index": 1,
+          "type": 3,
+          "area": 6,
+          "label": "Option 3"
+        },
+        {
+          "index": 2,
+          "type": 3,
+          "area": 6,
+          "label": "Option 3"
+        },
+        {
+          "index": 3,
+          "type": 3,
+          "area": 6,
+          "label": "Option 3"
+        },
+        {
+          "index": 4,
+          "type": 3,
+          "area": 6,
+          "label": "Option 3"
+        },
+        {
+          "index": 5,
+          "type": 3,
+          "area": 6,
+          "label": "Option 3"
+        }
+      ]
+    }
+  }
+]

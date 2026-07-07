@@ -59,6 +59,8 @@ export type AvailableActionStatus = {
   name: string;
   legal: boolean;
   reason?: string;
+  // Engine option index to select when legal (live decisions only).
+  optionIndex?: number;
 };
 
 export type AvailableAbilityStatus = AvailableActionStatus & {
@@ -69,6 +71,7 @@ export type AvailableRetreatStatus = {
   legal: boolean;
   targets: number[];
   reason?: string;
+  optionIndex?: number;
 };
 
 export type AvailableActionsView = {
@@ -144,6 +147,53 @@ export type ActionTimelineEvent = {
   params?: unknown;
 };
 
+// Seat-absolute board address (never viewer-relative).
+export type BoardSlotRef = {
+  ownerIndex: number;
+  slot: 'active' | 'bench';
+  index: number;
+};
+
+// One engine select option, projected with everything the UI needs to offer
+// it as an affordance. `index` is the engine option index — selecting is
+// sending it back; legality is presence in the list.
+export type DecisionOptionView = {
+  index: number;
+  type: number;
+  area?: number;
+  label: string;
+  card?: CardView;
+  // Main-phase hand plays: which hand card this option plays.
+  hand?: { playerIndex: number; handIndex: number };
+  // In-play destination for targeted hand plays (attach, evolve).
+  boardTarget?: BoardSlotRef;
+  // Board slot this option points at (switch targets, new active, …).
+  board?: BoardSlotRef;
+  // The option selects a card attached to `board` rather than the slot itself.
+  attached?: boolean;
+  attackName?: string;
+  abilityName?: string;
+  number?: number;
+};
+
+// The engine's current select, projected 1:1. This is the only interaction
+// contract: every affordance derives from `options`, and the one engine
+// command is `select {seq, indexes}`.
+export type DecisionView = {
+  seq: number;
+  seat: number;
+  kind: 'main' | 'choose-cards' | 'choose-prize' | 'choose-option';
+  message: string;
+  min: number;
+  max: number;
+  options: DecisionOptionView[];
+};
+
+export type SeatView = {
+  control: 'self' | 'agent';
+  name: string;
+};
+
 export type GameView = {
   ready: boolean;
   phase: number;
@@ -154,6 +204,9 @@ export type GameView = {
   winner?: number;
   players: PlayerView[];
   prompts: PromptView[];
+  decision?: DecisionView;
+  seats?: SeatView[];
+  turnSeat?: number;
   logs: LogView[];
   actionTimeline?: ActionTimelineEvent[];
   events: unknown[];

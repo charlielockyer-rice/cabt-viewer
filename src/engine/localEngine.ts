@@ -3,26 +3,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
-import { cabtObservationToGameView, cardForOption as projectionCardForOption, promptIdForObservation, type CabtDataMaps } from '../lib/cabt/cabtProjection';
-import { CabtDemoController } from '../lib/cabt/demoEngine';
+import { cabtObservationToGameView, projectDecision, type CabtDataMaps } from '../lib/cabt/cabtProjection';
 import { cabtLogsToTimeline } from '../lib/cabt/logFormat';
 import { LiveObservationNormalizer } from './liveSteps';
 import { workspaceAgentPath } from './workspaceAgents';
 import {
-  CabtAreaType,
-  CabtOptionType,
-  CabtSelectContext,
-  CabtSelectType,
   type CabtAttack,
-  type CabtCard,
   type CabtCardData,
   type CabtObservation,
-  type CabtOption,
-  type CabtSelectData,
 } from '../lib/cabt/types';
 import rawCardRows from '../lib/cabt/cardData.generated.json';
-import type { ActionTimelineEvent, CardTarget, EngineResponse, GameView, LogView } from '../lib/game/types';
-import { PlayerType, SlotType } from '../lib/game/types';
+import type { ActionTimelineEvent, EngineResponse, GameView, LogView, SeatView } from '../lib/game/types';
 import type { ReplayLoadResponse } from '../lib/game/replay';
 
 type Command = {
@@ -44,11 +35,6 @@ type BridgeResponse = {
 type PendingBridgeCall = {
   resolve: (value: BridgeResponse) => void;
   reject: (error: Error) => void;
-};
-
-type PendingRetreatTarget = {
-  playerIndex: number;
-  benchIndex: number;
 };
 
 type PlayerControl = 'self' | 'agent';
@@ -91,7 +77,6 @@ const GAME_LOGS_DIR = path.join(FRONTEND_ROOT, 'public', 'game-logs');
 const GAME_LOGS_MANIFEST = path.join(GAME_LOGS_DIR, 'logs.json');
 
 export class LocalEngineController {
-  private readonly demo = new CabtDemoController();
   private readonly bridge: CabtBridgeClient;
   private observation: CabtObservation | null = null;
   private dataMaps: CabtDataMaps = { cardData: {}, attacks: {} };
@@ -102,7 +87,7 @@ export class LocalEngineController {
   private normalizer = new LiveObservationNormalizer();
   private pendingSequence: GameView[] = [];
   private sessionId = '';
-  private pendingRetreatTarget: PendingRetreatTarget | null = null;
+  private decisionSeq = 0;
   private replayFrames: CabtObservation[] = [];
   private replayPlayerLabels: [string, string] = ['Player 1', 'Player 2'];
   private replayModeLabel = 'Self vs Agent';
@@ -113,10 +98,6 @@ export class LocalEngineController {
   }
 
   async handle(command: Command): Promise<EngineResponse> {
-    if (process.env.CABT_ENGINE_MODE === 'demo') {
-      return this.demo.handle(command);
-    }
-
     try {
       if (command.type !== 'startGame') {
         this.assertSession(command.payload);
@@ -126,23 +107,8 @@ export class LocalEngineController {
           return await this.start(command.payload);
         case 'state':
           return this.viewResponse();
-        case 'playCard':
-          return await this.selectMatchingOption((option) => this.matchesPlayCardOption(option, command.payload));
-        case 'attack':
-          return await this.selectMatchingOption((option) => this.matchesAttackOption(option, command.payload));
-        case 'useAbility':
-          return await this.selectMatchingOption((option) => this.matchesAbilityOption(option, command.payload));
-        case 'useStadium':
-          return await this.selectMatchingOption((option) => option.area === CabtAreaType.STADIUM);
-        case 'concede':
-          return { ok: false, error: 'Concede is not exposed by the CABT native engine.', view: this.view() };
-        case 'retreat':
-          return await this.retreat(command.payload);
-        case 'passTurn':
-          return await this.selectMatchingOption((option) => option.type === CabtOptionType.END);
-        case 'resolvePrompt':
-          this.assertPromptId(command.payload?.id);
-          return await this.applySelection(this.normalizePromptSelection(command.payload?.result));
+        case 'select':
+          return await this.select(command.payload);
         default:
           return { ok: false, error: `Unsupported command: ${command.type}`, view: this.view() };
       }
@@ -220,7 +186,7 @@ export class LocalEngineController {
     ];
     this.bridge.stop();
     this.sessionId = createSessionId();
-    this.pendingRetreatTarget = null;
+    this.decisionSeq = 0;
     this.actionTimeline = [];
     this.timelineId = 1;
     this.normalizer = new LiveObservationNormalizer(concealedSeats(playerControls));
@@ -247,150 +213,31 @@ export class LocalEngineController {
     return this.viewResponse();
   }
 
-  private async retreat(payload: any): Promise<EngineResponse> {
-    const playerIndex = typeof payload?.playerIndex === 'number' ? payload.playerIndex : 0;
-    this.pendingRetreatTarget = {
-      playerIndex,
-      benchIndex: payload?.to,
-    };
-    const response = await this.selectMatchingOption((option) => option.type === CabtOptionType.RETREAT);
-    if (!response.ok) {
-      this.pendingRetreatTarget = null;
-    }
-    return response;
-  }
-
-  private async selectMatchingOption(predicate: (option: CabtOption) => boolean): Promise<EngineResponse> {
+  // The one gameplay command: answer the engine's current select with option
+  // indexes. `seq` must match the decision the client saw, so a selection can
+  // never land on a select it wasn't made for.
+  private async select(payload: any): Promise<EngineResponse> {
     const select = this.observation?.select;
     if (!select) {
-      throw new Error('No CABT selection is currently available.');
+      throw new Error('No CABT decision is currently available.');
     }
-    const index = select.option.findIndex(predicate);
-    if (index < 0) {
-      throw new Error('That action is not currently legal in the CABT engine.');
+    if (payload?.seq !== this.decisionSeq) {
+      throw new Error('That decision is no longer current.');
     }
-    return this.applySelection([index]);
-  }
-
-  private async applySelection(selection: number[]): Promise<EngineResponse> {
-    const select = this.observation?.select;
-    if (!select) {
-      throw new Error('No CABT selection is currently available.');
+    const indexes = payload?.indexes;
+    if (!Array.isArray(indexes)
+      || !indexes.every((index) => Number.isInteger(index) && index >= 0 && index < select.option.length)) {
+      throw new Error('Decision option indexes are required.');
     }
-    if (this.canBatchRepeatedSingleSelection(select, selection)) {
-      return this.applyRepeatedSingleSelections(selection);
-    }
-    if (selection.length < select.minCount || selection.length > select.maxCount) {
+    if (indexes.length < select.minCount || indexes.length > select.maxCount) {
       throw new Error(`Selection must contain ${select.minCount}-${select.maxCount} option(s).`);
     }
     const response = await this.bridge.request({
       command: 'select',
-      selection,
+      selection: indexes,
     });
     this.applyBridgeResponse(response);
-    await this.applyPendingRetreatTarget();
     return this.viewResponse();
-  }
-
-  private assertPromptId(promptId: unknown): void {
-    const observation = this.observation;
-    const select = observation?.select;
-    if (!observation || !select || select.type === CabtSelectType.MAIN) {
-      throw new Error('No CABT prompt is currently available.');
-    }
-    if (typeof promptId !== 'number') {
-      throw new Error('Prompt id is required.');
-    }
-    const currentPromptId = promptIdForObservation(observation);
-    if (promptId !== currentPromptId) {
-      throw new Error('That prompt is no longer current.');
-    }
-  }
-
-  private canBatchRepeatedSingleSelection(select: CabtSelectData, selection: number[]): boolean {
-    return selection.length > select.maxCount
-      && select.maxCount === 1
-      && (select.context === CabtSelectContext.DISCARD_ENERGY || select.context === CabtSelectContext.DISCARD_ENERGY_CARD)
-      && selection.every((index) => Number.isInteger(index) && index >= 0 && index < select.option.length);
-  }
-
-  private async applyRepeatedSingleSelections(selection: number[]): Promise<EngineResponse> {
-    const initialSelect = this.observation?.select;
-    if (!initialSelect) {
-      throw new Error('No CABT selection is currently available.');
-    }
-    const selectedKeys = selection.map((index) => this.optionCardKey(initialSelect.option[index]) ?? `index:${index}`);
-    for (let step = 0; step < selectedKeys.length; step += 1) {
-      const select = this.observation?.select;
-      if (!select || !this.isRepeatedSingleSelection(select)) {
-        break;
-      }
-      const optionIndex = this.findOptionIndexForKey(select, selectedKeys[step]);
-      if (optionIndex < 0) {
-        break;
-      }
-      const response = await this.bridge.request({
-        command: 'select',
-        selection: [optionIndex],
-      });
-      this.applyBridgeResponse(response);
-    }
-    await this.applyPendingRetreatTarget();
-    return this.viewResponse();
-  }
-
-  private isRepeatedSingleSelection(select: CabtSelectData): boolean {
-    return select.maxCount === 1
-      && (select.context === CabtSelectContext.DISCARD_ENERGY || select.context === CabtSelectContext.DISCARD_ENERGY_CARD);
-  }
-
-  private findOptionIndexForKey(select: CabtSelectData, key: string): number {
-    const byKey = select.option.findIndex((option) => this.optionCardKey(option) === key);
-    if (byKey >= 0) {
-      return byKey;
-    }
-    if (key.startsWith('index:')) {
-      const index = Number(key.slice('index:'.length));
-      return index >= 0 && index < select.option.length ? index : 0;
-    }
-    return select.option.length ? 0 : -1;
-  }
-
-  private optionCardKey(option: CabtOption | undefined): string | undefined {
-    const card = option && this.observation ? projectionCardForOption(option, this.observation) : null;
-    if (card?.serial !== undefined && card.serial !== null) {
-      return `serial:${card.serial}`;
-    }
-    return undefined;
-  }
-
-  private async applyPendingRetreatTarget(): Promise<void> {
-    if (!this.pendingRetreatTarget || this.observation?.current?.yourIndex !== this.pendingRetreatTarget.playerIndex) {
-      return;
-    }
-    const targetIndex = this.findPendingRetreatTargetOption();
-    if (targetIndex < 0) {
-      return;
-    }
-
-    this.pendingRetreatTarget = null;
-    const response = await this.bridge.request({
-      command: 'select',
-      selection: [targetIndex],
-    });
-    this.applyBridgeResponse(response);
-  }
-
-  private findPendingRetreatTargetOption(): number {
-    const select = this.observation?.select;
-    const target = this.pendingRetreatTarget;
-    if (!select || !target) {
-      return -1;
-    }
-    return select.option.findIndex((option) =>
-      option.area === CabtAreaType.BENCH
-      && option.index === target.benchIndex
-      && (option.playerIndex === undefined || option.playerIndex === null || option.playerIndex === target.playerIndex));
   }
 
   private applyBridgeResponse(response: BridgeResponse): void {
@@ -407,6 +254,8 @@ export class LocalEngineController {
     if (!response.observation) {
       this.observation = null;
     }
+    // Every applied engine step invalidates whatever decision came before it.
+    this.decisionSeq += 1;
   }
 
   private viewResponse(): EngineResponse {
@@ -420,8 +269,20 @@ export class LocalEngineController {
     };
   }
 
-  private view() {
-    return cabtObservationToGameView(this.observation, this.logs, this.dataMaps, this.actionTimeline);
+  private view(): GameView {
+    const view = cabtObservationToGameView(this.observation, this.logs, this.dataMaps, this.actionTimeline);
+    return {
+      ...view,
+      decision: this.observation ? projectDecision(this.observation, this.decisionSeq, this.dataMaps) : undefined,
+      seats: this.seats(),
+    };
+  }
+
+  private seats(): SeatView[] {
+    return this.playerControls.map((control, index) => ({
+      control,
+      name: this.replayPlayerLabels[index] ?? `Player ${index + 1}`,
+    }));
   }
 
   // Live playback steps, shaped like replay's: each observation contributes
@@ -450,101 +311,6 @@ export class LocalEngineController {
     return steps;
   }
 
-  private matchesPlayCardOption(option: CabtOption, payload: any): boolean {
-    const typeMatches = option.type === CabtOptionType.PLAY || option.type === CabtOptionType.ATTACH || option.type === CabtOptionType.EVOLVE;
-    if (!typeMatches || !this.matchesHandSource(option, payload)) {
-      return false;
-    }
-
-    if (!this.optionHasInPlayTarget(option)) {
-      return true;
-    }
-
-    const target = targetToCabt(payload?.playerIndex, payload?.target);
-    return option.inPlayArea === target.area
-      && option.inPlayIndex === target.index
-      && (option.playerIndex === undefined || option.playerIndex === null || option.playerIndex === target.playerIndex);
-  }
-
-  private matchesAttackOption(option: CabtOption, payload: any): boolean {
-    if (option.type !== CabtOptionType.ATTACK || !option.attackId) {
-      return false;
-    }
-    return this.dataMaps.attacks[option.attackId]?.name === payload?.attack;
-  }
-
-  private matchesAbilityOption(option: CabtOption, payload: any): boolean {
-    if (option.type !== CabtOptionType.ABILITY) {
-      return false;
-    }
-
-    const target = targetToCabt(payload?.playerIndex, payload?.target);
-    if (option.area !== undefined && option.area !== null && option.area !== target.area) {
-      return false;
-    }
-    if (option.index !== undefined && option.index !== null && option.index !== target.index) {
-      return false;
-    }
-    if (option.playerIndex !== undefined && option.playerIndex !== null && option.playerIndex !== target.playerIndex) {
-      return false;
-    }
-
-    const abilityName = this.abilityNameForOption(option, target.playerIndex);
-    return !abilityName || abilityName === payload?.ability;
-  }
-
-  private matchesHandSource(option: CabtOption, payload: any): boolean {
-    return option.index === payload?.handIndex
-      && (option.area === undefined || option.area === null || option.area === CabtAreaType.HAND)
-      && (option.playerIndex === undefined || option.playerIndex === null || option.playerIndex === payload?.playerIndex);
-  }
-
-  private optionHasInPlayTarget(option: CabtOption): boolean {
-    return option.inPlayArea !== undefined
-      && option.inPlayArea !== null
-      && option.inPlayIndex !== undefined
-      && option.inPlayIndex !== null;
-  }
-
-  private abilityNameForOption(option: CabtOption, defaultPlayerIndex: number): string | undefined {
-    const cardId = option.cardId ?? this.cardIdForOption(option, defaultPlayerIndex);
-    return cardId === undefined ? undefined : this.dataMaps.cardData[cardId]?.skills?.[0]?.name;
-  }
-
-  private cardIdForOption(option: CabtOption, defaultPlayerIndex: number): number | undefined {
-    if (option.index === undefined || option.index === null) {
-      return undefined;
-    }
-    const playerIndex = option.playerIndex ?? defaultPlayerIndex;
-    const player = this.observation?.current?.players[playerIndex];
-    if (!player) {
-      return undefined;
-    }
-    if (option.area === CabtAreaType.ACTIVE) {
-      return player.active[option.index]?.id;
-    }
-    if (option.area === CabtAreaType.BENCH) {
-      return player.bench[option.index]?.id;
-    }
-    if (option.area === CabtAreaType.HAND) {
-      return player.hand?.[option.index]?.id;
-    }
-    return undefined;
-  }
-
-  private normalizePromptSelection(result: unknown): number[] {
-    if (result === null || result === undefined || result === true) {
-      return [];
-    }
-    if (typeof result === 'number') {
-      return [result];
-    }
-    if (Array.isArray(result) && result.every((item) => typeof item === 'number')) {
-      return result;
-    }
-    throw new Error('This CABT prompt expects option index selections.');
-  }
-
   private assertSession(payload?: any): void {
     if (!this.sessionId) {
       throw new Error('No active CABT session. Start a new game.');
@@ -561,7 +327,7 @@ export class LocalEngineController {
   private invalidateSession(message: string): void {
     this.sessionId = '';
     this.observation = null;
-    this.pendingRetreatTarget = null;
+    this.decisionSeq = 0;
     this.actionTimeline = [];
     this.timelineId = 1;
     this.normalizer = new LiveObservationNormalizer();
@@ -869,13 +635,4 @@ function agentPathForId(agentId: string | undefined): string | undefined {
     }
   }
   return workspaceAgentPath(agentId);
-}
-
-function targetToCabt(actorIndex: number, target: CardTarget): { playerIndex: number; area: number; index: number } {
-  const playerIndex = target.player === PlayerType.BOTTOM_PLAYER ? actorIndex : 1 - actorIndex;
-  return {
-    playerIndex,
-    area: target.slot === SlotType.BENCH ? CabtAreaType.BENCH : CabtAreaType.ACTIVE,
-    index: target.index,
-  };
 }

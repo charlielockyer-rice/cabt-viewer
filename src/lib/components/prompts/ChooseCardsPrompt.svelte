@@ -4,68 +4,45 @@
   import PromptIcon from './primitives/PromptIcon.svelte';
   import SelectableCard from './primitives/SelectableCard.svelte';
   import SelectedCardStrip from './primitives/SelectedCardStrip.svelte';
-  import { promptTitle } from '../../game/promptCopy';
-  import {
-    extractPromptCards,
-    promptBlockedIndexes,
-    promptOptions,
-    prunePromptIndexes,
-    samePromptIndexes,
-  } from '../../game/prompts';
-  import type { PromptView } from '../../game/types';
+  import type { DecisionView } from '../../game/types';
 
   type Props = {
-    prompt: PromptView;
+    decision: DecisionView;
     resolving?: boolean;
-    onresolve: (value: unknown) => void;
+    onselect: (indexes: number[]) => void;
   };
 
-  let { prompt, resolving = false, onresolve }: Props = $props();
+  let { decision, resolving = false, onselect }: Props = $props();
 
   let selectedIndexes = $state<number[]>([]);
-  let promptKey = $state('');
-  let fields = $derived(prompt.fields ?? {});
-  let options = $derived(promptOptions(prompt));
-  let cards = $derived(extractPromptCards(fields));
-  let selectionPoolSize = $derived(cards.length || 1);
-  let maxSelections = $derived(normalizeSelectionLimit(options.max, normalizeSelectionLimit(options.count, selectionPoolSize)));
-  let minSelections = $derived(normalizeSelectionLimit(options.min, 0));
-  let optionalSelection = $derived(minSelections === 0);
-  let canSubmitSelection = $derived(selectedIndexes.length >= minSelections && (!optionalSelection || selectedIndexes.length > 0));
-  let selectionSlotCount = $derived(explicitSelectionLimit(options));
-  let blockedIndexes = $derived(new Set<number>(promptBlockedIndexes(prompt)));
+  let decisionSeq = $state(-1);
+  let cards = $derived(decision.options.map((option) => ({
+    ...(option.card ?? { name: option.label, fullName: option.label }),
+    index: option.index,
+  })));
+  let optionalSelection = $derived(decision.min === 0);
+  let canSubmitSelection = $derived(selectedIndexes.length >= decision.min && selectedIndexes.length > 0);
 
   $effect(() => {
-    const key = `${prompt.id}:${prompt.className}`;
-    if (promptKey !== key) {
-      promptKey = key;
+    if (decisionSeq !== decision.seq) {
+      decisionSeq = decision.seq;
       selectedIndexes = [];
     }
   });
 
-  $effect(() => {
-    const nextIndexes = prunePromptIndexes(selectedIndexes, isIndexSelectable, maxSelections);
-    if (!samePromptIndexes(selectedIndexes, nextIndexes)) {
-      selectedIndexes = nextIndexes;
-    }
-  });
-
   function toggleIndex(index: number) {
-    if (!isIndexSelectable(index)) {
-      return;
-    }
     selectedIndexes = selectedIndexes.includes(index)
       ? selectedIndexes.filter((item) => item !== index)
-      : maxSelections <= 1
+      : decision.max <= 1
         ? [index]
-        : selectedIndexes.length < maxSelections
+        : selectedIndexes.length < decision.max
           ? [...selectedIndexes, index]
           : selectedIndexes;
   }
 
   function submitSelectedIndexes() {
     if (canSubmitSelection) {
-      onresolve(selectedIndexes);
+      onselect(selectedIndexes);
       selectedIndexes = [];
     }
   }
@@ -73,55 +50,24 @@
   function removeSelectedIndex(index: number) {
     selectedIndexes = selectedIndexes.filter((item) => item !== index);
   }
-
-  function isIndexSelectable(index: number) {
-    if (blockedIndexes.has(index)) {
-      return false;
-    }
-    return matchesCardFilter(cards.find((card, cardIndex) => (card.index ?? cardIndex) === index), fields.filter);
-  }
-
-  function matchesCardFilter(card: typeof cards[number] | undefined, filter: unknown) {
-    if (!card || !filter || typeof filter !== 'object') {
-      return true;
-    }
-    return Object.entries(filter as Record<string, unknown>).every(([key, value]) => value === undefined || card[key as keyof CardView] === value);
-  }
-
-  function normalizeSelectionLimit(raw: unknown, fallback: number) {
-    const value = Number(raw);
-    return Number.isFinite(value) ? value : fallback;
-  }
-
-  function explicitSelectionLimit(options: Record<string, unknown>) {
-    const raw = options.max ?? options.count;
-    const value = Number(raw);
-    return Number.isFinite(value) && value > 0 ? value : 0;
-  }
 </script>
 
-<PromptPanel
-  title={promptTitle(prompt, 'Choose cards')}
-  variant="search"
-  warning={!prompt.supported ? (prompt.unsupportedReason ?? 'This prompt needs the advanced resolver.') : undefined}
->
+<PromptPanel title={decision.message} variant="search">
   {#snippet icon()}<PromptIcon name="cards" />{/snippet}
 
   <SelectedCardStrip
     {cards}
     {selectedIndexes}
-    slotCount={selectionSlotCount}
+    slotCount={decision.max}
     onremove={removeSelectedIndex}
   />
 
   <div class="search-card-grid">
-    {#each cards as card, index}
-      {@const cardIndex = card.index ?? index}
+    {#each cards as card (card.index)}
       <SelectableCard
-        selected={selectedIndexes.includes(cardIndex)}
-        blocked={!isIndexSelectable(cardIndex)}
-        disabled={resolving || !isIndexSelectable(cardIndex)}
-        onclick={() => toggleIndex(cardIndex)}
+        selected={selectedIndexes.includes(card.index)}
+        disabled={resolving}
+        onclick={() => toggleIndex(card.index)}
       >
         <CardTile {card} compact />
       </SelectableCard>
@@ -129,11 +75,8 @@
   </div>
 
   {#snippet actions()}
-    {#if options.allowCancel}
-      <button disabled={resolving} onclick={() => onresolve(null)}>Cancel</button>
-    {/if}
     {#if optionalSelection}
-      <button disabled={resolving} onclick={() => onresolve([])}>Skip</button>
+      <button disabled={resolving} onclick={() => onselect([])}>Skip</button>
     {/if}
     <button class="primary" disabled={resolving || !canSubmitSelection} onclick={submitSelectedIndexes}>
       Confirm

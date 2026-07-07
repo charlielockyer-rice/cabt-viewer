@@ -3,7 +3,6 @@
   import ActiveFocus from './lib/components/ActiveFocus.svelte';
   import AppHeader from './lib/components/AppHeader.svelte';
   import BoardLayer from './lib/components/BoardLayer.svelte';
-  import BoardPromptStrip from './lib/components/prompts/BoardPromptStrip.svelte';
   import EndGamePrompt from './lib/components/EndGamePrompt.svelte';
   import ViewportAnimationLayer from './lib/components/ViewportAnimationLayer.svelte';
   import RevealSessionLayer from './lib/components/RevealSessionLayer.svelte';
@@ -17,72 +16,33 @@
   import PromptDock from './lib/components/prompts/PromptDock.svelte';
   import PromptHost from './lib/components/prompts/PromptHost.svelte';
   import ReplayTimeline from './lib/components/ReplayTimeline.svelte';
-  import SetupDock from './lib/components/SetupDock.svelte';
   import TableShell from './lib/components/TableShell.svelte';
   import Toolbar from './lib/components/Toolbar.svelte';
   import ZoneViewer from './lib/components/ZoneViewer.svelte';
-  import type { GameCommandApi } from './lib/game/gameApi';
   import { localGameApi, type PlayerControl } from './lib/game/httpClient';
   import { formatCabtDeckList } from './lib/game/deckImport';
   import { labelFor } from './lib/game/labels';
   import { replayFollowPlayerForPosition } from './lib/game/replayFollow';
   import cardRows from './lib/cabt/cardData.generated.json';
-  import type { BoardInteractionStrategy } from './lib/game/boardInteraction';
   import {
-    canPlayCardToBoardArea,
-    canPlayCardToPlayArea,
-    canPlayCardToSlot,
-    canPlayerAct,
-    canRetreatToSlot,
-    playableBenchSlot,
-    type BoardPlayAreaContext,
-  } from './lib/game/playTargets';
-  import { benchSlotsFor, previewAttachEnergySlot, previewSlot } from './lib/game/preview';
-  import {
-    autoResolvablePromptResult,
-    extractPromptCards,
-    promptBlockedIndexes,
-    promptInstanceKey,
-    promptOptions,
-    shouldAutoResolvePrompt,
-  } from './lib/game/prompts';
-  import { getSetupPromptUiState, promptLimit, setupPromptResult } from './lib/game/setupPrompt';
-  import { getAttachPromptTargets, getBoardPromptTargets, sameTarget, targetForPromptSlot } from './lib/game/targets';
-  import { createChoosePokemonStrategy } from './lib/game/strategies/choosePokemonStrategy';
-  import { createDamageTransferStrategy } from './lib/game/strategies/damageTransferStrategy';
-  import { createPutDamageStrategy } from './lib/game/strategies/putDamageStrategy';
+    boardDecisionOptions,
+    boardOptionForSlot,
+    endTurnOption,
+    handOptionForSlot,
+    isMainDecision,
+    optionsForHandCard,
+    playableHandIndexes,
+    slotRef,
+    stadiumOption,
+  } from './lib/game/decisions';
   import { loadAgentOptions, loadGameLogs, type AgentOption, type GameLogEntry } from './lib/home/catalog';
   import { kaggleEpisodeReplayUrl, type KaggleEpisodeDay, type KaggleEpisodeSummary } from './lib/kaggle/episodes';
-  import {
-    SlotType,
-    targetFor,
-    type CardTarget,
-    type CardView,
-    type ActionTimelineEvent,
-    type GameView,
-    type PlayerView,
-    type PokemonSlotView,
-    type PromptView,
-  } from './lib/game/types';
+  import type { ActionTimelineEvent, DecisionOptionView, PokemonSlotView, PlayerView } from './lib/game/types';
   import { deckImportStore } from './state/deckImport.svelte';
   import { gameStore } from './state/game.svelte';
   import { gameSessionStore } from './state/gameSession.svelte';
-  import { promptLifecycleStore } from './state/promptLifecycle.svelte';
-  import { damageTransferStore } from './state/damageTransfer.svelte';
-  import { promptSelectionStore } from './state/promptSelection.svelte';
   import { replayStore } from './state/replay.svelte';
-  import {
-    canAssignAttachTarget,
-    isAttachEnergyAvailable as isAttachEnergyAvailableModel,
-  } from './state/promptSelectionModel';
   import { selectionStore } from './state/selection.svelte';
-  import { setupSelectionStore } from './state/setupSelection.svelte';
-  import {
-    canPlaceSetupActive as canPlaceSetupActiveModel,
-    canPlaceSetupBench as canPlaceSetupBenchModel,
-    isSetupStartable as isSetupStartableModel,
-    type SetupPlacementContext,
-  } from './state/setupSelectionModel';
   import { viewSettingsStore } from './state/viewSettings.svelte';
   import { visualAssetsStore } from './state/visualAssets.svelte';
   import { zoneViewerStore } from './state/zoneViewer.svelte';
@@ -102,7 +62,6 @@
   let player2AgentId = $state('');
   let player1DeckSource = $state('import');
   let player2DeckSource = $state('import');
-  let activePlayerControls = $state<[PlayerControl, PlayerControl]>(['self', 'agent']);
   let lastLoadedPlayer1DeckSource = $state('');
   let lastLoadedPlayer2DeckSource = $state('');
   let player1DeckLoading = $state(false);
@@ -133,19 +92,13 @@
   let error = $derived(homeMode === 'logs' ? replayStore.error : gameStore.error);
   let busy = $derived(replayMode ? replayStore.loading : gameStore.busy);
   let sessionBusy = $derived(replayMode ? replayStore.loading : busy);
-  let commandApi = $derived<GameCommandApi>(localGameApi);
   let resolvingPrompt = $derived(gameStore.resolvingPrompt);
   let playingSequence = $derived(gameStore.playingSequence);
   let commandBusy = $derived(sessionBusy || resolvingPrompt || playingSequence);
   let selectedHand = $derived(selectionStore.selectedHand);
   let draggingHand = $derived(selectionStore.draggingHand);
   let focusedSlot = $derived(selectionStore.focusedSlot);
-  let setupActiveIndex = $derived(setupSelectionStore.activeIndex);
-  let setupBenchIndexes = $derived(setupSelectionStore.benchIndexes);
-  let attachPromptEnergyIndex = $derived(promptSelectionStore.activeAttachEnergyIndex);
-  let attachPromptAssignments = $derived(promptSelectionStore.attachAssignments);
   let followActive = $derived(viewSettingsStore.followActive);
-  let autoConfirmPrompts = $derived(viewSettingsStore.autoConfirmPrompts);
   let viewIndex = $derived(viewSettingsStore.viewIndex);
   let boardTilt = $derived(viewSettingsStore.boardTilt);
   let boardPerspective = $derived(viewSettingsStore.boardPerspective);
@@ -237,63 +190,31 @@
   let zoneViewerTitle = $derived(zoneViewerStore.title);
   let zoneViewerFaceDown = $derived(zoneViewerStore.faceDown);
   let zoneViewerIsStadium = $derived(zoneViewerStore.zone === 'stadium');
-  let activePlayer = $derived(game?.players[game.activePlayerIndex]);
   let bottomPlayer = $derived(game?.players[viewIndex] ?? game?.players[0]);
   let topPlayer = $derived(game?.players.find((player) => player.index !== bottomPlayer?.index));
-  let currentPrompt = $derived(replayMode ? null : game?.prompts[0]);
-  let actingPlayerIndex = $derived(currentPrompt?.playerIndex ?? game?.activePlayerIndex ?? 0);
-  let actingPlayerIsSelf = $derived(activePlayerControls[actingPlayerIndex] === 'self');
-  let modeLabel = $derived(`${controlLabel(activePlayerControls[0])} vs ${controlLabel(activePlayerControls[1])}`);
-  let boardTargetPrompt = $derived(currentPrompt?.className === 'ChoosePokemonPrompt' ? currentPrompt : null);
-  let attachPrompt = $derived(currentPrompt?.className === 'AttachEnergyPrompt' ? currentPrompt : null);
-  let damagePrompt = $derived(currentPrompt?.className === 'PutDamagePrompt' ? currentPrompt : null);
-  let attachPromptCards = $derived(attachPrompt ? extractPromptCards(attachPrompt.fields) : []);
-  let attachPromptMin = $derived(normalizePromptLimit(promptOptions(attachPrompt).min, 0));
-  let attachPromptMax = $derived(normalizePromptLimit(promptOptions(attachPrompt).max, attachPromptCards.length || 1));
-  let attachPromptTargets = $derived(attachPrompt && game ? getAttachPromptTargets(game, attachPrompt) : []);
-  let damagePromptTargets = $derived(damagePrompt && game ? getBoardPromptTargets(game, damagePrompt) : []);
-  let damagePromptInstanceKey = $derived(promptInstanceKey(damagePrompt));
-  let lastDamagePromptInstanceKey = $state('');
-  $effect(() => {
-    promptSelectionStore.pruneAttachAssignments(attachPromptCards, attachPromptTargets, attachPromptMax);
-  });
-  $effect(() => {
-    promptSelectionStore.clearUnavailableAttachEnergy(isAttachEnergyAvailable);
-  });
-  $effect(() => {
-    promptSelectionStore.pruneDamagePlacements(damagePromptTargets);
-  });
-  $effect(() => {
-    if (damagePromptInstanceKey !== lastDamagePromptInstanceKey) {
-      promptSelectionStore.resetDamagePlacements();
-      lastDamagePromptInstanceKey = damagePromptInstanceKey;
-    }
-  });
 
-  let transferPrompt = $derived(
-    currentPrompt?.className === 'MoveDamagePrompt' || currentPrompt?.className === 'RemoveDamagePrompt'
-      ? currentPrompt
-      : null,
+  // The engine's current decision is the whole interaction contract.
+  let decision = $derived(replayMode ? undefined : game?.decision);
+  let decisionSeatIsSelf = $derived(!!decision && isSelfControlled(decision.seat));
+  let mainDecision = $derived(isMainDecision(decision) && decisionSeatIsSelf ? decision : undefined);
+  let boardDecision = $derived(decisionSeatIsSelf ? boardDecisionOptions(decision) : []);
+  let dialogDecision = $derived(
+    decision && decision.kind !== 'main' && decisionSeatIsSelf && !boardDecision.length ? decision : undefined,
   );
-  let transferPromptInstanceKey = $derived(promptInstanceKey(transferPrompt));
-  let lastTransferPromptInstanceKey = $state('');
+  let actingPlayerIndex = $derived(decision?.seat ?? game?.activePlayerIndex ?? 0);
+  let actingPlayerIsSelf = $derived(isSelfControlled(actingPlayerIndex));
+  let modeLabel = $derived((game?.seats ?? []).map((seat) => controlLabel(seat.control)).join(' vs '));
+  let promptDockMode = $derived<'default' | 'search'>(dialogDecision?.kind === 'choose-cards' ? 'search' : 'default');
+
+  // Clear stale hand selection whenever the engine moves to a new decision.
+  let lastDecisionSeq = $state(-1);
   $effect(() => {
-    if (transferPromptInstanceKey !== lastTransferPromptInstanceKey) {
-      damageTransferStore.reset();
-      lastTransferPromptInstanceKey = transferPromptInstanceKey;
+    const seq = decision?.seq ?? -1;
+    if (seq !== lastDecisionSeq) {
+      lastDecisionSeq = seq;
+      selectionStore.setSelectedHand(null);
     }
   });
-  let boardTargetPromptInstanceKey = $derived(promptInstanceKey(boardTargetPrompt));
-  let lastBoardTargetPromptInstanceKey = $state('');
-  $effect(() => {
-    if (boardTargetPromptInstanceKey !== lastBoardTargetPromptInstanceKey) {
-      promptSelectionStore.resetBoardTargets();
-      lastBoardTargetPromptInstanceKey = boardTargetPromptInstanceKey;
-    }
-  });
-  let boardStrategy = $derived<BoardInteractionStrategy | null>(
-    game && currentPrompt ? createBoardStrategy(game, currentPrompt) : null,
-  );
 
   function replayFinalEvolutionEvents(): ActionTimelineEvent[] {
     const step = replayStore.currentStep;
@@ -306,85 +227,6 @@
       return [];
     }
     return step.actionTimeline?.filter((event) => event.kind === 'Evolve') ?? [];
-  }
-  $effect(() => {
-    if (!boardStrategy || !game) {
-      return;
-    }
-    window.addEventListener('click', clickBoardPromptSlotAtPoint, true);
-    return () => {
-      window.removeEventListener('click', clickBoardPromptSlotAtPoint, true);
-    };
-  });
-  let autoResolvePromptResult = $derived(autoResolvablePromptResult(currentPrompt, game));
-  let autoResolvePrompt = $derived(
-    shouldAutoResolvePrompt(currentPrompt, autoConfirmPrompts, autoResolvePromptResult, !actingPlayerIsSelf),
-  );
-  let setupPrompt = $derived(
-    currentPrompt?.className === 'ChooseCardsPrompt' && currentPrompt.message === 'CHOOSE_STARTING_POKEMONS'
-      ? currentPrompt
-      : null,
-  );
-  let setupPlayer = $derived(setupPrompt && game ? game.players[setupPrompt.playerIndex] : undefined);
-  let setupBlockedIndexes = $derived(new Set<number>(promptBlockedIndexes(setupPrompt)));
-  let setupUi = $derived(getSetupPromptUiState(promptOptions(setupPrompt), setupPlayer, setupActiveIndex));
-  let setupMinSelections = $derived(setupUi.minSelections);
-  let setupMaxSelections = $derived(setupUi.maxSelections);
-  let setupHasEngineActive = $derived(setupUi.hasEngineActive);
-  let setupNeedsActive = $derived(!!setupPrompt && setupUi.needsActive);
-  let setupCanConfirm = $derived(!!setupPrompt && setupUi.canConfirm);
-  let setupPlayableIndexes = $derived(setupPlayer
-    ? setupPlayer.hand
-        .map((card, index) => ({ card, index }))
-        .filter(({ card, index }) => isSetupStartable(card, index))
-        .map(({ index }) => index)
-    : []);
-  let setupPlacedIndexes = $derived(setupSelectionStore.placedIndexes);
-  let setupSelectedIndex = $derived(
-    selectedHand && setupPrompt?.playerIndex === selectedHand.playerIndex && setupPlayableIndexes.includes(selectedHand.handIndex)
-      ? selectedHand.handIndex
-      : undefined,
-  );
-  let setupPlacementContext = $derived<SetupPlacementContext>({
-    promptPlayerIndex: setupPrompt?.playerIndex,
-    selectedHandIndex: setupSelectedIndex,
-    hasEngineActive: setupHasEngineActive,
-    activeIndex: setupActiveIndex,
-    benchIndexes: setupBenchIndexes,
-    minSelections: setupMinSelections,
-    benchCapacity: setupUi.benchCapacity,
-  });
-
-  function resetPerspective() {
-    viewSettingsStore.resetPerspective();
-  }
-
-  function createBoardStrategy(currentGame: GameView, prompt: PromptView) {
-    if (prompt.className === 'PutDamagePrompt') {
-      return createPutDamageStrategy({
-        game: currentGame,
-        prompt,
-        store: promptSelectionStore,
-        resolve: (value) => void resolvePrompt(value),
-      });
-    }
-    if (prompt.className === 'MoveDamagePrompt' || prompt.className === 'RemoveDamagePrompt') {
-      return createDamageTransferStrategy({
-        game: currentGame,
-        prompt,
-        store: damageTransferStore,
-        resolve: (value) => void resolvePrompt(value),
-      });
-    }
-    if (prompt.className === 'ChoosePokemonPrompt') {
-      return createChoosePokemonStrategy({
-        game: currentGame,
-        prompt,
-        store: promptSelectionStore,
-        resolve: (value) => void resolvePrompt(value),
-      });
-    }
-    return null;
   }
 
   $effect(() => {
@@ -416,79 +258,21 @@
           ? 'Game finished'
           : '',
   );
-  let currentPromptDockMode = $derived<'default' | 'search' | 'attachEnergy'>(
-    currentPrompt?.className === 'ChooseCardsPrompt'
-      ? 'search'
-      : currentPrompt?.className === 'AttachEnergyPrompt'
-        ? 'attachEnergy'
-        : 'default',
-  );
-  let retreatSource = $state<PokemonSlotView | null>(null);
-  let selectedCard = $derived(selectedHand && game ? game.players[selectedHand.playerIndex]?.hand[selectedHand.handIndex] : undefined);
-  let draggingCard = $derived(draggingHand && game ? game.players[draggingHand.playerIndex]?.hand[draggingHand.handIndex] : undefined);
+  let selectedHandOptions = $derived(selectedHand
+    ? optionsForHandCard(mainDecision, selectedHand.playerIndex, selectedHand.handIndex)
+    : []);
+  let draggingHandOptions = $derived(draggingHand
+    ? optionsForHandCard(mainDecision, draggingHand.playerIndex, draggingHand.handIndex)
+    : []);
   let viewedCards = $derived(zoneViewerStore.cardsFor(game));
   let focusedPlayer = $derived(focusedSlot && game ? game.players[focusedSlot.ownerIndex] : undefined);
-  let focusedIsActive = $derived(focusedSlot?.slot === 'active');
   let focusedCanAct = $derived(!!focusedPlayer && canAct(focusedPlayer.index));
-  let focusedBenchTargets = $derived(focusedPlayer?.bench.filter((slot) => !slot.empty) ?? []);
-  let topActiveSlot = $derived(topPlayer
-    ? previewAttachEnergySlot(
-        previewSlot(
-          topPlayer.active,
-          topPlayer.index === setupPrompt?.playerIndex && setupActiveIndex !== null ? topPlayer.hand[setupActiveIndex] : undefined,
-        ),
-        attachPrompt,
-        attachPromptAssignments,
-        attachPromptCards,
-      )
-    : undefined);
-  let bottomActiveSlot = $derived(bottomPlayer
-    ? previewAttachEnergySlot(
-        previewSlot(
-          bottomPlayer.active,
-          bottomPlayer.index === setupPrompt?.playerIndex && setupActiveIndex !== null ? bottomPlayer.hand[setupActiveIndex] : undefined,
-        ),
-        attachPrompt,
-        attachPromptAssignments,
-        attachPromptCards,
-      )
-    : undefined);
-  let topBenchSlots = $derived(topPlayer
-    ? benchSlotsFor(topPlayer, setupPrompt, setupBenchIndexes).map((slot) =>
-        previewAttachEnergySlot(slot, attachPrompt, attachPromptAssignments, attachPromptCards),
-      )
-    : []);
-  let bottomBenchSlots = $derived(bottomPlayer
-    ? benchSlotsFor(bottomPlayer, setupPrompt, setupBenchIndexes).map((slot) =>
-        previewAttachEnergySlot(slot, attachPrompt, attachPromptAssignments, attachPromptCards),
-      )
-    : []);
-  let canPlayOnBoard = $derived(
-    !commandBusy && !!bottomPlayer &&
-    canPlayCardToBoardArea({
-      selected: selectedCard,
-      selectedPlayerIndex: selectedHand?.playerIndex,
-      dragging: draggingCard,
-      draggingPlayerIndex: draggingHand?.playerIndex,
-      activePlayerIndex: game?.activePlayerIndex,
-      hasPrompt: !!currentPrompt,
-      finished: gameFinished,
-      inSetup: !!setupPrompt,
-    } satisfies BoardPlayAreaContext),
-  );
+  let canPlayOnBoard = $derived(!commandBusy && !gameFinished
+    && !!untargetedOptionFor(selectedHandOptions.length ? selectedHandOptions : draggingHandOptions));
+
   $effect(() => {
-    if (currentPrompt || gameFinished) {
+    if (dialogDecision || gameFinished) {
       selectionStore.clearFocus();
-    }
-  });
-  $effect(() => {
-    if (retreatSource && !canAct(retreatSource.ownerIndex)) {
-      retreatSource = null;
-    }
-  });
-  $effect(() => {
-    if (promptLifecycleStore.shouldAutoConfirm(currentPrompt, autoResolvePrompt, resolvingPrompt)) {
-      void resolvePrompt(autoResolvePromptResult);
     }
   });
 
@@ -506,7 +290,6 @@
     resetSaveReplayStatus();
     replayStore.clear();
     homeMode = 'play';
-    activePlayerControls = [player1Control, player2Control];
     await gameSessionStore.run(() =>
       localGameApi.start(decks.player1Cards, decks.player2Cards, {
         player1Control,
@@ -609,7 +392,6 @@
     resetSaveReplayStatus();
     zoneViewerStore.close();
     viewSettingsStore.resetView();
-    activePlayerControls = ['self', 'self'];
     lastKaggleDaySlug = '';
     lastKaggleEpisodeId = '';
     homeMode = 'logs';
@@ -623,7 +405,6 @@
     resetSaveReplayStatus();
     zoneViewerStore.close();
     viewSettingsStore.resetView();
-    activePlayerControls = ['self', 'self'];
     lastKaggleDaySlug = day.slug;
     lastKaggleEpisodeId = episode.episodeId;
     homeMode = 'logs';
@@ -652,138 +433,30 @@
     }
   }
 
-  async function playToTarget(target: CardTarget) {
-    const handSelection = selectedHand;
-    if (!handSelection || !game || !canAct(handSelection.playerIndex)) {
+  // Answer the current decision with engine option indexes.
+  async function selectDecision(indexes: number[], viaDialog = false) {
+    const currentDecision = decision;
+    if (!currentDecision || commandBusy) {
       return;
     }
-    selectionStore.setSelectedHand(null);
-    selectionStore.clearDragging();
-    await gameSessionStore.run(() => commandApi.playCard(handSelection.playerIndex, handSelection.handIndex, target));
+    const send = () => localGameApi.select(currentDecision.seq, indexes);
+    await (viaDialog ? gameSessionStore.resolve(send) : gameSessionStore.run(send));
   }
 
-  function playToSlot(slot: PokemonSlotView) {
-    if (!isPlayableTarget(slot)) {
-      return;
-    }
-    void playToTarget(slot.target);
+  function selectDecisionOption(index: number) {
+    void selectDecision([index]);
   }
 
-  function clickSlot(slot: PokemonSlotView) {
-    if (attachPrompt && isBoardPromptSelectable(slot)) {
-      assignAttachPromptTarget(slot);
-      return;
-    }
-
-    if (dispatchBoardClick(slot)) {
-      return;
-    }
-
-    if (canPlaceSetupActive(slot)) {
-      placeSetupActive();
-      return;
-    }
-
-    if (setupPrompt && slot.ownerIndex === setupPrompt.playerIndex && !selectedHand) {
-      if (slot.slot === 'active' && setupActiveIndex !== null) {
-        removeSetupIndex(setupActiveIndex);
-        return;
-      }
-      if (slot.slot === 'bench' && setupBenchIndexes[slot.index] !== undefined) {
-        removeSetupIndex(setupBenchIndexes[slot.index]);
-        return;
-      }
-    }
-
-    if (isPlayableTarget(slot)) {
-      playToSlot(slot);
-      return;
-    }
-
-    if (canPlayOnBoard) {
-      playSelectedToBoard();
-      return;
-    }
-
-    if (!slot.empty && slot.pokemon) {
-      selectionStore.focusSlot(slot);
-    }
+  function untargetedOptionFor(options: DecisionOptionView[]): DecisionOptionView | undefined {
+    return options.find((option) => !option.boardTarget);
   }
 
-  async function attack(name: string) {
-    if (!game || !focusedPlayer || !focusedIsActive || !focusedCanAct) return;
-    await gameSessionStore.run(() => commandApi.attack(focusedPlayer!.index, name));
-  }
-
-  async function useAbility(name: string, target: CardTarget) {
-    if (!game || !focusedPlayer || !focusedCanAct) return;
-    await gameSessionStore.run(() => commandApi.useAbility(focusedPlayer!.index, name, target));
-  }
-
-  async function useStadium() {
-    if (!game || !activePlayer || !canAct(activePlayer.index)) return;
-    zoneViewerStore.close();
-    await gameSessionStore.run(() => commandApi.useStadium(activePlayer.index));
-  }
-
-  async function concede() {
-    if (!game || !activePlayer || commandBusy || gameFinished) return;
-    await gameSessionStore.run(() => commandApi.concede(game.activePlayerIndex));
-  }
-
-  async function passTurn() {
-    if (!game || !activePlayer || !canAct(activePlayer.index)) return;
-    await gameSessionStore.run(() => commandApi.passTurn(game.activePlayerIndex));
-  }
-
-  async function retreat(to: number) {
-    const playerIndex = retreatSource?.ownerIndex ?? game?.activePlayerIndex;
-    if (!game || playerIndex === undefined || !canAct(playerIndex)) return;
-    retreatSource = null;
-    await gameSessionStore.run(() => commandApi.retreat(playerIndex, to));
-  }
-
-  function canRetreatToSelectedTarget(slot: PokemonSlotView) {
-    if (!game || !retreatSource || slot.slot !== 'bench' || slot.empty || slot.ownerIndex !== retreatSource.ownerIndex) {
-      return false;
-    }
-    if (!canAct(retreatSource.ownerIndex)) {
-      return false;
-    }
-    const retreatAction = game.players[retreatSource.ownerIndex]?.availableActions?.active?.retreat;
-    if (retreatAction) {
-      return retreatAction.targets.includes(slot.index);
-    }
-    return canRetreatToSlot(retreatSource, slot);
-  }
-
-  function startRetreatSelection() {
-    if (!focusedSlot || focusedSlot.slot !== 'active' || !canAct(focusedSlot.ownerIndex)) {
-      return;
-    }
-    retreatSource = focusedSlot;
-    selectionStore.clearFocus();
-  }
-
-  async function resolvePrompt(value: unknown) {
-    if (!currentPrompt) return;
-    await gameSessionStore.resolve(() => commandApi.resolvePrompt(currentPrompt.id, value));
+  function playableIndexesFor(player: PlayerView): number[] {
+    return playableHandIndexes(mainDecision, player.index);
   }
 
   function selectHandCard(playerIndex: number, handIndex: number) {
-    if (!isSelfControlled(playerIndex)) {
-      return;
-    }
-    if (setupPrompt && playerIndex === setupPrompt.playerIndex) {
-      if (!isSetupStartable(game?.players[playerIndex]?.hand[handIndex], handIndex)) {
-        return;
-      }
-      selectionStore.toggleSelectedHand({ playerIndex, handIndex });
-      selectionStore.clearFocus();
-      return;
-    }
-
-    if (!canAct(playerIndex)) {
+    if (!canAct(playerIndex) || !optionsForHandCard(mainDecision, playerIndex, handIndex).length) {
       return;
     }
     selectionStore.toggleSelectedHand({ playerIndex, handIndex });
@@ -791,14 +464,7 @@
   }
 
   function onHandDrag(playerIndex: number, handIndex: number, event: DragEvent) {
-    if (!isSelfControlled(playerIndex)) {
-      return;
-    }
-    if (setupPrompt && playerIndex === setupPrompt.playerIndex) {
-      if (!isSetupStartable(game?.players[playerIndex]?.hand[handIndex], handIndex)) {
-        return;
-      }
-    } else if (!canAct(playerIndex)) {
+    if (!canAct(playerIndex) || !optionsForHandCard(mainDecision, playerIndex, handIndex).length) {
       return;
     }
     selectionStore.startDragging({ playerIndex, handIndex });
@@ -812,9 +478,49 @@
     selectionStore.clearDragging();
   }
 
+  // The option a click/drop on this slot would select, if any.
+  function slotOption(slot: PokemonSlotView): DecisionOptionView | undefined {
+    const board = boardOptionForSlot(decisionSeatIsSelf ? decision : undefined, slotRef(slot));
+    if (board) {
+      return board;
+    }
+    const hand = selectedHand ?? draggingHand;
+    if (!hand || !canAct(hand.playerIndex)) {
+      return undefined;
+    }
+    return handOptionForSlot(mainDecision, hand.playerIndex, hand.handIndex, slotRef(slot));
+  }
+
+  function clickSlot(slot: PokemonSlotView) {
+    const option = slotOption(slot);
+    if (option) {
+      selectDecisionOption(option.index);
+      return;
+    }
+
+    if (canPlayOnBoard && selectedHand) {
+      playSelectedToBoard();
+      return;
+    }
+
+    if (!slot.empty && slot.pokemon) {
+      selectionStore.focusSlot(slot);
+    }
+  }
+
   function allowDrop(event: DragEvent, slot: PokemonSlotView) {
-    if (isPlayableTarget(slot) || canPlaceSetupActive(slot) || (attachPrompt && isBoardPromptSelectable(slot))) {
+    if (slotOption(slot)) {
       event.preventDefault();
+    }
+  }
+
+  function dropToSlot(slot: PokemonSlotView, event: DragEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    const option = slotOption(slot);
+    clearDragState();
+    if (option) {
+      selectDecisionOption(option.index);
     }
   }
 
@@ -824,10 +530,105 @@
     }
   }
 
+  function dropToBoardPlay(event: DragEvent) {
+    if (!canPlayOnBoard) {
+      return;
+    }
+    event.preventDefault();
+    const options = draggingHandOptions.length ? draggingHandOptions : selectedHandOptions;
+    clearDragState();
+    const option = untargetedOptionFor(options);
+    if (option) {
+      selectDecisionOption(option.index);
+    }
+  }
+
+  function clickBoardPlay(event: MouseEvent) {
+    if (!canPlayOnBoard) {
+      return;
+    }
+    event.preventDefault();
+    playSelectedToBoard();
+  }
+
+  function playSelectedToBoard() {
+    const option = untargetedOptionFor(selectedHandOptions);
+    if (option) {
+      selectionStore.setSelectedHand(null);
+      selectDecisionOption(option.index);
+    }
+  }
+
+  // Bench-area drop for untargeted plays (the engine places basics itself).
+  function benchAreaOption(player: PlayerView): DecisionOptionView | undefined {
+    const hand = selectedHand ?? draggingHand;
+    if (!hand || hand.playerIndex !== player.index || !canAct(player.index)) {
+      return undefined;
+    }
+    const options = optionsForHandCard(mainDecision, hand.playerIndex, hand.handIndex);
+    const untargeted = untargetedOptionFor(options);
+    return untargeted?.card?.superType === 'Pokemon' ? untargeted : undefined;
+  }
+
+  function canPlayToBenchArea(player: PlayerView) {
+    return !!benchAreaOption(player);
+  }
+
+  function playToBenchArea(player: PlayerView) {
+    const option = benchAreaOption(player);
+    if (option) {
+      selectionStore.setSelectedHand(null);
+      selectDecisionOption(option.index);
+    }
+  }
+
   function allowBenchDrop(event: DragEvent, player: PlayerView) {
-    if (canPlayToBenchArea(player) || canPlaceSetupBench(player)) {
+    if (canPlayToBenchArea(player)) {
       event.preventDefault();
     }
+  }
+
+  function dropToBenchArea(player: PlayerView, event: DragEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    clearDragState();
+    playToBenchArea(player);
+  }
+
+  function isPlayableTarget(slot: PokemonSlotView) {
+    const hand = selectedHand ?? draggingHand;
+    if (!hand) {
+      return false;
+    }
+    return !!handOptionForSlot(mainDecision, hand.playerIndex, hand.handIndex, slotRef(slot));
+  }
+
+  function isBoardPromptSelectable(slot: PokemonSlotView) {
+    return !!boardOptionForSlot(decisionSeatIsSelf ? decision : undefined, slotRef(slot));
+  }
+
+  function isBoardPromptSelected(_slot: PokemonSlotView) {
+    return false;
+  }
+
+  function boardSlotDelta(_slot: PokemonSlotView) {
+    return 0;
+  }
+
+  async function passTurn() {
+    const option = endTurnOption(mainDecision);
+    if (option) {
+      await selectDecision([option.index]);
+    }
+  }
+
+  async function useStadium() {
+    const option = stadiumOption(mainDecision);
+    if (!option) {
+      return;
+    }
+    zoneViewerStore.close();
+    await selectDecision([option.index]);
   }
 
   function switchSides() {
@@ -850,99 +651,12 @@
     resetSaveReplayStatus();
     zoneViewerStore.close();
     viewSettingsStore.resetView();
-    activePlayerControls = [player1Control, player2Control];
   }
 
   function resetSaveReplayStatus() {
     saveReplayMessage = '';
     saveReplayError = '';
     savingReplay = false;
-  }
-
-  function dropToSlot(slot: PokemonSlotView, event: DragEvent) {
-    event.preventDefault();
-    event.stopPropagation();
-    clearDragState();
-    if (attachPrompt && isBoardPromptSelectable(slot)) {
-      assignAttachPromptTarget(slot);
-      return;
-    }
-    if (canPlaceSetupActive(slot)) {
-      placeSetupActive();
-      return;
-    }
-    if (isPlayableTarget(slot)) {
-      playToSlot(slot);
-      return;
-    }
-  }
-
-  function dropToBoardPlay(event: DragEvent) {
-    if (!canPlayOnBoard) {
-      return;
-    }
-    event.preventDefault();
-    clearDragState();
-    playSelectedToBoard();
-  }
-
-  function clickBoardPlay(event: MouseEvent) {
-    if (!canPlayOnBoard) {
-      return;
-    }
-    event.preventDefault();
-    playSelectedToBoard();
-  }
-
-  function dropToBenchArea(player: PlayerView, event: DragEvent) {
-    event.preventDefault();
-    event.stopPropagation();
-    clearDragState();
-    if (canPlaceSetupBench(player)) {
-      placeSetupBench();
-      return;
-    }
-    playToBenchArea(player);
-  }
-
-  function isPlayableTarget(slot: PokemonSlotView) {
-    if (setupPrompt) {
-      return false;
-    }
-    return canPlayCardToSlot(selectedCard, selectedHand?.playerIndex, slot);
-  }
-
-  function benchAreaTarget(player: PlayerView) {
-    return playableBenchSlot(player, selectedCard, selectedHand?.playerIndex, !!setupPrompt);
-  }
-
-  function canPlayToBenchArea(player: PlayerView) {
-    if (setupPrompt) {
-      return false;
-    }
-    return !!benchAreaTarget(player);
-  }
-
-  function playToBenchArea(player: PlayerView) {
-    const target = benchAreaTarget(player);
-    if (!target) {
-      return;
-    }
-    playToSlot(target);
-  }
-
-  function canPlayToArea(player: PlayerView) {
-    if (setupPrompt) {
-      return false;
-    }
-    return canAct(player.index) && canPlayCardToPlayArea(selectedCard, selectedHand?.playerIndex);
-  }
-
-  function playSelectedToBoard() {
-    if (!game || !activePlayer || !canPlayToArea(activePlayer)) {
-      return;
-    }
-    void playToTarget(targetFor(game.activePlayerIndex, game.activePlayerIndex, SlotType.ACTIVE));
   }
 
   function showZone(
@@ -954,30 +668,19 @@
     zoneViewerStore.show(playerIndex, zone, title, faceDown);
   }
 
-  function normalizePromptLimit(value: unknown, fallback: number) {
-    return promptLimit(value, fallback);
-  }
-
   function canAct(playerIndex: number) {
-    if (commandBusy) {
-      return false;
-    }
-    if (replayMode) {
-      return false;
-    }
-    if (!isSelfControlled(playerIndex)) {
-      return false;
-    }
-    return canPlayerAct({
-      playerIndex,
-      activePlayerIndex: game?.activePlayerIndex,
-      hasPrompt: !!currentPrompt,
-      finished: gameFinished,
-    });
+    return !commandBusy
+      && !replayMode
+      && !gameFinished
+      && !!mainDecision
+      && mainDecision.seat === playerIndex;
   }
 
   function isSelfControlled(playerIndex: number | undefined) {
-    return playerIndex === 0 || playerIndex === 1 ? activePlayerControls[playerIndex] === 'self' : false;
+    if (playerIndex !== 0 && playerIndex !== 1) {
+      return false;
+    }
+    return game?.seats?.[playerIndex]?.control === 'self';
   }
 
   function controlLabel(control: PlayerControl) {
@@ -1013,197 +716,6 @@
     params.delete('kaggleEpisode');
     window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}${window.location.hash}`);
   }
-
-  function isAttachEnergyAvailable(index: number) {
-    const blocked = new Set<number>(promptBlockedIndexes(attachPrompt));
-    return isAttachEnergyAvailableModel(index, [...blocked], attachPromptAssignments);
-  }
-
-  function canAssignAttachPromptTarget(target: CardTarget, energyIndex = attachPromptEnergyIndex) {
-    if (!attachPrompt) {
-      return false;
-    }
-    return canAssignAttachTarget(
-      target,
-      energyIndex,
-      attachPromptAssignments,
-      attachPromptTargets,
-      attachPromptMax,
-      promptOptions(attachPrompt),
-      isAttachEnergyAvailable,
-    );
-  }
-
-  function isBoardPromptSelectable(slot: PokemonSlotView) {
-    if (attachPrompt) {
-      if (slot.empty) {
-        return false;
-      }
-      const target = targetForPromptSlot(attachPrompt, slot);
-      return canAssignAttachPromptTarget(target);
-    }
-    if (!currentPrompt && canRetreatToSelectedTarget(slot)) {
-      return true;
-    }
-    if (!boardStrategy || !currentPrompt || slot.empty) {
-      return false;
-    }
-    return boardStrategy.isEligible(targetForPromptSlot(currentPrompt, slot));
-  }
-
-  function isBoardPromptSelected(slot: PokemonSlotView) {
-    if (!currentPrompt && retreatSource) {
-      return slot.slot === 'active' && slot.ownerIndex === retreatSource.ownerIndex;
-    }
-    if (attachPrompt) {
-      if (slot.empty) {
-        return false;
-      }
-      const target = targetForPromptSlot(attachPrompt, slot);
-      return attachPromptAssignments.some((assignment) => sameTarget(assignment.target, target));
-    }
-    if (!boardStrategy || !currentPrompt || slot.empty) {
-      return false;
-    }
-    return boardStrategy.isSelected(targetForPromptSlot(currentPrompt, slot));
-  }
-
-  function boardSlotDelta(slot: PokemonSlotView) {
-    if (!boardStrategy || !currentPrompt || slot.empty) {
-      return 0;
-    }
-    return boardStrategy.deltaFor(targetForPromptSlot(currentPrompt, slot));
-  }
-
-  function dispatchBoardClick(slot: PokemonSlotView) {
-    if (!currentPrompt && retreatSource) {
-      if (canRetreatToSelectedTarget(slot)) {
-        void retreat(slot.index);
-        return true;
-      }
-      retreatSource = null;
-      return false;
-    }
-    if (!boardStrategy || !currentPrompt || slot.empty) {
-      return false;
-    }
-    const target = targetForPromptSlot(currentPrompt, slot);
-    if (!boardStrategy.isEligible(target)) {
-      return false;
-    }
-    boardStrategy.activate(target);
-    return true;
-  }
-
-  function clickBoardPromptSlotAtPoint(event: MouseEvent) {
-    if (!boardStrategy || resolvingPrompt) {
-      return;
-    }
-    if (event.target instanceof Element && event.target.closest('.prompt-dock, .prompt-strip')) {
-      return;
-    }
-    const slot = boardPromptSlotAtPoint(event.clientX, event.clientY);
-    if (!slot || !dispatchBoardClick(slot)) {
-      return;
-    }
-    event.preventDefault();
-    event.stopImmediatePropagation();
-  }
-
-  function boardPromptSlotAtPoint(x: number, y: number) {
-    const slotElement = document.elementsFromPoint(x, y).find((element) =>
-      element instanceof HTMLElement
-        && element.classList.contains('board-slot')
-        && element.classList.contains('prompt-selectable'),
-    );
-    return slotElement instanceof HTMLElement ? boardSlotFromElement(slotElement) : null;
-  }
-
-  function boardSlotFromElement(element: HTMLElement): PokemonSlotView | null {
-    if (!game) {
-      return null;
-    }
-    const ownerIndex = Number(element.dataset.ownerIndex);
-    const slotKind = element.dataset.slotKind;
-    const slotIndex = Number(element.dataset.slotIndex);
-    const player = game.players.find((item) => item.index === ownerIndex);
-    if (!player || !Number.isFinite(slotIndex)) {
-      return null;
-    }
-    if (slotKind === 'active') {
-      return player.active;
-    }
-    if (slotKind === 'bench') {
-      return player.bench.find((slot) => slot.index === slotIndex) ?? null;
-    }
-    return null;
-  }
-
-  function assignAttachPromptTarget(slot: PokemonSlotView) {
-    if (!attachPrompt || attachPromptEnergyIndex === null || !isBoardPromptSelectable(slot)) {
-      return;
-    }
-    const target = targetForPromptSlot(attachPrompt, slot);
-    promptSelectionStore.assignAttachTarget(target, attachPromptMax);
-  }
-
-  function selectAttachPromptEnergy(index: number | null) {
-    promptSelectionStore.toggleAttachEnergy(index);
-  }
-
-  function removeAttachPromptAssignment(index: number) {
-    promptSelectionStore.removeAttachAssignment(index);
-  }
-
-  function resetAttachPromptAssignments() {
-    promptSelectionStore.resetAttachAssignments();
-  }
-
-  function isSetupStartable(card: CardView | undefined, handIndex: number) {
-    return isSetupStartableModel(card, handIndex, setupBlockedIndexes, !!setupPrompt);
-  }
-
-  function selectedSetupHandIndex() {
-    return setupPlacementContext.selectedHandIndex;
-  }
-
-  function canPlaceSetupActive(slot: PokemonSlotView) {
-    return canPlaceSetupActiveModel(slot, setupPlacementContext);
-  }
-
-  function placeSetupActive() {
-    const handIndex = selectedSetupHandIndex();
-    if (handIndex === undefined) {
-      return;
-    }
-    setupSelectionStore.placeActive(handIndex);
-    selectionStore.setSelectedHand(null);
-  }
-
-  function canPlaceSetupBench(player: PlayerView) {
-    return canPlaceSetupBenchModel(player, setupPlacementContext);
-  }
-
-  function placeSetupBench() {
-    const handIndex = selectedSetupHandIndex();
-    if (handIndex === undefined || !setupPlayer || !canPlaceSetupBench(setupPlayer)) {
-      return;
-    }
-    setupSelectionStore.placeBench(handIndex);
-    selectionStore.setSelectedHand(null);
-  }
-
-  function removeSetupIndex(handIndex: number) {
-    setupSelectionStore.remove(handIndex);
-  }
-
-  async function confirmSetupPokemon() {
-    if (!setupPrompt || !setupCanConfirm) {
-      return;
-    }
-    await resolvePrompt(setupPromptResult(setupHasEngineActive, setupActiveIndex, setupBenchIndexes));
-  }
-
 </script>
 
 {#if showPromptGallery}
@@ -1246,7 +758,6 @@
         setHomeMode={(nextMode) => {
           homeMode = nextMode;
           if (nextMode === 'logs') {
-            activePlayerControls = ['self', 'self'];
             gameStore.reset();
           } else {
             replayStore.clear();
@@ -1262,7 +773,7 @@
       <GameStatus
         phaseLabel={game.phaseLabel}
         turn={game.turn}
-        activePlayerName={activePlayer?.name}
+        activePlayerName={game.players[actingPlayerIndex]?.name}
         resultLabel={gameResultLabel}
         modeLabel={replayMode ? '' : modeLabel}
         {gameFinished}
@@ -1274,7 +785,6 @@
         bind:boardScaleY={viewSettingsStore.boardScaleY}
         bind:boardLift={viewSettingsStore.boardLift}
         bind:followActive={viewSettingsStore.followActive}
-        bind:autoConfirmPrompts={viewSettingsStore.autoConfirmPrompts}
         bind:debugZones={viewSettingsStore.debugZones}
         bind:showLogs={viewSettingsStore.showLogs}
         bind:animateActions={viewSettingsStore.animateActions}
@@ -1282,12 +792,11 @@
         bind:actionStepDelayMs={viewSettingsStore.actionStepDelayMs}
         bind:themePreference={viewSettingsStore.themePreference}
         busy={commandBusy}
-        promptActive={replayMode || !!currentPrompt}
+        promptActive={replayMode || !!dialogDecision || !!boardDecision.length}
         {gameFinished}
         {error}
-        {resetPerspective}
+        resetPerspective={() => viewSettingsStore.resetPerspective()}
         {passTurn}
-        {concede}
         {switchSides}
         switchDisabled={!replayMode && actingPlayerIsSelf}
         {resetGame}
@@ -1327,28 +836,18 @@
         />
       {/if}
 
-      {#if setupPrompt}
-        <SetupDock
-          needsActive={setupNeedsActive}
-          canConfirm={setupCanConfirm}
-          resolving={resolvingPrompt}
-          confirm={confirmSetupPokemon}
-        />
-      {:else if boardStrategy}
-        <BoardPromptStrip strategy={boardStrategy} resolving={resolvingPrompt} />
-      {:else if currentPrompt && !autoResolvePrompt}
-        <PromptDock mode={currentPromptDockMode}>
-          {#key promptInstanceKey(currentPrompt)}
+      {#if boardDecision.length && decision}
+        <div class="board-decision-banner" role="status">
+          <strong>{decision.message}</strong>
+          <span>Choose a highlighted Pokemon on the board.</span>
+        </div>
+      {:else if dialogDecision}
+        <PromptDock mode={promptDockMode}>
+          {#key dialogDecision.seq}
             <PromptHost
-              game={game}
-              prompt={currentPrompt}
+              decision={dialogDecision}
               resolving={resolvingPrompt}
-              activeAttachEnergyIndex={attachPromptEnergyIndex}
-              attachAssignments={attachPromptAssignments}
-              onresolve={resolvePrompt}
-              onattachEnergySelect={selectAttachPromptEnergy}
-              onattachEnergyUnassign={removeAttachPromptAssignment}
-              onattachEnergyReset={resetAttachPromptAssignments}
+              onselect={(indexes) => void selectDecision(indexes, true)}
             />
           {/key}
         </PromptDock>
@@ -1359,10 +858,10 @@
           <Hand
             player={topPlayer}
             selectedHand={selectedHand}
-            disabled={!isSelfControlled(topPlayer.index) || (!canAct(topPlayer.index) && setupPrompt?.playerIndex !== topPlayer.index)}
+            disabled={!canAct(topPlayer.index)}
             dimDisabled={!replayMode}
-            playableIndexes={setupPrompt?.playerIndex === topPlayer.index ? setupPlayableIndexes : []}
-            placedIndexes={setupPrompt?.playerIndex === topPlayer.index ? setupPlacedIndexes : []}
+            playableIndexes={playableIndexesFor(topPlayer)}
+            placedIndexes={[]}
             concealed
             onSelect={selectHandCard}
             onDrag={onHandDrag}
@@ -1373,14 +872,14 @@
         <GameBoard
           {topPlayer}
           {bottomPlayer}
-          {topBenchSlots}
-          {bottomBenchSlots}
-          {topActiveSlot}
-          {bottomActiveSlot}
+          topBenchSlots={topPlayer.bench.filter((slot) => !slot.empty)}
+          bottomBenchSlots={bottomPlayer.bench.filter((slot) => !slot.empty)}
+          topActiveSlot={topPlayer.active}
+          bottomActiveSlot={bottomPlayer.active}
           {canPlayToBenchArea}
-          {canPlaceSetupBench}
+          canPlaceSetupBench={() => false}
           {playToBenchArea}
-          {placeSetupBench}
+          placeSetupBench={() => {}}
           {allowBenchDrop}
           {dropToBenchArea}
           {isPlayableTarget}
@@ -1390,8 +889,8 @@
           {clickSlot}
           {allowDrop}
           {dropToSlot}
-          {canPlaceSetupActive}
-          {placeSetupActive}
+          canPlaceSetupActive={() => false}
+          placeSetupActive={() => {}}
           {showZone}
           {canPlayOnBoard}
           {clickBoardPlay}
@@ -1401,7 +900,7 @@
           {boardPerspective}
           {boardScaleY}
           {boardLift}
-          {animationEvents}
+          animationEvents={animationEvents}
           {animationScopeKey}
           {animationTurnKey}
           evolutionChromeEvents={finalEvolutionEvents}
@@ -1430,10 +929,10 @@
           <Hand
             player={bottomPlayer}
             selectedHand={selectedHand}
-            disabled={!isSelfControlled(bottomPlayer.index) || (!canAct(bottomPlayer.index) && setupPrompt?.playerIndex !== bottomPlayer.index)}
+            disabled={!canAct(bottomPlayer.index)}
             dimDisabled={!replayMode}
-            playableIndexes={setupPrompt?.playerIndex === bottomPlayer.index ? setupPlayableIndexes : []}
-            placedIndexes={setupPrompt?.playerIndex === bottomPlayer.index ? setupPlacedIndexes : []}
+            playableIndexes={playableIndexesFor(bottomPlayer)}
+            placedIndexes={[]}
             concealed={!replayMode && !isSelfControlled(bottomPlayer.index)}
             onSelect={selectHandCard}
             onDrag={onHandDrag}
@@ -1445,17 +944,16 @@
           <ActiveFocus
             slot={focusedSlot}
             availableActions={focusedPlayer?.availableActions}
-            benchTargets={focusedBenchTargets}
             busy={sessionBusy}
-            promptActive={!!currentPrompt}
+            promptActive={!!dialogDecision || !!boardDecision.length}
             canAct={focusedCanAct}
-            {canRetreatToSlot}
             close={() => {
               selectionStore.clearFocus();
             }}
-            {useAbility}
-            {attack}
-            startRetreat={startRetreatSelection}
+            selectOption={(index) => {
+              selectionStore.clearFocus();
+              selectDecisionOption(index);
+            }}
           />
         {/if}
 
@@ -1468,8 +966,8 @@
           title={zoneViewerTitle}
           cards={viewedCards}
           faceDown={zoneViewerFaceDown}
-          actionLabel={zoneViewerIsStadium && viewedCards.length ? 'Use stadium' : ''}
-          actionDisabled={sessionBusy || !!currentPrompt || gameFinished || replayMode}
+          actionLabel={zoneViewerIsStadium && viewedCards.length && stadiumOption(mainDecision) ? 'Use stadium' : ''}
+          actionDisabled={sessionBusy || !!dialogDecision || gameFinished || replayMode}
           actionTitle="Use this stadium's once-per-turn effect"
           onAction={useStadium}
           close={() => zoneViewerStore.close()}
@@ -1519,4 +1017,32 @@
     font-size: 13px;
   }
 
+  .board-decision-banner {
+    position: absolute;
+    left: calc((100vw - var(--board-right-rail)) / 2);
+    top: calc(var(--board-top-inset) + 48px);
+    z-index: 14;
+    transform: translate(-50%, -50%);
+    display: grid;
+    justify-items: center;
+    gap: 2px;
+    padding: 10px 18px;
+    border-radius: 8px;
+    border: 1px solid var(--surface-glass-border);
+    background: var(--surface-glass-bg);
+    color: var(--text-secondary);
+    box-shadow: var(--surface-glass-shadow);
+    backdrop-filter: blur(var(--backdrop-blur));
+    text-align: center;
+  }
+
+  .board-decision-banner strong {
+    color: var(--text-primary);
+    font-size: 14px;
+  }
+
+  .board-decision-banner span {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
 </style>

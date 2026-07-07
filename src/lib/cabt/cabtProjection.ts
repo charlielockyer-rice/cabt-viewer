@@ -2,13 +2,15 @@ import { resolveCardImageUrl } from '../game/cardImages';
 import {
   SlotType,
   targetFor,
+  type BoardSlotRef,
   type CardView,
+  type DecisionOptionView,
+  type DecisionView,
   type GameView,
   type LogView,
   type ActionTimelineEvent,
   type PlayerView,
   type PokemonSlotView,
-  type PromptView,
 } from '../game/types';
 import {
   CabtAreaType,
@@ -185,10 +187,130 @@ export function cabtObservationToGameView(
     activePlayerId: players[activePlayerIndex]?.id,
     winner: projectWinner(current.result),
     players,
-    prompts: buildPrompts(observation, activePlayerIndex, dataMaps),
+    prompts: [],
+    turnSeat: turnSeatFor(current),
     logs,
     actionTimeline,
     events: [observation],
+  };
+}
+
+// The turn owner is derivable: turn 1 belongs to firstPlayer and alternates.
+// (During setup the engine reports turn 0; the value is meaningless there.)
+function turnSeatFor(current: NonNullable<CabtObservation['current']>): number {
+  return (((current.firstPlayer + current.turn - 1) % 2) + 2) % 2;
+}
+
+// The engine's select, projected 1:1 into the UI interaction contract.
+// A finished game's observation still carries a (possibly empty) select;
+// there is nothing to decide.
+export function projectDecision(observation: CabtObservation, seq: number, dataMaps: CabtDataMaps): DecisionView | undefined {
+  const select = observation.select;
+  const current = observation.current;
+  if (!select || !current || current.result >= 0 || !select.option.length) {
+    return undefined;
+  }
+  const seat = current.yourIndex;
+  const kind = select.type === CabtSelectType.MAIN
+    ? 'main'
+    : isPrizeSelectionPrompt(select)
+      ? 'choose-prize'
+      : isCardSelectionPrompt(observation)
+        ? 'choose-cards'
+        : 'choose-option';
+  return {
+    seq,
+    seat,
+    kind,
+    message: kind === 'main' ? 'Main phase' : kind === 'choose-prize' ? 'Choose Prize Card' : cabtSelectLabel(select.context),
+    min: select.minCount,
+    max: select.maxCount,
+    options: select.option.map((option, index) => projectOption(option, index, observation, dataMaps, seat)),
+  };
+}
+
+function projectOption(
+  option: CabtOption,
+  index: number,
+  observation: CabtObservation,
+  dataMaps: CabtDataMaps,
+  seat: number,
+): DecisionOptionView {
+  const optionCard = cardForOption(option, observation, index);
+  const abilityName = option.type === CabtOptionType.ABILITY
+    ? optionCard ? dataMaps.cardData[optionCard.id]?.skills?.[0]?.name : undefined
+    : undefined;
+  const projected: DecisionOptionView = {
+    index,
+    type: option.type,
+    area: option.area ?? undefined,
+    label: decisionOptionLabel(option, dataMaps, observation, abilityName),
+    card: optionCard ? cabtCardToView(optionCard, dataMaps) : undefined,
+    hand: handSourceFor(option, seat),
+    boardTarget: inPlayTargetFor(option, seat),
+    board: boardRefFor(option, seat),
+    attached: (option.energyIndex ?? option.toolIndex) != null ? true : undefined,
+    attackName: option.type === CabtOptionType.ATTACK && option.attackId
+      ? dataMaps.attacks[option.attackId]?.name
+      : undefined,
+    abilityName,
+    number: option.number ?? option.count ?? undefined,
+  };
+  return projected;
+}
+
+function decisionOptionLabel(
+  option: CabtOption,
+  dataMaps: CabtDataMaps,
+  observation: CabtObservation,
+  abilityName: string | undefined,
+): string {
+  if (option.type === CabtOptionType.RETREAT) return 'Retreat';
+  if (option.type === CabtOptionType.ABILITY && abilityName) return abilityName;
+  return optionLabel(option, dataMaps, observation, observation.select?.context);
+}
+
+// Main-phase options that play a card out of the acting seat's hand: PLAY /
+// ATTACH / EVOLVE with a hand index (the engine may omit the HAND area).
+function handSourceFor(option: CabtOption, seat: number): DecisionOptionView['hand'] {
+  const playsFromHand = option.type === CabtOptionType.PLAY
+    || option.type === CabtOptionType.ATTACH
+    || option.type === CabtOptionType.EVOLVE;
+  if (!playsFromHand || option.index === undefined || option.index === null) {
+    return undefined;
+  }
+  if (option.area !== undefined && option.area !== null && option.area !== CabtAreaType.HAND) {
+    return undefined;
+  }
+  return { playerIndex: option.playerIndex ?? seat, handIndex: option.index };
+}
+
+function inPlayTargetFor(option: CabtOption, seat: number): BoardSlotRef | undefined {
+  if (option.inPlayArea === undefined || option.inPlayArea === null
+    || option.inPlayIndex === undefined || option.inPlayIndex === null) {
+    return undefined;
+  }
+  if (option.inPlayArea !== CabtAreaType.ACTIVE && option.inPlayArea !== CabtAreaType.BENCH) {
+    return undefined;
+  }
+  return {
+    ownerIndex: option.playerIndex ?? seat,
+    slot: option.inPlayArea === CabtAreaType.BENCH ? 'bench' : 'active',
+    index: option.inPlayIndex,
+  };
+}
+
+function boardRefFor(option: CabtOption, seat: number): BoardSlotRef | undefined {
+  if (option.area !== CabtAreaType.ACTIVE && option.area !== CabtAreaType.BENCH) {
+    return undefined;
+  }
+  if (option.index === undefined || option.index === null) {
+    return undefined;
+  }
+  return {
+    ownerIndex: option.playerIndex ?? seat,
+    slot: option.area === CabtAreaType.BENCH ? 'bench' : 'active',
+    index: option.index,
   };
 }
 
@@ -286,110 +408,6 @@ function cardToView(cardRef: CabtCard, dataMaps: CabtDataMaps): CardView {
   return cabtCardToView(cardRef, dataMaps);
 }
 
-function buildPrompts(observation: CabtObservation, activePlayerIndex: number, dataMaps: CabtDataMaps): PromptView[] {
-  const select = observation.select;
-  if (!select || select.type === CabtSelectType.MAIN) {
-    return [];
-  }
-  const id = promptIdForObservation(observation);
-  if (isPrizeSelectionPrompt(select)) {
-    return [
-      {
-        id,
-        className: 'ChoosePrizePrompt',
-        type: 'cabt-prize-select',
-        playerId: activePlayerIndex,
-        playerIndex: activePlayerIndex,
-        supported: true,
-        message: 'Choose Prize Card',
-        resultSchema: 'optionIndexes',
-        fields: {
-          prizes: select.option.map((option, optionIndex) => {
-            const optionCard = cardForOption(option, observation, optionIndex);
-            return {
-              index: optionIndex,
-              cards: optionCard ? [cardToView(optionCard, dataMaps)] : [],
-            };
-          }),
-          options: promptSelectionOptions(select),
-          cabtSelect: select,
-        },
-      },
-    ];
-  }
-  if (isCardSelectionPrompt(observation)) {
-    return [
-      {
-        id,
-        className: 'ChooseCardsPrompt',
-        type: 'cabt-card-select',
-        playerId: activePlayerIndex,
-        playerIndex: activePlayerIndex,
-        supported: true,
-        message: cabtSelectLabel(select.context),
-        resultSchema: 'optionIndexes',
-        fields: {
-          cardList: select.option.map((option, optionIndex) => {
-            const optionCard = cardForOption(option, observation, optionIndex);
-            const view = optionCard ? cardToView(optionCard, dataMaps) : {
-              name: optionLabel(option, dataMaps, observation, select.context),
-              fullName: optionLabel(option, dataMaps, observation, select.context),
-            };
-            return {
-              ...view,
-              index: optionIndex,
-            };
-          }),
-          options: promptSelectionOptions(select),
-          cabtSelect: select,
-        },
-      },
-    ];
-  }
-  return [
-    {
-      id,
-      className: 'SelectPrompt',
-      type: 'cabt-select',
-      playerId: activePlayerIndex,
-      playerIndex: activePlayerIndex,
-      supported: true,
-      message: cabtSelectLabel(select.context),
-      resultSchema: 'optionIndex',
-      fields: {
-        values: select.option.map((option) => optionLabel(option, dataMaps, observation, select.context)),
-        options: promptSelectionOptions(select),
-        cabtSelect: select,
-      },
-    },
-  ];
-}
-
-function promptSelectionOptions(select: CabtSelectData) {
-  const batchCount = repeatedEnergyPaymentCount(select);
-  if (batchCount > select.maxCount) {
-    return {
-      min: Math.min(Math.max(select.minCount, batchCount), select.option.length),
-      max: Math.min(batchCount, select.option.length),
-    };
-  }
-  return {
-    min: select.minCount,
-    max: select.maxCount,
-  };
-}
-
-function repeatedEnergyPaymentCount(select: CabtSelectData) {
-  if (
-    select.maxCount !== 1
-    || select.remainEnergyCost <= 1
-    || (select.context !== CabtSelectContext.DISCARD_ENERGY && select.context !== CabtSelectContext.DISCARD_ENERGY_CARD)
-  ) {
-    return 0;
-  }
-  return select.remainEnergyCost;
-}
-
 function isCardSelectionPrompt(observation: CabtObservation) {
   const select = observation.select;
   if (!select) {
@@ -399,43 +417,6 @@ function isCardSelectionPrompt(observation: CabtObservation) {
     return false;
   }
   return select.option.some((option, optionIndex) => option.type === CabtOptionType.CARD || !!cardForOption(option, observation, optionIndex));
-}
-
-export function promptIdForObservation(observation: CabtObservation) {
-  return hashPromptKey(JSON.stringify({
-    current: observation.current,
-    select: promptSelectKey(observation.select),
-  }));
-}
-
-function promptSelectKey(select: CabtObservation['select']) {
-  if (!select) {
-    return null;
-  }
-  return {
-    context: select.context,
-    type: select.type,
-    min: select.minCount,
-    max: select.maxCount,
-    options: select.option.map((option) => [
-      option.type,
-      option.area,
-      option.index,
-      option.playerIndex,
-      option.attackId,
-      option.cardId,
-      option.serial,
-      option.number,
-    ]),
-  };
-}
-
-function hashPromptKey(value: string) {
-  let hash = 5381;
-  for (let index = 0; index < value.length; index += 1) {
-    hash = ((hash << 5) + hash) ^ value.charCodeAt(index);
-  }
-  return Math.abs(hash);
 }
 
 function buildAvailableActions(
@@ -448,32 +429,48 @@ function buildAvailableActions(
   const active = player.active[0];
   const canAct = playerIndex === activePlayerIndex && select?.type === CabtSelectType.MAIN;
   const options = canAct ? select?.option ?? [] : [];
-  const activeAttackIds = new Set(options
-    .filter((option) =>
+  const activeAttackOptions = new Map(options
+    .map((option, optionIndex) => [option, optionIndex] as const)
+    .filter(([option]) =>
       option.type === CabtOptionType.ATTACK
+      && typeof option.attackId === 'number'
       && (option.area === undefined || option.area === null || option.area === CabtAreaType.ACTIVE))
-    .map((option) => option.attackId)
-    .filter((attackId): attackId is number => typeof attackId === 'number'));
-  const activeAbilityIds = new Set(options
-    .filter((option) => option.type === CabtOptionType.ABILITY && option.area === CabtAreaType.ACTIVE)
-    .map((option) => option.cardId)
-    .filter((cardId): cardId is number => typeof cardId === 'number'));
-  const benchAbilityIndexes = new Set(options
-    .filter((option) => option.type === CabtOptionType.ABILITY && option.area === CabtAreaType.BENCH && typeof option.index === 'number')
-    .map((option) => option.index as number));
-  const retreatLegal = options.some((option) => option.type === CabtOptionType.RETREAT);
+    .map(([option, optionIndex]) => [option.attackId as number, optionIndex]));
+  const activeAbilityOption = options.findIndex((option) => option.type === CabtOptionType.ABILITY && option.area === CabtAreaType.ACTIVE);
+  const benchAbilityOptions = new Map(options
+    .map((option, optionIndex) => [option, optionIndex] as const)
+    .filter(([option]) => option.type === CabtOptionType.ABILITY && option.area === CabtAreaType.BENCH && typeof option.index === 'number')
+    .map(([option, optionIndex]) => [option.index as number, optionIndex]));
+  const retreatOption = options.findIndex((option) => option.type === CabtOptionType.RETREAT);
   return {
     active: {
-      attacks: activeAttacks(active, dataMaps).map((attack) => ({ name: attack.name, legal: activeAttackIds.has(attack.attackId) })),
-      abilities: activeAbilityIds.size ? [{ name: dataMaps.cardData[active?.id ?? -1]?.skills?.[0]?.name ?? 'Ability', legal: true }] : [],
+      attacks: activeAttacks(active, dataMaps).map((attack) => ({
+        name: attack.name,
+        legal: activeAttackOptions.has(attack.attackId),
+        optionIndex: activeAttackOptions.get(attack.attackId),
+      })),
+      abilities: activeAbilityOption >= 0
+        ? [{
+            name: dataMaps.cardData[active?.id ?? -1]?.skills?.[0]?.name ?? 'Ability',
+            legal: true,
+            optionIndex: activeAbilityOption,
+          }]
+        : [],
       retreat: {
-        legal: retreatLegal,
-        targets: retreatLegal ? player.bench.map((bench, index) => (bench ? index : -1)).filter((index) => index >= 0) : [],
+        legal: retreatOption >= 0,
+        targets: retreatOption >= 0 ? player.bench.map((bench, index) => (bench ? index : -1)).filter((index) => index >= 0) : [],
+        optionIndex: retreatOption >= 0 ? retreatOption : undefined,
       },
     },
     bench: player.bench.map((_bench, index) => ({
       index,
-      abilities: benchAbilityIndexes.has(index) ? [{ name: dataMaps.cardData[player.bench[index]?.id ?? -1]?.skills?.[0]?.name ?? 'Ability', legal: true }] : [],
+      abilities: benchAbilityOptions.has(index)
+        ? [{
+            name: dataMaps.cardData[player.bench[index]?.id ?? -1]?.skills?.[0]?.name ?? 'Ability',
+            legal: true,
+            optionIndex: benchAbilityOptions.get(index),
+          }]
+        : [],
     })),
   };
 }

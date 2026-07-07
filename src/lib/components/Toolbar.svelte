@@ -9,7 +9,6 @@
     boardScaleY: number;
     boardLift: number;
     followActive: boolean;
-    autoConfirmPrompts: boolean;
     debugZones: boolean;
     showLogs: boolean;
     animateActions: boolean;
@@ -22,7 +21,6 @@
     error?: string;
     resetPerspective: () => void;
     passTurn: () => void;
-    concede: () => void;
     switchSides: () => void;
     switchDisabled?: boolean;
     resetGame: () => void;
@@ -35,7 +33,6 @@
     boardScaleY = $bindable(),
     boardLift = $bindable(),
     followActive = $bindable(),
-    autoConfirmPrompts = $bindable(),
     debugZones = $bindable(),
     showLogs = $bindable(),
     animateActions = $bindable(),
@@ -48,7 +45,6 @@
     error = '',
     resetPerspective,
     passTurn,
-    concede,
     switchSides,
     switchDisabled = false,
     resetGame,
@@ -67,10 +63,6 @@
   <label>
     <input type="checkbox" bind:checked={followActive} />
     Follow active player
-  </label>
-  <label>
-    <input type="checkbox" bind:checked={autoConfirmPrompts} />
-    Auto-confirm reveals
   </label>
   <label>
     <input type="checkbox" bind:checked={debugZones} />
@@ -110,7 +102,6 @@
   </label>
   <div class="sidebar-turn-actions">
     <button disabled={busy || promptActive || gameFinished} onclick={passTurn}>Pass turn</button>
-    <button class="danger" disabled={busy || promptActive || gameFinished} onclick={concede}>Concede</button>
   </div>
   <button disabled={switchDisabled} onclick={switchSides}>Switch sides</button>
   <button onclick={resetGame}>{resetLabel}</button>

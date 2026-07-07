@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cabtObservationToGameView, promptIdForObservation } from './cabtProjection';
+import { cabtObservationToGameView, projectDecision } from './cabtProjection';
 import type { CabtDataMaps } from './cabtProjection';
 import { CabtAreaType, CabtCardType, CabtOptionType, CabtSelectContext, CabtSelectType } from './types';
 import type { CabtObservation } from './types';
@@ -175,12 +175,16 @@ describe('cabtObservationToGameView', () => {
       },
     } satisfies CabtObservation;
 
-    const view = cabtObservationToGameView(observation, [], dataMaps);
-    const prompt = view.prompts[0];
+    const decision = projectDecision(observation, 1, dataMaps);
 
-    expect(prompt?.message).toBe('Choose energy to discard');
-    expect(prompt?.fields.cardList).toEqual([
-      expect.objectContaining({ name: 'Basic {G} Energy', energyType: 1 }),
+    expect(decision?.kind).toBe('choose-cards');
+    expect(decision?.message).toBe('Choose energy to discard');
+    expect(decision?.options).toEqual([
+      expect.objectContaining({
+        index: 0,
+        attached: true,
+        card: expect.objectContaining({ name: 'Basic {G} Energy', energyType: 1 }),
+      }),
     ]);
   });
 
@@ -256,11 +260,14 @@ describe('cabtObservationToGameView', () => {
       },
     } satisfies CabtObservation;
 
-    const view = cabtObservationToGameView(observation, [], dataMaps);
-    const prompt = view.prompts[0];
+    // The engine asks for retreat energies one at a time; the decision is
+    // projected honestly (no fake multi-select batching).
+    const decision = projectDecision(observation, 1, dataMaps);
 
-    expect(prompt?.fields.options).toEqual({ min: 4, max: 4 });
-    expect(prompt?.fields.cardList).toHaveLength(4);
+    expect(decision?.min).toBe(1);
+    expect(decision?.max).toBe(1);
+    expect(decision?.options).toHaveLength(4);
+    expect(decision?.options.every((option) => option.card?.name === 'Basic {W} Energy')).toBe(true);
   });
 
   it('resolves current-player card options when CABT omits playerIndex', () => {
@@ -315,11 +322,12 @@ describe('cabtObservationToGameView', () => {
       },
     } satisfies CabtObservation;
 
-    const view = cabtObservationToGameView(observation, [], dataMaps);
-    const prompt = view.prompts[0];
+    const decision = projectDecision(observation, 1, dataMaps);
 
-    expect(prompt?.fields.cardList).toEqual([
-      expect.objectContaining({ name: 'Basic {W} Energy', energyType: 2 }),
+    expect(decision?.options).toEqual([
+      expect.objectContaining({
+        card: expect.objectContaining({ name: 'Basic {W} Energy', energyType: 2 }),
+      }),
     ]);
   });
 
@@ -383,12 +391,11 @@ describe('cabtObservationToGameView', () => {
       },
     } satisfies CabtObservation;
 
-    const view = cabtObservationToGameView(observation, [], dataMaps);
-    const prompt = view.prompts[0];
+    const decision = projectDecision(observation, 1, dataMaps);
 
-    expect(prompt?.fields.cardList).toEqual([
-      expect.objectContaining({ index: 0, name: 'Basic {W} Energy' }),
-      expect.objectContaining({ index: 1, name: 'Mega Signal' }),
+    expect(decision?.options).toEqual([
+      expect.objectContaining({ index: 0, card: expect.objectContaining({ name: 'Basic {W} Energy' }) }),
+      expect.objectContaining({ index: 1, card: expect.objectContaining({ name: 'Mega Signal' }) }),
     ]);
   });
 
@@ -429,11 +436,11 @@ describe('cabtObservationToGameView', () => {
       },
     } satisfies CabtObservation;
 
-    const view = cabtObservationToGameView(observation, [], { cardData: {}, attacks: {} });
-    const prompt = view.prompts[0];
+    const decision = projectDecision(observation, 1, { cardData: {}, attacks: {} });
 
-    expect(prompt?.message).toBe('Choose cards to draw');
-    expect(prompt?.fields.values).toEqual(['Draw 1', 'Draw 2']);
+    expect(decision?.kind).toBe('choose-option');
+    expect(decision?.message).toBe('Choose cards to draw');
+    expect(decision?.options.map((option) => option.label)).toEqual(['Draw 1', 'Draw 2']);
   });
 
   it('routes CABT prize selections through the prize prompt with option indexes', () => {
@@ -487,16 +494,12 @@ describe('cabtObservationToGameView', () => {
       },
     } satisfies CabtObservation;
 
-    const view = cabtObservationToGameView(observation, [], dataMaps);
-    const prompt = view.prompts[0];
+    const decision = projectDecision(observation, 1, dataMaps);
 
-    expect(prompt?.className).toBe('ChoosePrizePrompt');
-    expect(prompt?.message).toBe('Choose Prize Card');
-    expect(prompt?.fields.prizes).toEqual([
-      {
-        index: 0,
-        cards: [expect.objectContaining({ name: 'Switch' })],
-      },
+    expect(decision?.kind).toBe('choose-prize');
+    expect(decision?.message).toBe('Choose Prize Card');
+    expect(decision?.options).toEqual([
+      expect.objectContaining({ index: 0, card: expect.objectContaining({ name: 'Switch' }) }),
     ]);
   });
 
@@ -544,37 +547,27 @@ describe('cabtObservationToGameView', () => {
       },
     } satisfies CabtObservation;
 
-    const view = cabtObservationToGameView(observation, [], { cardData: {}, attacks: {} });
-    const prompt = view.prompts[0];
+    const decision = projectDecision(observation, 1, { cardData: {}, attacks: {} });
 
-    expect(prompt?.className).toBe('ChoosePrizePrompt');
-    expect(prompt?.message).toBe('Choose Prize Card');
-    expect(prompt?.fields.prizes).toEqual([
-      { index: 0, cards: [] },
-      { index: 1, cards: [] },
-      { index: 2, cards: [] },
-      { index: 3, cards: [] },
-      { index: 4, cards: [] },
-      { index: 5, cards: [] },
-    ]);
+    expect(decision?.kind).toBe('choose-prize');
+    expect(decision?.message).toBe('Choose Prize Card');
+    expect(decision?.options).toHaveLength(6);
+    expect(decision?.options.every((option) => option.card === undefined)).toBe(true);
   });
 
-  it('keys prompt ids by current state as well as select shape', () => {
+  it('projects a yes/no select as a choose-option decision carrying the seq', () => {
     const observation = promptObservation();
-    const nextObservation = {
-      ...observation,
-      current: {
-        ...observation.current,
-        turnActionCount: observation.current.turnActionCount + 1,
-      },
-    } satisfies CabtObservation;
 
-    const view = cabtObservationToGameView(observation, [], { cardData: {}, attacks: {} });
-    const nextView = cabtObservationToGameView(nextObservation, [], { cardData: {}, attacks: {} });
+    const decision = projectDecision(observation, 42, { cardData: {}, attacks: {} });
 
-    expect(view.prompts[0]?.id).toBe(promptIdForObservation(observation));
-    expect(nextView.prompts[0]?.id).toBe(promptIdForObservation(nextObservation));
-    expect(nextView.prompts[0]?.id).not.toBe(view.prompts[0]?.id);
+    expect(decision).toEqual(expect.objectContaining({
+      seq: 42,
+      seat: observation.current.yourIndex,
+      kind: 'choose-option',
+      min: 1,
+      max: 1,
+    }));
+    expect(decision?.options.map((option) => option.label)).toEqual(['Yes', 'No']);
   });
 
   it('maps engine results to winners the same way as replay: seats win, 2 is a draw', () => {
