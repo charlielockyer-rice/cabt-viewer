@@ -27,19 +27,6 @@ export const actionAnimationTiming = {
   boardMoveMs: 520,
 } as const;
 
-export function actionAnimationBatchEvents(
-  events: ActionTimelineEvent[],
-  seenEventIds: ReadonlySet<number>,
-  replayMode: boolean,
-  scopeChanged: boolean,
-): ActionTimelineEvent[] {
-  if (replayMode && scopeChanged) {
-    return events;
-  }
-  const firstUnseenIndex = events.findIndex((event) => !seenEventIds.has(event.id));
-  return firstUnseenIndex === -1 ? [] : events.slice(firstUnseenIndex);
-}
-
 type AnimationPhase = {
   key: string;
   durationMs: number;

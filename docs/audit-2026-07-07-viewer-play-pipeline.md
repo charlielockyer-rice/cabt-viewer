@@ -543,6 +543,67 @@ risk:
   replaying a recorded bridge session through `LocalEngineController` and
   snapshotting `view`/`sequence`, so controller changes diff visibly.
 
+## Implementation addendum (landed same day)
+
+Migration step 4's live half — the seat-fixed step builder — was implemented
+immediately after this audit (the commit following the audit commit),
+refined by the findings above. What landed:
+
+- **`src/engine/liveSteps.ts` — `LiveObservationNormalizer`.** Per-seat
+  stream cursors give every delivered log line a global event index;
+  re-deliveries are dropped *positionally*, not by content. This diverges
+  deliberately from both yesterday's sketch ("content-keyed cursor") and the
+  original quick fix: position pairs the `Draw`/`DrawReverse` perspective
+  variants that content matching cannot (F4's under-dedupe) and keeps
+  legitimately identical repeated lines (F4's over-dedupe). It also
+  corrects this audit's own claim that "only the bridge can build a
+  canonical event stream": the controller receives the same complete
+  per-seat streams, so the cursor works one layer up with no protocol
+  change. Validated live: 544 re-delivered lines across a real game, zero
+  positional mismatches (`liveBridge.integration.test.ts`).
+- **Seat-stable hands with synthesized identity.** The non-acting seat's
+  hand is carried forward and reconciled to `handCount`; unknown additions
+  are placeholders with stable negative serials, so hand anchors never see
+  identity-less card backs. One factual correction to yesterday's audit:
+  live observations *do* carry serials on every known card (hand, board,
+  discard — probe-verified); only hidden cards ever needed synthesis.
+- **Hidden-info visibility policy** (from F4): a concealed seat's `DRAW`
+  events are downgraded to the opponent-facing `DRAW_REVERSE` encoding, so
+  a human no longer sees the agent's drawn cards in the timeline or as
+  face-up draw animations. Agent-vs-agent games stay omniscient
+  (spectator). Residual: rarer concrete `MOVE_CARD` encodings (deck
+  searches) still pass through first-delivery; per-event encoding selection
+  remains bridge work.
+- **Live playback steps are replay-shaped.** `localEngine.appendSteps`
+  emits one step per event-bearing observation — exactly its own events
+  against the board state at that observation, prompts stripped (history
+  frames never prompt, which subsumes the old agent-decision filtering).
+  The interactive view keeps the cumulative timeline for the log panel;
+  `App.svelte` feeds the animation layers only during playback, so the
+  cumulative list never re-enters the gate.
+- **The gate lost its live mode.** `AnimationEventGate` is now one rule:
+  scope change animates the step's whole event list, unchanged scope
+  animates nothing (`gate.ts`); `actionAnimationBatchEvents` and its
+  unseen-id tracking are gone. `turnKey` stays: reveal sessions
+  legitimately span multiple live steps within a turn, and the turn
+  boundary remains their (and stuck claims') backstop.
+- **Deleted:** `withKnownHands`/`knownHands`, `revealPromptForLogs` and the
+  entire playback-prompt pause machinery (`gameStore`
+  `waitForPlaybackConfirm`/`confirmPlaybackPrompt`, `App.svelte` and
+  `prompts.ts` `playbackOnly` branches), `isAgentDecisionView`,
+  `logDedupe.ts`. One semantic change: `animateActions` off now means no
+  action animations at all (previously it burst-animated the cumulative
+  tail against the final board — the failure mode quick fix #3 existed to
+  avoid).
+- **Tests:** unit coverage for the normalizer (positional dedupe, seat
+  fixing, visibility) and the step builder; plus the env-gated real-engine
+  integration suite this audit recommended
+  (`liveBridge.integration.test.ts`: normalizer vs independent positional
+  ground truth over a live game, full agent-vs-agent controller game with
+  step-coherence assertions, concealment check). Run with
+  `CABT_SAMPLE_SUBMISSION_DIR=… PYTHON=… npx vitest run liveBridge`;
+  `CABT_PROBE_AGENT` optionally seats a real agent file.
+
 ## Probe appendix
 
 Probes ran headless against the real engine (Abomasnow mirror,

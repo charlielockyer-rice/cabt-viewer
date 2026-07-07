@@ -233,13 +233,15 @@ simplification you asked for.
 
 - **Dev overlay for stuck hides**: `animVisibility.hiddenCount()` already
   exists; surface it in the debug settings panel to catch claim leaks early.
-- **Dedupe caveat**: per-player log variants that differ in *content*
-  (private info — e.g. "you drew Charmander" vs "opponent drew a card") are
-  not exact duplicates and pass the filter; in the probed session every
-  overlap was exact, but occasional double-animated draws remain possible
-  until the structural fix lands.
-- **The entire "Recommended path" section above** — seat-fixed live step
-  builder, synthesized live serials, then deletion of `withKnownHands`,
-  `revealPromptForLogs`, `isAgentDecisionView`, and the gate's live mode.
-  The quick fixes bound the damage; the step builder is what makes live play
-  actually match the architecture.
+- **Dedupe caveat** and **the "Recommended path" section above** —
+  **LANDED same day.** The seat-fixed live step builder shipped
+  (`src/engine/liveSteps.ts` + reworked `localEngine.appendSteps`), with
+  positional per-seat-stream dedupe instead of content dedupe (it pairs the
+  perspective-variant draws this caveat worried about — measured at roughly
+  one variant pair per draw, not "occasional"). `withKnownHands`,
+  `revealPromptForLogs`, `isAgentDecisionView`, `logDedupe`, and the gate's
+  live mode are deleted. Details and divergences:
+  `docs/audit-2026-07-07-viewer-play-pipeline.md`, "Implementation
+  addendum". One correction to this document: live observations do carry
+  card serials on known cards (probe-verified); only hidden hand cards
+  needed synthesized identity.

@@ -538,12 +538,14 @@ function pokemonToSlot(
 export function cabtCardToView(cardRef: CabtCard, dataMaps: CabtDataMaps): CardView {
   const data = dataMaps.cardData[cardRef.id];
   if (!data) {
+    // id 0 is the live pipeline's unknown-card placeholder (see liveSteps.ts).
+    const name = cardRef.id ? `Card ${cardRef.id}` : 'Card';
     return {
       id: cardRef.id,
       serial: cardRef.serial,
       playerIndex: cardRef.playerIndex,
-      name: `Card ${cardRef.id}`,
-      fullName: `Card ${cardRef.id}`,
+      name,
+      fullName: name,
     };
   }
   const view: CardView = {

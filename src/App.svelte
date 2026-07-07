@@ -117,9 +117,15 @@
   let animationScopeKey = $derived(replayMode
     ? `replay-${replayStore.stepIndex}-${replayStore.animationPhaseIndex}`
     : `live-${game?.actionTimeline?.at(-1)?.id ?? 0}`);
+  // Live playback steps carry exactly their own events; the interactive view
+  // that lands afterwards carries the cumulative timeline for the log panel,
+  // which must not re-enter the animation layers.
+  let animationEvents = $derived(replayMode || gameStore.playingSequence
+    ? (game?.actionTimeline ?? [])
+    : []);
   let animationStepEvents = $derived(replayMode
     ? (replayStore.currentStep?.actionTimeline ?? [])
-    : (game?.actionTimeline ?? []));
+    : animationEvents);
   // Live turn boundary for the animation layers: stale claims/sprites are
   // released when the turn counter advances. Constant in replay.
   let animationTurnKey = $derived(replayMode ? 'replay' : `turn-${game?.turn ?? 0}`);
@@ -761,10 +767,6 @@
 
   async function resolvePrompt(value: unknown) {
     if (!currentPrompt) return;
-    if (currentPrompt.fields.playbackOnly === true) {
-      gameStore.confirmPlaybackPrompt();
-      return;
-    }
     await gameSessionStore.resolve(() => commandApi.resolvePrompt(currentPrompt.id, value));
   }
 
@@ -1340,7 +1342,7 @@
             <PromptHost
               game={game}
               prompt={currentPrompt}
-              resolving={currentPrompt.fields.playbackOnly === true ? false : resolvingPrompt}
+              resolving={resolvingPrompt}
               activeAttachEnergyIndex={attachPromptEnergyIndex}
               attachAssignments={attachPromptAssignments}
               onresolve={resolvePrompt}
@@ -1399,7 +1401,7 @@
           {boardPerspective}
           {boardScaleY}
           {boardLift}
-          animationEvents={game.actionTimeline ?? []}
+          {animationEvents}
           {animationScopeKey}
           {animationTurnKey}
           evolutionChromeEvents={finalEvolutionEvents}
@@ -1407,7 +1409,7 @@
         />
 
         <RevealSessionLayer
-          events={game.actionTimeline ?? []}
+          events={animationEvents}
           stepEvents={animationStepEvents}
           scopeKey={animationScopeKey}
           turnKey={animationTurnKey}
@@ -1416,7 +1418,7 @@
         />
 
         <ViewportAnimationLayer
-          events={game.actionTimeline ?? []}
+          events={animationEvents}
           stepEvents={animationStepEvents}
           scopeKey={animationScopeKey}
           turnKey={animationTurnKey}

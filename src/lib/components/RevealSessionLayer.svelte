@@ -79,7 +79,7 @@
   });
 
   $effect(() => {
-    const { scopeChanged, batch } = gate.update(events, scopeKey, replayMode);
+    const { scopeChanged, batch } = gate.update(events, scopeKey);
     const { motions, effects } = choreograph(batch, players, stepEvents.length ? stepEvents : batch);
     const revealMotions = motions.filter(isRevealMotion);
     const attachCandidates = effects.filter((effect) => effect.kind === 'attach-under');

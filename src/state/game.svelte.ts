@@ -12,7 +12,6 @@ class GameStore {
   busy = $state(false);
   resolvingPrompt = $state(false);
   playingSequence = $state(false);
-  private playbackConfirmResolve: (() => void) | null = null;
   private generation = 0;
 
   get currentPrompt() {
@@ -34,8 +33,6 @@ class GameStore {
     this.busy = false;
     this.resolvingPrompt = false;
     this.playingSequence = false;
-    this.playbackConfirmResolve?.();
-    this.playbackConfirmResolve = null;
   }
 
   async run(command: () => Promise<EngineResponse>) {
@@ -67,7 +64,7 @@ class GameStore {
       return response;
     }
     if (response.ok) {
-      if (response.sequence?.length && (viewSettingsStore.animateActions || response.sequence.some(hasPlaybackPrompt))) {
+      if (response.sequence?.length && viewSettingsStore.animateActions) {
         this.playingSequence = true;
         try {
           // Don't let a new response's views land on top of animations still
@@ -79,25 +76,17 @@ class GameStore {
           for (const view of response.sequence) {
             this.game = view;
             this.error = '';
-            if (hasPlaybackPrompt(view)) {
-              this.resolvingPrompt = false;
-              await this.waitForPlaybackConfirm();
-              if (generation !== this.generation) {
-                return response;
-              }
-            } else if (viewSettingsStore.animateActions) {
-              // Step ms is the minimum gap between views; after it, wait for
-              // the animation layers to report idle so playback is strictly
-              // sequential (the delay also gives their effects time to
-              // schedule the batch and extend the busy window).
-              await wait(clampedActionStepDelay());
-              if (generation !== this.generation) {
-                return response;
-              }
-              await animationActivity.waitForIdle(maxStepWaitMs);
-              if (generation !== this.generation) {
-                return response;
-              }
+            // Step ms is the minimum gap between views; after it, wait for
+            // the animation layers to report idle so playback is strictly
+            // sequential (the delay also gives their effects time to
+            // schedule the batch and extend the busy window).
+            await wait(clampedActionStepDelay());
+            if (generation !== this.generation) {
+              return response;
+            }
+            await animationActivity.waitForIdle(maxStepWaitMs);
+            if (generation !== this.generation) {
+              return response;
             }
           }
         } finally {
@@ -120,17 +109,6 @@ class GameStore {
     }
     return response;
   }
-
-  confirmPlaybackPrompt() {
-    this.playbackConfirmResolve?.();
-    this.playbackConfirmResolve = null;
-  }
-
-  private waitForPlaybackConfirm() {
-    return new Promise<void>((resolve) => {
-      this.playbackConfirmResolve = resolve;
-    });
-  }
 }
 
 export const gameStore = new GameStore();
@@ -141,8 +119,4 @@ function clampedActionStepDelay() {
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function hasPlaybackPrompt(view: GameView) {
-  return view.prompts.some((prompt) => prompt.fields.playbackOnly === true);
 }

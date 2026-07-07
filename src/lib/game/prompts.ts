@@ -104,9 +104,6 @@ export function shouldAutoResolvePrompt(
   if (!prompt || result === undefined) {
     return false;
   }
-  if (prompt.fields.playbackOnly === true) {
-    return false;
-  }
   if (prompt.className === 'ShuffleDeckPrompt') {
     return true;
   }

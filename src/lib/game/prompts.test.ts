@@ -94,18 +94,6 @@ describe('prompt helpers', () => {
     expect(shouldAutoResolvePrompt(item, true, result)).toBe(true);
   });
 
-  it('keeps playback reveal prompts manual even when auto-confirm is enabled', () => {
-    const item = prompt('ConfirmCardsPrompt', {
-      playbackOnly: true,
-      cards: [{ name: 'Basic Water Energy', fullName: 'Basic Water Energy' }],
-    });
-    const result = autoResolvablePromptResult(item, null);
-
-    expect(result).toBe(true);
-    expect(shouldAutoResolvePrompt(item, false, result)).toBe(false);
-    expect(shouldAutoResolvePrompt(item, true, result)).toBe(false);
-  });
-
   it('does not auto-resolve optional card search prompts', () => {
     const item = prompt('ChooseCardsPrompt', { options: { min: 0, max: 1 }, cardList: [{ name: 'Poké Pad hit', fullName: 'Poké Pad hit' }] });
     const result = autoResolvablePromptResult(item, null);

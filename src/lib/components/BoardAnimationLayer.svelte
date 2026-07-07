@@ -118,7 +118,7 @@
   });
 
   $effect(() => {
-    const { scopeChanged, batch } = gate.update(events, scopeKey, replayMode);
+    const { scopeChanged, batch } = gate.update(events, scopeKey);
     const turnChanged = !replayMode && liveTurnKey !== undefined && turnKey !== liveTurnKey;
     liveTurnKey = turnKey;
     if (scopeChanged || turnChanged) {

@@ -173,7 +173,7 @@ describe('LocalEngineController', () => {
     expect(engine.findPendingRetreatTargetOption()).toBe(1);
   });
 
-  it('appends bridge auto-step logs to the action timeline sequence', () => {
+  it('emits one playback step per observation, each carrying exactly its own events', () => {
     const engine = new LocalEngineController() as any;
     const current = currentState();
 
@@ -203,43 +203,43 @@ describe('LocalEngineController', () => {
 
     expect(response.ok).toBe(true);
     if (!response.ok) return;
+    // The interactive view keeps the cumulative timeline for the log panel.
     expect(response.view.actionTimeline).toEqual([
       expect.objectContaining({ id: 1, message: 'Player 2 turn started.' }),
       expect.objectContaining({ id: 2, message: 'Player 2 ended their turn.' }),
     ]);
+    // Steps are replay-shaped: per-step events, never cumulative.
     expect(response.sequence).toEqual([
       expect.objectContaining({
-        actionTimeline: [expect.objectContaining({ message: 'Player 2 turn started.' })],
+        actionTimeline: [expect.objectContaining({ id: 1, message: 'Player 2 turn started.' })],
       }),
       expect.objectContaining({
-        actionTimeline: [
-          expect.objectContaining({ message: 'Player 2 turn started.' }),
-          expect.objectContaining({ message: 'Player 2 ended their turn.' }),
-        ],
+        actionTimeline: [expect.objectContaining({ id: 2, message: 'Player 2 ended their turn.' })],
       }),
     ]);
   });
 
-  it('inserts a playback reveal prompt for known deck-to-discard batches', () => {
+  it('drops re-delivered logs when the actor switches, so nothing re-animates', () => {
     const engine = new LocalEngineController() as any;
-    engine.dataMaps = {
-      cardData: {
-        3: { cardId: 3, name: 'Basic {W} Energy', cardType: 5, energyType: 3, set: 'SVE', setNumber: '3' },
-        723: { cardId: 723, name: 'Mega Abomasnow ex', cardType: 0, set: 'MEG', setNumber: '36' },
-      },
-      attacks: {},
-    };
+    const turnLogs = [
+      { type: CabtLogType.TURN_START, playerIndex: 0 },
+      { type: CabtLogType.TURN_END, playerIndex: 0 },
+    ];
 
     engine.applyBridgeResponse({
       ok: true,
       id: 1,
+      observation: { select: null, logs: turnLogs, current: currentState({ yourIndex: 0 }) },
+      autoSteps: [],
+    });
+    // The other seat's first observation re-delivers the whole turn.
+    engine.applyBridgeResponse({
+      ok: true,
+      id: 2,
       observation: {
         select: null,
-        logs: [
-          { type: CabtLogType.MOVE_CARD, playerIndex: 0, cardId: 3, serial: 10, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.DISCARD },
-          { type: CabtLogType.MOVE_CARD, playerIndex: 0, cardId: 723, serial: 11, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.DISCARD },
-        ],
-        current: currentState(),
+        logs: [...turnLogs, { type: CabtLogType.TURN_START, playerIndex: 1 }],
+        current: currentState({ yourIndex: 1 }),
       },
       autoSteps: [],
     });
@@ -247,23 +247,15 @@ describe('LocalEngineController', () => {
     const response = engine.viewResponse();
     expect(response.ok).toBe(true);
     if (!response.ok) return;
-    const revealView = response.sequence?.[0];
-
-    expect(revealView?.prompts[0]).toEqual(expect.objectContaining({
-      className: 'ConfirmCardsPrompt',
-      type: 'playback-reveal',
-      message: 'Revealed and discarded cards',
-    }));
-    expect(revealView?.prompts[0]?.fields.cards).toEqual([
-      expect.objectContaining({ name: 'Basic {W} Energy' }),
-      expect.objectContaining({ name: 'Mega Abomasnow ex' }),
+    expect(response.sequence).toHaveLength(2);
+    expect(response.sequence?.[1]?.actionTimeline).toEqual([
+      expect.objectContaining({ message: 'Player 2 turn started.' }),
     ]);
-    expect(response.sequence?.[1]?.prompts).toEqual([]);
+    expect(response.view.actionTimeline).toHaveLength(3);
   });
 
-  it('skips agent decision frames according to manual player controls', () => {
+  it('strips prompts from playback steps and skips event-less decision frames', () => {
     const engine = new LocalEngineController() as any;
-    engine.playerControls = ['self', 'agent'];
 
     engine.applyBridgeResponse({
       ok: true,
@@ -275,6 +267,8 @@ describe('LocalEngineController', () => {
       },
       autoSteps: [
         {
+          // A decision point with fresh events: the step animates the events
+          // but never renders the deciding seat's prompt.
           select: {
             type: 1,
             context: CabtSelectContext.TO_ACTIVE,
@@ -287,12 +281,13 @@ describe('LocalEngineController', () => {
             contextCard: null,
             effect: null,
           },
-          logs: [],
+          logs: [{ type: CabtLogType.TURN_START, playerIndex: 1 }],
           current: currentState({ yourIndex: 1 }),
         },
         {
+          // No new events: nothing to show, no step.
           select: null,
-          logs: [],
+          logs: [{ type: CabtLogType.TURN_START, playerIndex: 1 }],
           current: currentState({ yourIndex: 0 }),
         },
       ],
@@ -303,6 +298,9 @@ describe('LocalEngineController', () => {
     if (!response.ok) return;
     expect(response.sequence).toHaveLength(1);
     expect(response.sequence?.[0]?.prompts).toEqual([]);
+    expect(response.sequence?.[0]?.actionTimeline).toEqual([
+      expect.objectContaining({ message: 'Player 2 turn started.' }),
+    ]);
   });
 
   it('batches repeated single-energy retreat payment prompts', async () => {
@@ -428,7 +426,10 @@ describe('LocalEngineController', () => {
     expect(selections).toEqual([[0], [0], [0], [0], [0]]);
     expect(response.ok).toBe(true);
     if (!response.ok) return;
-    expect(response.sequence).toHaveLength(5);
+    // The intermediate prompts carry no engine logs, so playback has nothing
+    // to step through; the discard animations ride the events of whatever
+    // observation logs them.
+    expect(response.sequence).toBeUndefined();
   });
 
   it('rejects stale CABT prompt resolutions before contacting the bridge', async () => {

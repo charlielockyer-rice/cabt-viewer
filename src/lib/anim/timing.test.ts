@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { actionAnimationBatchEvents, actionAnimationStartMs, actionAnimationTiming } from './timing';
+import { actionAnimationStartMs, actionAnimationTiming } from './timing';
 import { CabtAreaType } from '../cabt/types';
 import type { ActionTimelineEvent } from '../game/types';
 
@@ -201,34 +201,6 @@ describe('actionAnimationStartMs', () => {
 
     expect(actionAnimationStartMs(events, events[0])).toBe(0);
     expect(actionAnimationStartMs(events, events[1])).toBe(actionAnimationTiming.handMoveMs);
-  });
-});
-
-describe('actionAnimationBatchEvents', () => {
-  it('scopes live animation scheduling to newly appended timeline events', () => {
-    const events: ActionTimelineEvent[] = [
-      event(1, 'Play', { cardId: 1, serial: 10 }),
-      event(2, 'Shuffle', {}),
-      event(3, 'Play', { cardId: 2, serial: 11 }),
-      event(4, 'Draw', { cardId: 3, serial: 12 }),
-    ];
-
-    expect(actionAnimationBatchEvents(events, new Set([1, 2]), false, true)).toEqual([
-      events[2],
-      events[3],
-    ]);
-    expect(actionAnimationStartMs(actionAnimationBatchEvents(events, new Set([1, 2]), false, true), events[3])).toBe(
-      actionAnimationTiming.handMoveMs,
-    );
-  });
-
-  it('replays the full phase event set when a replay scope changes', () => {
-    const events: ActionTimelineEvent[] = [
-      event(1, 'Draw', { cardId: 3, serial: 12 }),
-      event(2, 'Draw', { cardId: 4, serial: 13 }),
-    ];
-
-    expect(actionAnimationBatchEvents(events, new Set([1, 2]), true, true)).toEqual(events);
   });
 });
 

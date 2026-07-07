@@ -3,13 +3,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
-import { CabtDemoController, cabtCardToView, cabtObservationToGameView, promptIdForObservation, type CabtDataMaps } from '../lib/cabt/demoEngine';
+import { CabtDemoController, cabtObservationToGameView, promptIdForObservation, type CabtDataMaps } from '../lib/cabt/demoEngine';
 import { cabtLogsToTimeline } from '../lib/cabt/logFormat';
-import { createLogDeduper, type LogDeduper } from './logDedupe';
+import { LiveObservationNormalizer } from './liveSteps';
 import { workspaceAgentPath } from './workspaceAgents';
 import {
   CabtAreaType,
-  CabtLogType,
   CabtOptionType,
   CabtSelectContext,
   CabtSelectType,
@@ -97,11 +96,10 @@ export class LocalEngineController {
   private logId = 1;
   private actionTimeline: ActionTimelineEvent[] = [];
   private timelineId = 1;
-  private logDeduper: LogDeduper = createLogDeduper();
+  private normalizer = new LiveObservationNormalizer();
   private pendingSequence: GameView[] = [];
   private sessionId = '';
   private pendingRetreatTarget: PendingRetreatTarget | null = null;
-  private knownHands = new Map<number, CabtCard[]>();
   private replayFrames: CabtObservation[] = [];
   private replayPlayerLabels: [string, string] = ['Player 1', 'Player 2'];
   private replayModeLabel = 'Self vs Agent';
@@ -220,10 +218,9 @@ export class LocalEngineController {
     this.bridge.stop();
     this.sessionId = createSessionId();
     this.pendingRetreatTarget = null;
-    this.knownHands.clear();
     this.actionTimeline = [];
     this.timelineId = 1;
-    this.logDeduper = createLogDeduper();
+    this.normalizer = new LiveObservationNormalizer(concealedSeats(playerControls));
     this.pendingSequence = [];
     this.replayFrames = [];
     this.playerControls = playerControls;
@@ -232,6 +229,10 @@ export class LocalEngineController {
       payload?.player1?.name ?? 'Player 1',
       payload?.player2?.name ?? 'Player 2',
     ];
+    this.logs = [{
+      id: this.logId++,
+      message: `Started real CABT match (${this.replayModeLabel}).`,
+    }];
     const response = await this.bridge.request({
       command: 'start',
       deck0: player1Deck,
@@ -240,10 +241,6 @@ export class LocalEngineController {
       agentControlled: playerControls.map((control) => control === 'agent'),
     }, { allowStart: true });
     this.applyBridgeResponse(response);
-    this.logs = [{
-      id: this.logId++,
-      message: `Started real CABT match (${this.replayModeLabel}).`,
-    }];
     return this.viewResponse();
   }
 
@@ -427,9 +424,10 @@ export class LocalEngineController {
         attacks: Object.fromEntries(response.attacks.map((attack) => [attack.attackId, attack])),
       };
     }
-    this.pendingSequence = [...this.pendingSequence, ...this.appendTimeline(response)];
-    this.recordReplayFrames(response);
-    this.observation = this.withKnownHands(response.observation ?? null);
+    this.pendingSequence = [...this.pendingSequence, ...this.appendSteps(response)];
+    if (!response.observation) {
+      this.observation = null;
+    }
   }
 
   private viewResponse(): EngineResponse {
@@ -447,114 +445,30 @@ export class LocalEngineController {
     return cabtObservationToGameView(this.observation, this.logs, this.dataMaps, this.actionTimeline);
   }
 
-  private recordReplayFrames(response: BridgeResponse): void {
+  // Live playback steps, shaped like replay's: each observation contributes
+  // exactly its own canonical events against the board state at that
+  // observation (seat-stabilized by the normalizer). Steps carry no prompts —
+  // they are history frames; only the final interactive view prompts.
+  private appendSteps(response: BridgeResponse): GameView[] {
     const observations = response.autoSteps?.length ? response.autoSteps : response.observation ? [response.observation] : [];
-    for (const observation of observations) {
-      const hydratedObservation = this.withKnownHands(observation);
-      if (hydratedObservation) {
-        this.replayFrames.push(hydratedObservation);
-      }
-    }
-  }
-
-  private withKnownHands(observation: CabtObservation | null): CabtObservation | null {
-    if (!observation?.current) {
-      return observation;
-    }
-    const players = observation.current.players.map((player, playerIndex) => {
-      if (player.hand) {
-        this.knownHands.set(playerIndex, player.hand);
-        return player;
-      }
-      const knownHand = this.knownHands.get(playerIndex);
-      if (!knownHand || knownHand.length !== player.handCount) {
-        return player;
-      }
-      return {
-        ...player,
-        hand: knownHand,
-      };
-    });
-    return {
-      ...observation,
-      current: {
-        ...observation.current,
-        players,
-      },
-    };
-  }
-
-  private appendTimeline(response: BridgeResponse): GameView[] {
-    const observations = response.autoSteps?.length ? response.autoSteps : response.observation ? [response.observation] : [];
-    const sequence: GameView[] = [];
-    for (const observation of observations) {
-      // Per-player delta delivery: actor switches re-deliver logs the other
-      // player's observations already carried. Only fresh lines may become
-      // timeline events, or they get new ids and re-animate (see logDedupe.ts).
-      const logs = this.logDeduper.filterNew(observation.logs ?? []);
-      if (logs.length) {
-        const result = cabtLogsToTimeline(logs, { nextId: this.timelineId });
-        this.timelineId = result.nextId;
-        this.actionTimeline = [...this.actionTimeline, ...result.events].slice(-200);
-      }
-
-      const hydratedObservation = this.withKnownHands(observation);
-      if (!hydratedObservation) {
+    const steps: GameView[] = [];
+    for (const rawObservation of observations) {
+      const { observation, newLogs } = this.normalizer.push(rawObservation);
+      this.observation = observation;
+      this.replayFrames.push(observation);
+      if (!newLogs.length) {
         continue;
       }
-      const view = cabtObservationToGameView(hydratedObservation, this.logs, this.dataMaps, this.actionTimeline);
-      const revealPrompt = this.revealPromptForLogs(logs, view);
-      if (revealPrompt) {
-        sequence.push({
-          ...view,
-          prompts: [revealPrompt],
-        });
+      const result = cabtLogsToTimeline(newLogs, { nextId: this.timelineId });
+      this.timelineId = result.nextId;
+      this.actionTimeline = [...this.actionTimeline, ...result.events].slice(-200);
+      for (const event of result.events) {
+        this.logs = [...this.logs, { id: this.logId++, message: event.message }];
       }
-      if (!this.isAgentDecisionView(hydratedObservation, view)) {
-        sequence.push(view);
-      }
+      const view = cabtObservationToGameView(observation, this.logs, this.dataMaps, result.events);
+      steps.push({ ...view, prompts: [] });
     }
-    return sequence;
-  }
-
-  private isAgentDecisionView(observation: CabtObservation, view: GameView) {
-    const playerIndex = observation.current?.yourIndex;
-    return (playerIndex === 0 || playerIndex === 1)
-      && this.playerControls[playerIndex] === 'agent'
-      && view.prompts.length > 0;
-  }
-
-  private revealPromptForLogs(logs: Array<Record<string, unknown>>, view: GameView) {
-    const revealed = logs.filter((log) =>
-      log.type === CabtLogType.MOVE_CARD
-      && Number(log.fromArea) === CabtAreaType.DECK
-      && Number(log.toArea) === CabtAreaType.DISCARD
-      && Number.isFinite(Number(log.cardId)));
-    if (revealed.length < 2) {
-      return null;
-    }
-    const playerIndex = typeof revealed[0].playerIndex === 'number' ? revealed[0].playerIndex : view.activePlayerIndex;
-    return {
-      id: -this.timelineId,
-      className: 'ConfirmCardsPrompt',
-      type: 'playback-reveal',
-      playerId: playerIndex,
-      playerIndex,
-      supported: true,
-      message: 'Revealed and discarded cards',
-      resultSchema: 'confirm',
-      fields: {
-        playbackOnly: true,
-        cards: revealed.map((log, index) => ({
-          ...cabtCardToView({
-            id: Number(log.cardId),
-            serial: typeof log.serial === 'number' ? log.serial : undefined,
-            playerIndex,
-          }, this.dataMaps),
-          index,
-        })),
-      },
-    };
+    return steps;
   }
 
   private matchesPlayCardOption(option: CabtOption, payload: any): boolean {
@@ -669,10 +583,9 @@ export class LocalEngineController {
     this.sessionId = '';
     this.observation = null;
     this.pendingRetreatTarget = null;
-    this.knownHands.clear();
     this.actionTimeline = [];
     this.timelineId = 1;
-    this.logDeduper = createLogDeduper();
+    this.normalizer = new LiveObservationNormalizer();
     this.pendingSequence = [];
     this.replayFrames = [];
     this.logs = [...this.logs, { id: this.logId++, message }];
@@ -833,6 +746,16 @@ function normalizePlayerControls(payload: any): [PlayerControl, PlayerControl] {
     return [player1Control, 'self'];
   }
   return [player1Control, 'agent'];
+}
+
+// Agent seats' hidden information (their draws) is downgraded to the
+// opponent-facing encoding when a human is playing; a pure agent-vs-agent
+// game keeps the omniscient spectator view.
+function concealedSeats(playerControls: [PlayerControl, PlayerControl]): Set<number> {
+  if (!playerControls.includes('self')) {
+    return new Set();
+  }
+  return new Set(playerControls.flatMap((control, seat) => (control === 'agent' ? [seat] : [])));
 }
 
 function controlLabel(control: PlayerControl): string {
