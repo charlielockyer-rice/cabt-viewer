@@ -3,6 +3,7 @@
   import CardTile from './CardTile.svelte';
   import { actionAnimationTiming } from '../anim/timing';
   import { AnimationEventGate } from '../anim/gate';
+  import { animationActivity, scheduledEndMs } from '../anim/activity';
   import { resolveAnchor } from '../anim/anchors';
   import { choreograph, type CardMotion, type TargetEffect } from '../anim/motions';
   import { fallbackHandTarget, handCardVisualRect, revealLayout } from '../anim/revealLayout';
@@ -92,6 +93,11 @@
     }
     if (!revealMotions.length && !existingSessionAttaches.length) {
       return;
+    }
+    if (!replayMode) {
+      // Report transit time (fly-in/take/return/attach) so the live stepper
+      // waits for it; session hold time is intentionally not counted.
+      animationActivity.extendBy(scheduledEndMs(revealMotions, existingSessionAttaches) + handoffSettleMs + 60);
     }
 
     const startMotions = revealMotions.filter((motion) => motion.style === 'reveal' || motion.style === 'search-reveal');

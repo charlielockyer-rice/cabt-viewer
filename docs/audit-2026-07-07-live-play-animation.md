@@ -215,6 +215,19 @@ simplification you asked for.
 4. **IMPLEMENTED — live reveal-session clearing** via the same `turnKey`
    boundary in `RevealSessionLayer` (replay behavior unchanged; sessions that
    continue into the incoming batch still survive the boundary).
+5. **IMPLEMENTED — animation-gated sequential playback** (follow-up to the
+   fixed-cadence problem: agent actions overlapped into garbled animations).
+   `src/lib/anim/activity.ts` is a shared busy-until signal: when a layer
+   schedules a live batch it reports the batch's scheduled end
+   (`scheduledEndMs` + handoff/settle padding), and `gameStore.apply` awaits
+   idle before applying the next sequence view (and before the first view of
+   a new response). "Step ms" is now the *minimum gap between views*, not the
+   cadence; per-step waits are capped at 5s so a stuck destination poll can't
+   deadlock playback. Playback-prompt confirms are unchanged. Replay pacing
+   untouched (it never consults the signal). Note this is interim mechanics:
+   the structural live-step builder below subsumes it — once live produces
+   proper phases with durations, the stepper can pace from phase metadata the
+   way replay does, and the busy-signal becomes a safety net only.
 
 ### Still outstanding
 

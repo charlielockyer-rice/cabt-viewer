@@ -4,6 +4,7 @@
   import CardTile from './CardTile.svelte';
   import { localRectIn, localRectCenter, type LocalRect } from '../dom/planeGeometry';
   import { AnimationEventGate } from '../anim/gate';
+  import { animationActivity, scheduledEndMs } from '../anim/activity';
   import { resolveAnchor, type Anchor } from '../anim/anchors';
   import { choreograph, type CardMotion } from '../anim/motions';
   import { animVisibility, type ReleaseClaim } from '../anim/visibility';
@@ -133,6 +134,11 @@
     const motions = choreograph(batch, players).motions.filter((motion) => motion.space === 'board');
     if (!motions.length) {
       return;
+    }
+    if (!replayMode) {
+      // Report how long this batch runs so the live stepper waits for it;
+      // pad covers destination polling and the settle window.
+      animationActivity.extendBy(scheduledEndMs(motions) + handoffMaxWaitMs + settleMs + 60);
     }
     const startedGeneration = generation;
     const latestDeckPlacementStartMs = Math.max(0, ...motions.filter((motion) => motion.fromDeck).map((motion) => motion.startMs));

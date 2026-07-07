@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from 'svelte';
   import CardTile from './CardTile.svelte';
   import { AnimationEventGate } from '../anim/gate';
+  import { animationActivity, scheduledEndMs } from '../anim/activity';
   import { applyTargetEffect } from '../anim/effects';
   import { handSlots, resolveAnchor, type Anchor, type ResolvedAnchor } from '../anim/anchors';
   import { choreograph, type CardMotion, type TargetEffect } from '../anim/motions';
@@ -159,6 +160,11 @@
 
     const { motions, effects } = choreograph(batch, players, stepEvents.length ? stepEvents : batch);
     const mine = motions.filter((motion) => motion.space === 'viewport');
+    if (!replayMode && (mine.length || effects.length)) {
+      // Report how long this batch runs so the live stepper waits for it
+      // (pad covers handoff and cleanup timers past the nominal durations).
+      animationActivity.extendBy(scheduledEndMs(mine, effects) + 200);
+    }
     const startedGeneration = generation;
 
     for (const motion of mine.filter((motion) => motion.style === 'hand-play')) {

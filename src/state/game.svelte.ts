@@ -1,5 +1,10 @@
+import { animationActivity } from '../lib/anim/activity';
 import type { EngineResponse, GameView } from '../lib/game/types';
 import { viewSettingsStore } from './viewSettings.svelte';
+
+// Upper bound on waiting for the animation layers between sequence views, so
+// a stuck destination poll can never deadlock live playback.
+const maxStepWaitMs = 5000;
 
 class GameStore {
   game = $state<GameView | null>(null);
@@ -65,6 +70,12 @@ class GameStore {
       if (response.sequence?.length && (viewSettingsStore.animateActions || response.sequence.some(hasPlaybackPrompt))) {
         this.playingSequence = true;
         try {
+          // Don't let a new response's views land on top of animations still
+          // running from the previous one.
+          await animationActivity.waitForIdle(maxStepWaitMs);
+          if (generation !== this.generation) {
+            return response;
+          }
           for (const view of response.sequence) {
             this.game = view;
             this.error = '';
@@ -75,7 +86,15 @@ class GameStore {
                 return response;
               }
             } else if (viewSettingsStore.animateActions) {
+              // Step ms is the minimum gap between views; after it, wait for
+              // the animation layers to report idle so playback is strictly
+              // sequential (the delay also gives their effects time to
+              // schedule the batch and extend the busy window).
               await wait(clampedActionStepDelay());
+              if (generation !== this.generation) {
+                return response;
+              }
+              await animationActivity.waitForIdle(maxStepWaitMs);
               if (generation !== this.generation) {
                 return response;
               }
