@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { cabtObservationToGameView, promptIdForObservation } from './demoEngine';
-import type { CabtDataMaps } from './demoEngine';
+import { cabtObservationToGameView, promptIdForObservation } from './cabtProjection';
+import type { CabtDataMaps } from './cabtProjection';
 import { CabtAreaType, CabtCardType, CabtOptionType, CabtSelectContext, CabtSelectType } from './types';
 import type { CabtObservation } from './types';
 
@@ -575,6 +575,19 @@ describe('cabtObservationToGameView', () => {
     expect(view.prompts[0]?.id).toBe(promptIdForObservation(observation));
     expect(nextView.prompts[0]?.id).toBe(promptIdForObservation(nextObservation));
     expect(nextView.prompts[0]?.id).not.toBe(view.prompts[0]?.id);
+  });
+
+  it('maps engine results to winners the same way as replay: seats win, 2 is a draw', () => {
+    const finished = (result: number) => {
+      const observation = promptObservation();
+      observation.current.result = result;
+      return cabtObservationToGameView(observation, [], { cardData: {}, attacks: {} });
+    };
+
+    expect(finished(0).winner).toBe(0);
+    expect(finished(1).winner).toBe(1);
+    expect(finished(2).winner).toBe(3);
+    expect(finished(2).phaseLabel).toBe('Finished');
   });
 });
 

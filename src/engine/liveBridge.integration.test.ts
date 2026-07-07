@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { LiveObservationNormalizer } from './liveSteps';
 import { LocalEngineController } from './localEngine';
-import { cabtObservationToGameView } from '../lib/cabt/demoEngine';
+import { cabtObservationToGameView } from '../lib/cabt/cabtProjection';
 import { CabtLogType, type CabtObservation } from '../lib/cabt/types';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
-import { CabtDemoController, cabtObservationToGameView, promptIdForObservation, type CabtDataMaps } from '../lib/cabt/demoEngine';
+import { cabtObservationToGameView, cardForOption as projectionCardForOption, promptIdForObservation, type CabtDataMaps } from '../lib/cabt/cabtProjection';
+import { CabtDemoController } from '../lib/cabt/demoEngine';
 import { cabtLogsToTimeline } from '../lib/cabt/logFormat';
 import { LiveObservationNormalizer } from './liveSteps';
 import { workspaceAgentPath } from './workspaceAgents';
@@ -356,35 +357,11 @@ export class LocalEngineController {
   }
 
   private optionCardKey(option: CabtOption | undefined): string | undefined {
-    const card = option ? this.cardForOption(option) : null;
+    const card = option && this.observation ? projectionCardForOption(option, this.observation) : null;
     if (card?.serial !== undefined && card.serial !== null) {
       return `serial:${card.serial}`;
     }
     return undefined;
-  }
-
-  private cardForOption(option: CabtOption): CabtCard | null {
-    const current = this.observation?.current;
-    if (!current || option.area === undefined || option.area === null || option.index === undefined || option.index === null) {
-      return null;
-    }
-    if (option.area === CabtAreaType.STADIUM) {
-      return current.stadium[option.index] ?? null;
-    }
-    if (option.area === CabtAreaType.LOOKING) {
-      return current.looking?.[option.index] ?? null;
-    }
-    const playerIndex = option.playerIndex ?? current.yourIndex;
-    const player = current.players[playerIndex];
-    if (!player) {
-      return null;
-    }
-    if (option.area === CabtAreaType.HAND) return player.hand?.[option.index] ?? null;
-    if (option.area === CabtAreaType.DISCARD) return player.discard[option.index] ?? null;
-    if (option.area === CabtAreaType.PRIZE) return player.prize[option.index] ?? null;
-    if (option.area === CabtAreaType.ACTIVE) return attachedCardForOption(player.active[option.index], option) ?? player.active[option.index] ?? null;
-    if (option.area === CabtAreaType.BENCH) return attachedCardForOption(player.bench[option.index], option) ?? player.bench[option.index] ?? null;
-    return null;
   }
 
   private async applyPendingRetreatTarget(): Promise<void> {
@@ -892,19 +869,6 @@ function agentPathForId(agentId: string | undefined): string | undefined {
     }
   }
   return workspaceAgentPath(agentId);
-}
-
-function attachedCardForOption(pokemonCard: { energyCards?: CabtCard[]; tools?: CabtCard[] } | null | undefined, option: CabtOption) {
-  if (!pokemonCard) {
-    return null;
-  }
-  if (option.energyIndex !== undefined && option.energyIndex !== null) {
-    return pokemonCard.energyCards?.[option.energyIndex] ?? null;
-  }
-  if (option.toolIndex !== undefined && option.toolIndex !== null) {
-    return pokemonCard.tools?.[option.toolIndex] ?? null;
-  }
-  return null;
 }
 
 function targetToCabt(actorIndex: number, target: CardTarget): { playerIndex: number; area: number; index: number } {

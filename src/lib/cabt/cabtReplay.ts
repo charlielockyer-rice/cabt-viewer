@@ -1,11 +1,20 @@
 import cardRows from './cardData.generated.json';
 import attackRows from './attackData.generated.json';
 import { actionAnimationTiming } from '../anim/timing';
+import {
+  projectHand,
+  projectPhase,
+  projectPokemonSlot,
+  projectWinner,
+  specialConditionsFor,
+  stadiumForPlayer,
+  type SlotResolvers,
+} from './cabtProjection';
 import { displayName, energySymbolToType } from './cardView';
 import { cabtLogsToTimeline } from './logFormat';
 import { CabtAreaType, CabtOptionType } from './types';
 import { resolveCardImageUrl } from '../game/cardImages';
-import { SlotType, targetFor, type ActionTimelineEvent, type CardView, type GameView, type LogView, type PlayerView, type PokemonSlotView } from '../game/types';
+import { type ActionTimelineEvent, type CardView, type GameView, type LogView, type PlayerView, type PokemonSlotView } from '../game/types';
 import type { ReplayAnimationPhase, ReplaySnapshot, ReplayStep } from '../game/replay';
 
 type CardRow = {
@@ -2452,6 +2461,14 @@ function replayEnvironment(input: unknown): KaggleEnvironment | undefined {
   return wrapped;
 }
 
+// Replay frames project through the shared structural builders in
+// cabtProjection with replay's own card-metadata resolvers (generated
+// metadata instead of live bridge dataMaps).
+const replaySlotResolvers: SlotResolvers = {
+  cardView: (ref) => cardToView(ref),
+  retreatCost: (cardId) => retreatCostFor(cardDatabase.get(cardId ?? -1)),
+};
+
 function frameToGameView(
   frame: CabtVisualizeFrame,
   playerNamesForReplay: string[],
@@ -2466,28 +2483,18 @@ function frameToGameView(
   );
   return {
     ready: true,
-    phase: current.result >= 0 ? 7 : 2,
+    phase: projectPhase(current.result),
     phaseLabel: current.result >= 0 ? 'Finished' : 'CABT replay',
     turn: current.turn,
     activePlayerIndex,
     activePlayerId: players[activePlayerIndex]?.id,
-    winner: current.result >= 0 && current.result <= 1 ? current.result : current.result === 2 ? 3 : undefined,
+    winner: projectWinner(current.result),
     players,
     prompts: [],
     logs: [...logs],
     actionTimeline,
     events: [frame],
   };
-}
-
-function stadiumForPlayer(stadium: CabtCardRef[], playerIndex: number): CabtCardRef[] {
-  const owned = stadium.filter((card) => card.playerIndex === playerIndex);
-  if (owned.length) {
-    return owned;
-  }
-  return playerIndex === 0
-    ? stadium.filter((card) => card.playerIndex === undefined || card.playerIndex === null)
-    : [];
 }
 
 function buildPlayerView(
@@ -2498,20 +2505,21 @@ function buildPlayerView(
   stadium: CabtCardRef[],
 ): PlayerView {
   const hand = player.hand ?? [];
+  const conditions = specialConditionsFor(player);
   return {
     index,
     id: index,
     name,
-    hand: hand.length ? hand.map(cardToView) : Array.from({ length: player.handCount ?? 0 }, () => faceDownCard()),
+    hand: projectHand(hand.length ? hand : null, player.handCount ?? 0, replaySlotResolvers.cardView),
     deckCount: player.deckCount ?? 0,
     discard: (player.discard ?? []).map(cardToView),
     lostZone: [],
     stadium: stadium.map(cardToView),
     playZone: [],
     prizesLeft: player.prize?.length ?? 0,
-    active: pokemonToSlot(player.active?.[0] ?? null, index, 'active', 0, activePlayerIndex, player),
+    active: projectPokemonSlot(player.active?.[0] ?? null, index, 'active', 0, activePlayerIndex, conditions, replaySlotResolvers),
     bench: Array.from({ length: Math.max(player.benchMax ?? 5, player.bench?.length ?? 0) }, (_item, benchIndex) =>
-      pokemonToSlot(player.bench?.[benchIndex] ?? null, index, 'bench', benchIndex, activePlayerIndex, player),
+      projectPokemonSlot(player.bench?.[benchIndex] ?? null, index, 'bench', benchIndex, activePlayerIndex, conditions, replaySlotResolvers),
     ),
     playableCardIds: hand.map((card) => card.id),
     availableActions: {
@@ -2522,41 +2530,6 @@ function buildPlayerView(
       },
       bench: (player.bench ?? []).map((_bench, benchIndex) => ({ index: benchIndex, abilities: [] })),
     },
-  };
-}
-
-function pokemonToSlot(
-  pokemonCard: CabtPokemonRef | null,
-  ownerIndex: number,
-  slot: 'active' | 'bench',
-  index: number,
-  activePlayerIndex: number,
-  player: CabtPlayerFrame,
-): PokemonSlotView {
-  const slotType = slot === 'active' ? SlotType.ACTIVE : SlotType.BENCH;
-  const pokemonView = pokemonCard ? cardToView(pokemonCard) : undefined;
-  const maxHp = pokemonCard?.maxHp ?? pokemonView?.hp ?? 0;
-  const currentHp = pokemonCard?.hp ?? maxHp;
-  return {
-    ownerIndex,
-    slot,
-    index,
-    target: targetFor(activePlayerIndex, ownerIndex, slotType, index),
-    empty: !pokemonCard,
-    pokemon: pokemonView,
-    cards: pokemonView ? [pokemonView, ...(pokemonCard?.preEvolution ?? []).map(cardToView)] : [],
-    damage: Math.max(0, maxHp - currentHp),
-    hp: maxHp,
-    retreat: Array.from({ length: retreatCostFor(cardDatabase.get(pokemonCard?.id ?? -1)) }, () => 'Colorless'),
-    energy: (pokemonCard?.energyCards ?? []).map(cardToView),
-    tools: (pokemonCard?.tools ?? []).map(cardToView),
-    specialConditions: [
-      player.poisoned ? 'Poisoned' : null,
-      player.burned ? 'Burned' : null,
-      player.asleep ? 'Asleep' : null,
-      player.paralyzed ? 'Paralyzed' : null,
-      player.confused ? 'Confused' : null,
-    ].filter((condition): condition is string => !!condition),
   };
 }
 

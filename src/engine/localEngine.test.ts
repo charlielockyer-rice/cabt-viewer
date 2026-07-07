@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LocalEngineController } from './localEngine';
-import { promptIdForObservation } from '../lib/cabt/demoEngine';
+import { promptIdForObservation } from '../lib/cabt/cabtProjection';
 import { SlotType, targetFor } from '../lib/game/types';
 import { CabtAreaType, CabtLogType, CabtOptionType, CabtSelectContext, CabtSelectType } from '../lib/cabt/types';
 
