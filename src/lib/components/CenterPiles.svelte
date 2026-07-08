@@ -84,9 +84,13 @@
     return Array.from({ length: count }, (_, index) => index);
   }
 
+  // Keyed by the CARD, never the layer: when a new top lands, the covered
+  // card keeps its DOM node (and its loaded <img>) and only changes class —
+  // a remount would blank the pile while the image refetches.
   function visibleDiscardCards(discard: CardView[]) {
     return discard.slice(-2).map((card, index, cards) => ({
       card,
+      key: `${card.serial ?? ''}-${card.id ?? ''}-${card.name ?? ''}`,
       layer: index === cards.length - 1 ? 'top' : 'under',
     }));
   }
@@ -302,7 +306,7 @@
         >
           {#if topPlayer.discard.length}
             <span class="discard-card-stack">
-              {#each visibleDiscardCards(topPlayer.discard) as entry (`${entry.layer}-${entry.card.serial ?? entry.card.id ?? entry.card.name}`)}
+              {#each visibleDiscardCards(topPlayer.discard) as entry (entry.key)}
                 <span
                   class:discard-card-under={entry.layer === 'under'}
                   class:discard-card-top={entry.layer === 'top'}
@@ -388,7 +392,7 @@
         >
           {#if bottomPlayer.discard.length}
             <span class="discard-card-stack">
-              {#each visibleDiscardCards(bottomPlayer.discard) as entry (`${entry.layer}-${entry.card.serial ?? entry.card.id ?? entry.card.name}`)}
+              {#each visibleDiscardCards(bottomPlayer.discard) as entry (entry.key)}
                 <span
                   class:discard-card-under={entry.layer === 'under'}
                   class:discard-card-top={entry.layer === 'top'}

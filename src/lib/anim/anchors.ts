@@ -86,10 +86,15 @@ export function resolveAnchor(anchor: Anchor): ResolvedAnchor | null {
     }
     case 'hand-slot': {
       const slots = handSlots(anchor.player);
-      const element = (anchor.serial !== undefined
-        ? slots.find((slot) => Number(slot.dataset.cardSerial) === anchor.serial)
-        : undefined)
-        ?? (anchor.fromEnd !== undefined ? slots[slots.length - anchor.fromEnd] : undefined)
+      if (anchor.serial !== undefined) {
+        // A serial names one physical card; a positional stand-in would hide
+        // an UNRELATED card under the visibility claim (position-dependent
+        // hand flicker). No match means no anchor — callers fall back to the
+        // hand container, which claims nothing card-specific.
+        const element = slots.find((slot) => Number(slot.dataset.cardSerial) === anchor.serial);
+        return element ? { element, geometry: element } : null;
+      }
+      const element = (anchor.fromEnd !== undefined ? slots[slots.length - anchor.fromEnd] : undefined)
         ?? (anchor.index !== undefined ? slots[anchor.index] : undefined);
       return element ? { element, geometry: element } : null;
     }
