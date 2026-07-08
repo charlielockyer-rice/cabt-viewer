@@ -189,6 +189,77 @@ function isPlaceholder(card: CabtCard): boolean {
   return card.id === 0;
 }
 
+// A play that draws (a supporter, Lillie-style mulligans) delivers its cause
+// and its draws in one observation, but the coherent deal is two beats: the
+// play/shuffle against a hand WITHOUT the incoming cards, then the draws
+// landing. Split the trailing multi-draw run into its own step and give the
+// first step a true pre-draw view, so a drawn card can never be visible
+// before its deal animation. (Replay does the same with projected phase
+// views.)
+export type DrawStepSplit = {
+  prefix: BridgeLog[];
+  draws: BridgeLog[];
+  // The observation as it looked before the draws resolved.
+  preDrawObservation: CabtObservation;
+};
+
+export function splitTrailingDraws(observation: CabtObservation, logs: BridgeLog[]): DrawStepSplit | null {
+  let start = logs.length;
+  while (start > 0 && isDrawLog(logs[start - 1])) {
+    start -= 1;
+  }
+  const draws = logs.slice(start);
+  const prefix = logs.slice(0, start);
+  const seat = draws[0]?.playerIndex;
+  if (draws.length < 2 || !prefix.length || (seat !== 0 && seat !== 1)) {
+    return null;
+  }
+  if (!draws.every((log) => log.playerIndex === seat)) {
+    return null;
+  }
+  const current = observation.current;
+  const player = current?.players[seat];
+  if (!current || !player?.hand) {
+    return null;
+  }
+
+  const drawnSerials = new Set(draws
+    .filter((log) => log.type === CabtLogType.DRAW && typeof log.serial === 'number')
+    .map((log) => log.serial as number));
+  let reversedToDrop = draws.filter((log) => log.type === CabtLogType.DRAW_REVERSE).length;
+  const preDrawHand: CabtCard[] = [];
+  for (let index = player.hand.length - 1; index >= 0; index -= 1) {
+    const card = player.hand[index];
+    if (card.serial !== undefined && drawnSerials.has(card.serial)) {
+      drawnSerials.delete(card.serial);
+      continue;
+    }
+    if (reversedToDrop > 0 && isPlaceholder(card)) {
+      reversedToDrop -= 1;
+      continue;
+    }
+    preDrawHand.unshift(card);
+  }
+
+  const players = current.players.map((candidate, index) => (index === seat
+    ? {
+        ...candidate,
+        hand: preDrawHand,
+        handCount: preDrawHand.length,
+        deckCount: candidate.deckCount + draws.length,
+      }
+    : candidate));
+  return {
+    prefix,
+    draws,
+    preDrawObservation: { ...observation, current: { ...current, players } },
+  };
+}
+
+function isDrawLog(log: BridgeLog): boolean {
+  return log.type === CabtLogType.DRAW || log.type === CabtLogType.DRAW_REVERSE;
+}
+
 // The engine never logs ability usage — the only signal is which option was
 // selected on the previous observation. Synthesize the same `Ability`
 // announce log the replay pipeline synthesizes (choreograph renders it as

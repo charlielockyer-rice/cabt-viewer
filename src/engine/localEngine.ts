@@ -5,7 +5,7 @@ import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { cabtObservationToGameView, projectDecision, type CabtDataMaps } from '../lib/cabt/cabtProjection';
 import { cabtLogsToTimeline } from '../lib/cabt/logFormat';
-import { LiveObservationNormalizer, synthesizedAnnounceLog } from './liveSteps';
+import { LiveObservationNormalizer, splitTrailingDraws, synthesizedAnnounceLog } from './liveSteps';
 import { workspaceAgentPath } from './workspaceAgents';
 import {
   type CabtAttack,
@@ -294,21 +294,34 @@ export class LocalEngineController {
       if (!stepLogs.length) {
         continue;
       }
-      const result = cabtLogsToTimeline(stepLogs, { nextId: this.timelineId });
-      this.timelineId = result.nextId;
-      this.actionTimeline = [...this.actionTimeline, ...result.events].slice(-200);
-      for (const event of result.events) {
-        this.logs = [...this.logs, { id: this.logId++, message: event.message }];
+      // A play that draws is two beats: the cause against a pre-draw hand,
+      // then the deal. Without the split, the incoming cards would sit in
+      // the rendered hand while the play/shuffle still animates.
+      const split = splitTrailingDraws(observation, stepLogs);
+      if (split) {
+        steps.push(this.buildStep(split.preDrawObservation, split.prefix));
+        steps.push(this.buildStep(observation, split.draws));
+      } else {
+        steps.push(this.buildStep(observation, stepLogs));
       }
-      // Steps are history frames: projected without a decision, so playback
-      // never renders an interactive affordance. They carry seats like the
-      // interactive view does — hand concealment reads them.
-      steps.push({
-        ...cabtObservationToGameView(observation, this.logs, this.dataMaps, result.events),
-        seats: this.seats(),
-      });
     }
     return steps;
+  }
+
+  // Steps are history frames: projected without a decision, so playback
+  // never renders an interactive affordance. They carry seats like the
+  // interactive view does — hand concealment reads them.
+  private buildStep(observation: CabtObservation, stepLogs: Array<Record<string, unknown>>): GameView {
+    const result = cabtLogsToTimeline(stepLogs, { nextId: this.timelineId });
+    this.timelineId = result.nextId;
+    this.actionTimeline = [...this.actionTimeline, ...result.events].slice(-200);
+    for (const event of result.events) {
+      this.logs = [...this.logs, { id: this.logId++, message: event.message }];
+    }
+    return {
+      ...cabtObservationToGameView(observation, this.logs, this.dataMaps, result.events),
+      seats: this.seats(),
+    };
   }
 
   private assertSession(payload?: any): void {

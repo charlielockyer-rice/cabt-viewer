@@ -201,6 +201,54 @@ describe('LocalEngineController', () => {
     ]);
   });
 
+  it('splits a play-that-draws into a pre-draw beat and the deal', () => {
+    const engine = new LocalEngineController() as any;
+    const hand = [
+      { id: 5, serial: 40, playerIndex: 0 },
+      { id: 6, serial: 41, playerIndex: 0 },
+      { id: 7, serial: 42, playerIndex: 0 },
+    ];
+    const current = currentState({
+      players: [
+        playerState({ hand, handCount: 3, deckCount: 30 }),
+        playerState({ hand: null, handCount: 0 }),
+      ],
+    });
+
+    engine.applyBridgeResponse({
+      ok: true,
+      id: 1,
+      observation: {
+        select: null,
+        logs: [
+          { type: CabtLogType.PLAY, playerIndex: 0, cardId: 1227, serial: 25 },
+          { type: CabtLogType.MOVE_CARD, playerIndex: 0, cardId: 8, serial: 9, fromArea: CabtAreaType.HAND, toArea: CabtAreaType.DECK },
+          { type: CabtLogType.SHUFFLE, playerIndex: 0 },
+          { type: CabtLogType.DRAW, playerIndex: 0, cardId: 5, serial: 40 },
+          { type: CabtLogType.DRAW, playerIndex: 0, cardId: 6, serial: 41 },
+          { type: CabtLogType.DRAW, playerIndex: 0, cardId: 7, serial: 42 },
+        ],
+        current,
+      },
+      autoSteps: [],
+    });
+
+    const response = engine.viewResponse();
+    expect(response.ok).toBe(true);
+    if (!response.ok) return;
+    expect(response.sequence).toHaveLength(2);
+    const [cause, deal] = response.sequence!;
+    // The cause beat animates against a hand that does not yet contain the
+    // incoming cards, with the deck still holding them.
+    expect(cause.actionTimeline?.map((event) => event.kind)).toEqual(['Play', 'MoveCard', 'Shuffle']);
+    expect(cause.players[0].hand).toHaveLength(0);
+    expect(cause.players[0].deckCount).toBe(33);
+    // The deal beat carries exactly the draws against the real hand.
+    expect(deal.actionTimeline?.map((event) => event.kind)).toEqual(['Draw', 'Draw', 'Draw']);
+    expect(deal.players[0].hand.map((card) => card.serial)).toEqual([40, 41, 42]);
+    expect(deal.players[0].deckCount).toBe(30);
+  });
+
   it('drops re-delivered logs when the actor switches, so nothing re-animates', () => {
     const engine = new LocalEngineController() as any;
     const turnLogs = [
