@@ -122,6 +122,21 @@ type CabtRunnerJson = {
 const cardDatabase = new Map<number, CardRow>((cardRows as CardRow[]).map((card) => [card.id, card]));
 const attackDatabase = new Map<number, AttackRow>((attackRows as AttackRow[]).map((attack) => [attack.attackId, attack]));
 
+// Live steps share replay's phase machinery: a mutating batch becomes one
+// view per animation phase, each phase animating against its own pre-state
+// (both seats, hands/board/piles alike — the hand mutators degrade to counts
+// when the concealed stream omits serials). This is the single source of
+// "animations play against pre-state" truth; live must never grow its own
+// per-symptom splits again.
+export function stepAnimationPhases(
+  previousView: GameView,
+  currentView: GameView,
+  events: ActionTimelineEvent[],
+): ReplayAnimationPhase[] | undefined {
+  const group: ReplayActionGroup = { label: '', type: 'live', events, turn: 0 };
+  return groupedStepAnimationPhases(previousView, currentView, [group], 0);
+}
+
 export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
   const visualFrames = extractVisualizeFrames(input);
   if (!visualFrames.length) {
@@ -1441,7 +1456,10 @@ function animationPhaseKey(event: ActionTimelineEvent): string | null {
   if (event.kind === 'Coin') {
     return `Coin:${playerKey}`;
   }
-  if (event.kind === 'MoveCard') {
+  // Reversed kinds are the live concealed-seat encoding of the same moves;
+  // replay never emits them. They classify identically — a hidden hand→deck
+  // is still a HandToDeck beat.
+  if (isMoveCardKind(event.kind)) {
     if (isBoardPositionMove(fromArea, toArea)) {
       return `BoardMove:${playerKey}`;
     }

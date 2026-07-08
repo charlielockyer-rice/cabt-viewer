@@ -4,8 +4,9 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { cabtObservationToGameView, projectDecision, type CabtDataMaps } from '../lib/cabt/cabtProjection';
+import { stepAnimationPhases } from '../lib/cabt/cabtReplay';
 import { cabtLogsToTimeline } from '../lib/cabt/logFormat';
-import { LiveObservationNormalizer, splitKnockOut, splitTrailingDraws, synthesizedAnnounceLog } from './liveSteps';
+import { LiveObservationNormalizer, synthesizedAnnounceLog } from './liveSteps';
 import { workspaceAgentPath } from './workspaceAgents';
 import {
   type CabtAttack,
@@ -295,27 +296,28 @@ export class LocalEngineController {
       if (!stepLogs.length) {
         continue;
       }
-      // A knock-out's departure animates against a view where the dying
-      // Pokemon still exists (its anchor would otherwise degrade to a
-      // same-name copy); the aftermath becomes its own beat.
-      const knockOut = splitKnockOut(previousObservation, observation, stepLogs);
-      const beats: Array<{ observation: CabtObservation; logs: Array<Record<string, unknown>> }> = knockOut
-        ? [
-            { observation: knockOut.departureObservation, logs: knockOut.departure },
-            ...(knockOut.rest.length ? [{ observation, logs: knockOut.rest }] : []),
-          ]
-        : [{ observation, logs: stepLogs }];
-      for (const beat of beats) {
-        // A play that draws is two beats: the cause against a pre-draw hand,
-        // then the deal. Without the split, the incoming cards would sit in
-        // the rendered hand while the play/shuffle still animates.
-        const split = splitTrailingDraws(beat.observation, beat.logs);
-        if (split) {
-          steps.push(this.buildStep(split.preDrawObservation, split.prefix));
-          steps.push(this.buildStep(beat.observation, split.draws));
-        } else {
-          steps.push(this.buildStep(beat.observation, beat.logs));
+      // The engine resolves whole effects instantly; the player must watch
+      // them happen. Replay's phase machinery splits the batch into typed
+      // animation phases, each carrying the view of the world BEFORE that
+      // phase resolves (pre-draw hands for both seats, the dying Pokemon
+      // still standing for its knock-out, both switchers at their source
+      // slots for a retreat). One live step per phase.
+      const step = this.buildStep(observation, stepLogs);
+      const previousView = previousObservation
+        ? {
+            ...cabtObservationToGameView(previousObservation, this.logs, this.dataMaps, []),
+            seats: this.seats(),
+          }
+        : undefined;
+      const phases = previousView
+        ? stepAnimationPhases(previousView, step, step.actionTimeline ?? [])
+        : undefined;
+      if (phases?.length) {
+        for (const phase of phases) {
+          steps.push({ ...phase.view, seats: this.seats() });
         }
+      } else {
+        steps.push(step);
       }
     }
     return steps;

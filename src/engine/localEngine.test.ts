@@ -337,39 +337,66 @@ describe('LocalEngineController', () => {
     const response = engine.viewResponse();
     expect(response.ok).toBe(true);
     if (!response.ok) return;
-    expect(response.sequence).toHaveLength(2);
-    const [departure, aftermath] = response.sequence!;
-    // The departure beat carries the attack through the discard cleanup, and
-    // its view restores the dying instance (serial 5) — the benched twin
-    // (serial 6) is untouched, so the fall can never anchor to it.
-    expect(departure.actionTimeline?.map((event) => event.kind)).toEqual([
-      'Attack', 'HPChange', 'MoveCard', 'MoveCard', 'MoveCard',
-    ]);
-    expect(departure.players[1].active.pokemon?.serial).toBe(5);
-    expect(departure.players[1].active.energy.map((card) => card.serial)).toEqual([60]);
-    expect(departure.players[1].bench[0]?.pokemon?.serial).toBe(6);
-    // The aftermath beat shows the true empty active while the prize lands.
-    expect(aftermath.actionTimeline?.map((event) => event.kind)).toEqual(['MoveCard']);
-    expect(aftermath.players[1].active.empty).toBe(true);
+    const steps = response.sequence!;
+    // The phases partition the batch: every event appears exactly once, in
+    // order.
+    const kinds = steps.flatMap((step) => step.actionTimeline?.map((event) => event.kind) ?? []);
+    expect(kinds).toEqual(['Attack', 'HPChange', 'MoveCard', 'MoveCard', 'MoveCard', 'MoveCard']);
+    // Every beat up to and including the knock-out still shows the dying
+    // instance (serial 5) in its slot — the benched twin (serial 6) can
+    // never stand in as the fall's anchor.
+    const knockOutIndex = steps.findIndex((step) => step.actionTimeline?.some((event) => {
+      const params = event.params as Record<string, unknown> | undefined;
+      return event.kind === 'MoveCard' && Number(params?.serial) === 5;
+    }));
+    expect(knockOutIndex).toBeGreaterThanOrEqual(0);
+    for (let index = 0; index <= knockOutIndex; index += 1) {
+      expect(steps[index].players[1].active.pokemon?.serial, `beat ${index} keeps the dying active`).toBe(5);
+      expect(steps[index].players[1].bench[0]?.pokemon?.serial).toBe(6);
+    }
+    // The knock-out beat still shows the attachments that fall with it.
+    expect(steps[knockOutIndex].players[1].active.energy.map((card) => card.serial)).toEqual([60]);
+    // After the departure, the active is truly empty while the prize lands.
+    const last = steps.at(-1)!;
+    expect(last.players[1].active.empty).toBe(true);
+    expect(last.players[1].bench[0]?.pokemon?.serial).toBe(6);
   });
 
-  it('splits a play-that-draws into a pre-draw beat and the deal', () => {
+  it('plays a draw effect as phase beats: cause, shuffle-in, then the deal', () => {
     const engine = new LocalEngineController() as any;
+    // Before the play: Lillie's (serial 25) and one other card in hand.
+    engine.applyBridgeResponse({
+      ok: true,
+      id: 1,
+      observation: {
+        select: null,
+        logs: [],
+        current: currentState({
+          players: [
+            playerState({
+              hand: [
+                { id: 1227, serial: 25, playerIndex: 0 },
+                { id: 8, serial: 9, playerIndex: 0 },
+              ],
+              handCount: 2,
+              deckCount: 32,
+            }),
+            playerState({ hand: null, handCount: 0 }),
+          ],
+        }),
+      },
+      autoSteps: [],
+    });
+    engine.viewResponse();
+
     const hand = [
       { id: 5, serial: 40, playerIndex: 0 },
       { id: 6, serial: 41, playerIndex: 0 },
       { id: 7, serial: 42, playerIndex: 0 },
     ];
-    const current = currentState({
-      players: [
-        playerState({ hand, handCount: 3, deckCount: 30 }),
-        playerState({ hand: null, handCount: 0 }),
-      ],
-    });
-
     engine.applyBridgeResponse({
       ok: true,
-      id: 1,
+      id: 2,
       observation: {
         select: null,
         logs: [
@@ -380,7 +407,12 @@ describe('LocalEngineController', () => {
           { type: CabtLogType.DRAW, playerIndex: 0, cardId: 6, serial: 41 },
           { type: CabtLogType.DRAW, playerIndex: 0, cardId: 7, serial: 42 },
         ],
-        current,
+        current: currentState({
+          players: [
+            playerState({ hand, handCount: 3, deckCount: 30 }),
+            playerState({ hand: null, handCount: 0 }),
+          ],
+        }),
       },
       autoSteps: [],
     });
@@ -388,17 +420,155 @@ describe('LocalEngineController', () => {
     const response = engine.viewResponse();
     expect(response.ok).toBe(true);
     if (!response.ok) return;
-    expect(response.sequence).toHaveLength(2);
-    const [cause, deal] = response.sequence!;
-    // The cause beat animates against a hand that does not yet contain the
-    // incoming cards, with the deck still holding them.
-    expect(cause.actionTimeline?.map((event) => event.kind)).toEqual(['Play', 'MoveCard', 'Shuffle']);
-    expect(cause.players[0].hand).toHaveLength(0);
-    expect(cause.players[0].deckCount).toBe(33);
+    const steps = response.sequence!;
+    const kinds = steps.flatMap((step) => step.actionTimeline?.map((event) => event.kind) ?? []);
+    expect(kinds).toEqual(['Play', 'MoveCard', 'Shuffle', 'Draw', 'Draw', 'Draw']);
+    // No beat before the deal may show a drawn card in hand.
+    const dealIndex = steps.findIndex((step) => step.actionTimeline?.some((event) => event.kind === 'Draw'));
+    expect(dealIndex).toBeGreaterThan(0);
+    for (let index = 0; index < dealIndex; index += 1) {
+      const serials = steps[index].players[0].hand.map((card) => card.serial);
+      expect(serials, `beat ${index} must not contain drawn cards`).not.toContain(40);
+      expect(serials).not.toContain(41);
+      expect(serials).not.toContain(42);
+    }
     // The deal beat carries exactly the draws against the real hand.
-    expect(deal.actionTimeline?.map((event) => event.kind)).toEqual(['Draw', 'Draw', 'Draw']);
+    const deal = steps[dealIndex];
     expect(deal.players[0].hand.map((card) => card.serial)).toEqual([40, 41, 42]);
     expect(deal.players[0].deckCount).toBe(30);
+  });
+
+  it('deals the OPPONENT of a concealed draw effect as beats, never an instant hand', () => {
+    const engine = new LocalEngineController() as any;
+    // Viewer is seat 0; the opponent (seat 1) plays Unfair Stamp-style:
+    // their 5 concealed cards shuffle into the deck, then they draw 2. The
+    // viewer's stream carries only reversed (count) events.
+    engine.applyBridgeResponse({
+      ok: true,
+      id: 1,
+      observation: {
+        select: null,
+        logs: [],
+        current: currentState({
+          yourIndex: 0,
+          players: [
+            playerState({ hand: [], handCount: 0 }),
+            playerState({ hand: null, handCount: 5, deckCount: 30 }),
+          ],
+        }),
+      },
+      autoSteps: [],
+    });
+    engine.viewResponse();
+
+    engine.applyBridgeResponse({
+      ok: true,
+      id: 2,
+      observation: {
+        select: null,
+        logs: [
+          { type: CabtLogType.PLAY, playerIndex: 1, cardId: 900 },
+          ...Array.from({ length: 5 }, () => (
+            { type: CabtLogType.MOVE_CARD_REVERSE, playerIndex: 1, fromArea: CabtAreaType.HAND, toArea: CabtAreaType.DECK }
+          )),
+          { type: CabtLogType.SHUFFLE, playerIndex: 1 },
+          { type: CabtLogType.DRAW_REVERSE, playerIndex: 1 },
+          { type: CabtLogType.DRAW_REVERSE, playerIndex: 1 },
+        ],
+        current: currentState({
+          yourIndex: 0,
+          players: [
+            playerState({ hand: [], handCount: 0 }),
+            playerState({ hand: null, handCount: 2, deckCount: 33 }),
+          ],
+        }),
+      },
+      autoSteps: [],
+    });
+
+    const response = engine.viewResponse();
+    expect(response.ok).toBe(true);
+    if (!response.ok) return;
+    const steps = response.sequence!;
+    expect(steps.length).toBeGreaterThan(1);
+    // No beat before the deal may already show the post-draw hand of 2 —
+    // the "instant hand" symptom. The shuffle-in beats walk the count down.
+    const dealIndex = steps.findIndex((step) => step.actionTimeline?.some((event) => event.kind === 'Draw' || event.kind === 'DrawReverse'));
+    expect(dealIndex).toBeGreaterThan(0);
+    // The play beat shows the post-play hand (4 concealed cards — the leaving
+    // card animates via claims); the shuffle-in walks it down to 0.
+    expect(steps[0].players[1].hand.length).toBe(4);
+    let previousCount = 4;
+    for (let index = 1; index < dealIndex; index += 1) {
+      const count = steps[index].players[1].hand.length;
+      expect(count, `beat ${index} hand size never grows before the deal`).toBeLessThanOrEqual(previousCount);
+      previousCount = count;
+    }
+    expect(steps[dealIndex - 1].players[1].hand.length).toBe(0);
+    // The deal beat lands the 2 concealed cards.
+    expect(steps[dealIndex].players[1].hand.length).toBe(2);
+  });
+
+  it('animates a retreat against the pre-swap board, never the post-swap one', () => {
+    const engine = new LocalEngineController() as any;
+    const activeA = {
+      id: 700, serial: 1, playerIndex: 0, hp: 120, maxHp: 120, appearThisTurn: false,
+      energies: [], energyCards: [], tools: [], preEvolution: [],
+    };
+    const benchB = {
+      id: 701, serial: 2, playerIndex: 0, hp: 90, maxHp: 90, appearThisTurn: false,
+      energies: [], energyCards: [], tools: [], preEvolution: [],
+    };
+    engine.applyBridgeResponse({
+      ok: true,
+      id: 1,
+      observation: {
+        select: null,
+        logs: [],
+        current: currentState({
+          players: [
+            playerState({ hand: [], handCount: 0, active: [activeA], bench: [benchB] }),
+            playerState({ hand: null, handCount: 0 }),
+          ],
+        }),
+      },
+      autoSteps: [],
+    });
+    engine.viewResponse();
+
+    engine.applyBridgeResponse({
+      ok: true,
+      id: 2,
+      observation: {
+        select: null,
+        logs: [
+          { type: CabtLogType.MOVE_CARD, playerIndex: 0, cardId: 700, serial: 1, fromArea: CabtAreaType.ACTIVE, toArea: CabtAreaType.BENCH },
+          { type: CabtLogType.MOVE_CARD, playerIndex: 0, cardId: 701, serial: 2, fromArea: CabtAreaType.BENCH, toArea: CabtAreaType.ACTIVE },
+        ],
+        current: currentState({
+          players: [
+            playerState({ hand: [], handCount: 0, active: [benchB], bench: [activeA] }),
+            playerState({ hand: null, handCount: 0 }),
+          ],
+        }),
+      },
+      autoSteps: [],
+    });
+
+    const response = engine.viewResponse();
+    expect(response.ok).toBe(true);
+    if (!response.ok) return;
+    const steps = response.sequence!;
+    // The swap beat's view still shows the PRE-swap board: the retreating
+    // Pokemon at active, the incoming one on the bench — so the crossing
+    // motion reads forward, not reversed.
+    const swapBeat = steps.find((step) => step.actionTimeline?.some((event) => event.kind === 'MoveCard'));
+    expect(swapBeat).toBeTruthy();
+    expect(swapBeat!.players[0].active.pokemon?.serial).toBe(1);
+    expect(swapBeat!.players[0].bench[0]?.pokemon?.serial).toBe(2);
+    // The final view lands the true post-swap board.
+    expect(response.view.players[0].active.pokemon?.serial).toBe(2);
+    expect(response.view.players[0].bench[0]?.pokemon?.serial).toBe(1);
   });
 
   it('drops re-delivered logs when the actor switches, so nothing re-animates', () => {
