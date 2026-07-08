@@ -102,7 +102,8 @@
     align-self: stretch;
     justify-self: stretch;
     z-index: 3;
-    transform-style: preserve-3d;
+    /* flat for reliable hit-testing — see .playmat in GameBoard. */
+    transform-style: flat;
     pointer-events: none;
     display: grid;
     grid-template-rows: var(--active-h) minmax(calc(var(--card-w) * 0.24), 1fr) var(--active-h);

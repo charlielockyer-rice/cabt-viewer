@@ -110,7 +110,8 @@
     grid-area: bottom-bench;
     align-self: var(--board-bottom-row-align, end);
     z-index: 1;
-    transform-style: preserve-3d;
+    /* flat for reliable hit-testing — see .playmat in GameBoard. */
+    transform-style: flat;
     display: grid;
     justify-content: center;
     align-content: center;

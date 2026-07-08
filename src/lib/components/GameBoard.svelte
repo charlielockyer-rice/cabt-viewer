@@ -301,7 +301,12 @@
     min-width: 0;
     perspective: var(--board-perspective, 1250px);
     perspective-origin: 50% 68%;
-    transform-style: preserve-3d;
+    /* flat, NOT preserve-3d: Chromium hit-testing breaks inside the tilted
+       3D rendering context — slots' clickable regions detach from where
+       they paint (whole opponent side unclickable, cursor flicker on own
+       slots). All board children are coplanar, so flat renders identically
+       (measured pixel-identical) while hit regions match the paint. */
+    transform-style: flat;
   }
 
   .playmat.has-projected-pile-hover {
@@ -341,7 +346,8 @@
     overflow: visible;
     transform: rotateX(var(--board-tilt, 8deg)) scaleY(var(--board-scale-y, 0.94)) translateY(var(--board-lift, 0px));
     transform-origin: 50% 58%;
-    transform-style: preserve-3d;
+    /* flat for reliable hit-testing — see .playmat above. */
+    transform-style: flat;
     will-change: transform;
   }
 
