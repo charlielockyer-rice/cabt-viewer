@@ -1,5 +1,5 @@
 import { animationActivity } from '../lib/anim/activity';
-import type { EngineResponse, GameView } from '../lib/game/types';
+import type { DecisionView, EngineResponse, GameView } from '../lib/game/types';
 import { viewSettingsStore } from './viewSettings.svelte';
 
 // Upper bound on waiting for the animation layers between sequence views, so
@@ -8,11 +8,20 @@ const maxStepWaitMs = 5000;
 
 class GameStore {
   game = $state<GameView | null>(null);
+  // The current engine decision, held at response level so it survives
+  // playback: sequence step views carry no decision, but rapid sequential
+  // selects (damage counter placement) must stay clickable while the
+  // previous placement's step still animates. The server's seq echo rejects
+  // anything genuinely stale.
+  decision = $state<DecisionView | undefined>(undefined);
   error = $state('');
   busy = $state(false);
   resolvingPrompt = $state(false);
   playingSequence = $state(false);
   private generation = 0;
+  // Sequence playbacks from overlapping commands must not interleave their
+  // view updates; each apply waits for the previous one to finish.
+  private applyQueue: Promise<unknown> = Promise.resolve();
 
   get gameFinished() {
     return this.game?.phase === 7;
@@ -25,37 +34,54 @@ class GameStore {
   reset() {
     this.generation += 1;
     this.game = null;
+    this.decision = undefined;
     this.error = '';
     this.busy = false;
     this.resolvingPrompt = false;
     this.playingSequence = false;
   }
 
+  // `busy` covers only the request round-trip; playback is `playingSequence`.
   async run(command: () => Promise<EngineResponse>) {
     const generation = this.generation;
     this.busy = true;
+    let response: EngineResponse;
     try {
-      return await this.apply(await command(), generation);
+      response = await command();
     } finally {
       if (generation === this.generation) {
         this.busy = false;
       }
     }
+    return await this.apply(response, generation);
   }
 
   async resolve(command: () => Promise<EngineResponse>) {
     const generation = this.generation;
     this.resolvingPrompt = true;
+    let response: EngineResponse;
     try {
-      return await this.apply(await command(), generation);
+      response = await command();
     } finally {
       if (generation === this.generation) {
         this.resolvingPrompt = false;
       }
     }
+    return await this.apply(response, generation);
   }
 
   async apply(response: EngineResponse, generation = this.generation) {
+    if (generation === this.generation && response.ok) {
+      // Expose the fresh decision immediately: the player may answer it while
+      // this response's steps are still animating.
+      this.decision = response.view.decision;
+    }
+    const run = this.applyQueue.then(() => this.applyNow(response, generation));
+    this.applyQueue = run.catch(() => {});
+    return await run;
+  }
+
+  private async applyNow(response: EngineResponse, generation: number) {
     if (generation !== this.generation) {
       return response;
     }
@@ -102,6 +128,7 @@ class GameStore {
     this.error = response.error;
     if (response.view) {
       this.game = response.view;
+      this.decision = response.view.decision;
     }
     return response;
   }

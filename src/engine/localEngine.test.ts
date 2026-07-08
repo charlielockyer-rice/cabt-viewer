@@ -201,6 +201,82 @@ describe('LocalEngineController', () => {
     ]);
   });
 
+  it('drives a complete Phantom Dive damage placement through select indexes', async () => {
+    // Select shapes captured verbatim from the engine: six sequential
+    // single-pick CARD selects over the opponent bench, remainDamageCounter
+    // counting down 6..1.
+    const engine = new LocalEngineController() as any;
+    const bench = [675, 676, 677].map((id, index) => ({
+      id, serial: 30 + index, playerIndex: 1, hp: 90, maxHp: 90, appearThisTurn: false,
+      energies: [], energyCards: [], tools: [], preEvolution: [],
+    }));
+    const placementSelect = (remaining: number) => ({
+      type: CabtSelectType.CARD,
+      context: CabtSelectContext.DAMAGE_COUNTER_ANY,
+      minCount: 1,
+      maxCount: 1,
+      remainDamageCounter: remaining,
+      remainEnergyCost: 0,
+      option: [0, 1, 2].map((index) => ({ type: CabtOptionType.CARD, area: CabtAreaType.BENCH, index, playerIndex: 1 })),
+      deck: null,
+      contextCard: null,
+      effect: null,
+    });
+    const placementState = () => currentState({
+      yourIndex: 0,
+      players: [
+        playerState({ hand: [], handCount: 0 }),
+        playerState({ hand: null, handCount: 0, bench }),
+      ],
+    });
+
+    let remaining = 6;
+    const selections: number[][] = [];
+    engine.sessionId = 'test-session';
+    engine.playerControls = ['self', 'agent'];
+    engine.decisionSeq = 1;
+    engine.dataMaps = { cardData: {}, attacks: {} };
+    engine.observation = { select: placementSelect(remaining), logs: [], current: placementState() };
+    engine.bridge = {
+      request: async ({ selection }: { selection: number[] }) => {
+        selections.push(selection);
+        remaining -= 1;
+        return {
+          ok: true,
+          observation: {
+            select: remaining > 0 ? placementSelect(remaining) : null,
+            logs: [{ type: CabtLogType.HP_CHANGE, playerIndex: 1, cardId: bench[selection[0]].id, serial: bench[selection[0]].serial, value: -10 }],
+            current: placementState(),
+          },
+        };
+      },
+    };
+
+    // The placement projects as a click-the-board decision with progress.
+    let view = engine.viewResponse().view;
+    for (let counter = 6; counter >= 1; counter -= 1) {
+      const decision = view.decision!;
+      expect(decision.remaining).toBe(counter);
+      expect(decision.message).toBe('Put damage counters');
+      expect(decision.min).toBe(1);
+      expect(decision.max).toBe(1);
+      expect(decision.options.map((option) => option.board)).toEqual([
+        { ownerIndex: 1, slot: 'bench', index: 0 },
+        { ownerIndex: 1, slot: 'bench', index: 1 },
+        { ownerIndex: 1, slot: 'bench', index: 2 },
+      ]);
+      const response = await engine.handle({
+        type: 'select',
+        payload: { sessionId: 'test-session', seq: decision.seq, indexes: [counter % 3] },
+      });
+      expect(response.ok).toBe(true);
+      if (!response.ok) return;
+      view = response.view;
+    }
+    expect(selections).toEqual([[0], [2], [1], [0], [2], [1]]);
+    expect(view.decision).toBeUndefined();
+  });
+
   it('animates a knock-out against a view where the dying Pokemon still exists', () => {
     const engine = new LocalEngineController() as any;
     const dyingHariyama = {

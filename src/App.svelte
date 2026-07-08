@@ -193,8 +193,11 @@
   let bottomPlayer = $derived(game?.players[viewIndex] ?? game?.players[0]);
   let topPlayer = $derived(game?.players.find((player) => player.index !== bottomPlayer?.index));
 
-  // The engine's current decision is the whole interaction contract.
-  let decision = $derived(replayMode ? undefined : game?.decision);
+  // The engine's current decision is the whole interaction contract. It is
+  // held at response level (gameStore.decision) so rapid sequential selects
+  // (damage counter placement) stay clickable while the previous placement's
+  // step still animates.
+  let decision = $derived(replayMode ? undefined : gameStore.decision);
   let decisionSeatIsSelf = $derived(!!decision && isSelfControlled(decision.seat));
   let mainDecision = $derived(isMainDecision(decision) && decisionSeatIsSelf ? decision : undefined);
   let boardDecision = $derived(decisionSeatIsSelf ? boardDecisionOptions(decision) : []);
@@ -433,10 +436,12 @@
     }
   }
 
-  // Answer the current decision with engine option indexes.
+  // Answer the current decision with engine option indexes. Playback of the
+  // previous answer's steps does not block the next click — the server's seq
+  // echo rejects anything genuinely stale.
   async function selectDecision(indexes: number[], viaDialog = false) {
     const currentDecision = decision;
-    if (!currentDecision || commandBusy) {
+    if (!currentDecision || gameStore.busy || resolvingPrompt) {
       return;
     }
     const send = () => localGameApi.select(currentDecision.seq, indexes);
@@ -838,8 +843,8 @@
 
       {#if boardDecision.length && decision}
         <div class="board-decision-banner" role="status">
-          <strong>{decision.message}</strong>
-          <span>Choose a highlighted Pokemon on the board.</span>
+          <strong>{decision.message}{decision.remaining ? ` — ${decision.remaining} left` : ''}</strong>
+          <span>Click a highlighted Pokemon on the board.</span>
         </div>
       {:else if dialogDecision}
         <PromptDock mode={promptDockMode}>

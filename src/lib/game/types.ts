@@ -173,6 +173,9 @@ export type DecisionView = {
   message: string;
   min: number;
   max: number;
+  // Sequential effects (damage counter placement, energy payment) count down
+  // across repeated single-pick decisions; show the player their progress.
+  remaining?: number;
   options: DecisionOptionView[];
 };
 

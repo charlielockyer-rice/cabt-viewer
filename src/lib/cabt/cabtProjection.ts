@@ -224,6 +224,11 @@ export function projectDecision(observation: CabtObservation, seq: number, dataM
     message: kind === 'main' ? 'Main phase' : kind === 'choose-prize' ? 'Choose Prize Card' : cabtSelectLabel(select.context),
     min: select.minCount,
     max: select.maxCount,
+    remaining: select.remainDamageCounter > 0
+      ? select.remainDamageCounter
+      : select.remainEnergyCost > 0
+        ? select.remainEnergyCost
+        : undefined,
     options: select.option.map((option, index) => projectOption(option, index, observation, dataMaps, seat)),
   };
 }
@@ -582,6 +587,8 @@ function isPrizeSelectionPrompt(select: CabtSelectData) {
     );
 }
 
+// Every select context the engine can emit gets a human label; a raw
+// CABT_CONTEXT_n in the UI is a bug.
 function cabtSelectLabel(context: number) {
   const labels: Record<number, string> = {
     [CabtSelectContext.SETUP_ACTIVE_POKEMON]: 'Choose Active Pokemon',
@@ -589,27 +596,51 @@ function cabtSelectLabel(context: number) {
     [CabtSelectContext.SWITCH]: 'Choose Switch Target',
     [CabtSelectContext.TO_ACTIVE]: 'Choose Active Pokemon',
     [CabtSelectContext.TO_BENCH]: 'Choose Bench Pokemon',
+    [CabtSelectContext.TO_FIELD]: 'Choose where to play',
     [CabtSelectContext.TO_HAND]: 'Choose Card',
     [CabtSelectContext.DISCARD]: 'Choose Discard',
+    [CabtSelectContext.TO_DECK]: 'Choose cards for the deck',
+    [CabtSelectContext.TO_DECK_BOTTOM]: 'Choose card for the bottom of the deck',
     [CabtSelectContext.TO_PRIZE]: 'Choose Prize Card',
+    [CabtSelectContext.NOT_MOVE]: 'Choose cards to keep',
+    [CabtSelectContext.DAMAGE_COUNTER]: 'Put damage counters',
+    [CabtSelectContext.DAMAGE_COUNTER_ANY]: 'Put damage counters',
+    [CabtSelectContext.DAMAGE]: 'Choose damage target',
+    [CabtSelectContext.REMOVE_DAMAGE_COUNTER]: 'Remove damage counters',
+    [CabtSelectContext.HEAL]: 'Choose Pokemon to heal',
+    [CabtSelectContext.EVOLVES_FROM]: 'Choose Pokemon to evolve',
+    [CabtSelectContext.EVOLVES_TO]: 'Choose evolution',
+    [CabtSelectContext.DEVOLVE]: 'Choose Pokemon to devolve',
+    [CabtSelectContext.ATTACH_FROM]: 'Choose Attachment Source',
+    [CabtSelectContext.ATTACH_TO]: 'Choose Attachment Target',
+    [CabtSelectContext.DETACH_FROM]: 'Choose attachment to remove',
+    [CabtSelectContext.LOOK]: 'Look at cards',
+    [CabtSelectContext.EFFECT_TARGET]: 'Choose a target',
     [CabtSelectContext.DISCARD_ENERGY_CARD]: 'Choose energy to discard',
+    [CabtSelectContext.DISCARD_TOOL_CARD]: 'Choose Tool to discard',
+    [CabtSelectContext.SWITCH_ENERGY_CARD]: 'Choose energy to move',
+    [CabtSelectContext.DISCARD_CARD_OR_ATTACHED_CARD]: 'Choose card to discard',
     [CabtSelectContext.DISCARD_ENERGY]: 'Choose energy to discard',
     [CabtSelectContext.TO_HAND_ENERGY]: 'Choose energy for your hand',
     [CabtSelectContext.TO_DECK_ENERGY]: 'Choose energy for deck',
     [CabtSelectContext.SWITCH_ENERGY]: 'Choose energy to move',
-    [CabtSelectContext.ATTACH_FROM]: 'Choose Attachment Source',
-    [CabtSelectContext.ATTACH_TO]: 'Choose Attachment Target',
+    [CabtSelectContext.SKILL_ORDER]: 'Choose effect order',
     [CabtSelectContext.ATTACK]: 'Choose Attack',
+    [CabtSelectContext.DISABLE_ATTACK]: 'Choose attack to disable',
+    [CabtSelectContext.EVOLVE]: 'Choose evolution',
     [CabtSelectContext.DRAW_COUNT]: 'Choose cards to draw',
     [CabtSelectContext.DAMAGE_COUNTER_COUNT]: 'Choose damage counter count',
     [CabtSelectContext.REMOVE_DAMAGE_COUNTER_COUNT]: 'Choose damage counters to remove',
     [CabtSelectContext.IS_FIRST]: 'Choose Turn Order',
     [CabtSelectContext.MULLIGAN]: 'Mulligan',
     [CabtSelectContext.ACTIVATE]: 'Resolve Effect',
+    [CabtSelectContext.FIRST_EFFECT]: 'Choose which effect first',
+    [CabtSelectContext.MORE_DEVOLVE]: 'Devolve further?',
+    [CabtSelectContext.COIN_HEAD]: 'Call the coin flip',
+    [CabtSelectContext.AFFECT_SPECIAL_CONDITION]: 'Choose Special Condition',
+    [CabtSelectContext.RECOVER_SPECIAL_CONDITION]: 'Choose condition to recover',
   };
-  if (labels[context]) return labels[context];
-  if (context === CabtSelectContext.ACTIVATE) return 'CABT_SELECT';
-  return `CABT_CONTEXT_${context}`;
+  return labels[context] ?? 'Choose an option';
 }
 
 function playerName(index: number) {
