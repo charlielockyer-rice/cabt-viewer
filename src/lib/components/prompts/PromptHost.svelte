@@ -13,11 +13,13 @@
   let { decision, resolving = false, onselect }: Props = $props();
 </script>
 
+<!-- SelectPrompt is the universal fallback: any kind this host does not
+     recognize still gets a usable labeled-option dialog, never a dead end. -->
 {#if decision.kind === 'choose-prize'}
   <ChoosePrizePrompt {decision} {resolving} {onselect} />
 {:else if decision.kind === 'choose-cards'}
   <ChooseCardsPrompt {decision} {resolving} {onselect} />
-{:else if decision.kind === 'choose-option'}
+{:else}
   <SelectPrompt {decision} {resolving} {onselect} />
 {/if}
 

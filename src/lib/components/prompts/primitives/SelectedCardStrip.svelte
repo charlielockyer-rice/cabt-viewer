@@ -1,6 +1,8 @@
 <script lang="ts">
   import CardTile from '../../CardTile.svelte';
-  import type { IndexedCardView } from '../../../game/prompts';
+  import type { CardView } from '../../../game/types';
+
+  type IndexedCardView = CardView & { index: number };
 
   type Props = {
     cards: IndexedCardView[];

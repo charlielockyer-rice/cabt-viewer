@@ -3,6 +3,7 @@
   import PromptPanel from './primitives/PromptPanel.svelte';
   import PromptIcon from './primitives/PromptIcon.svelte';
   import SelectableCard from './primitives/SelectableCard.svelte';
+  import { toggleSelectionIndex } from '../../game/decisions';
   import type { DecisionView } from '../../game/types';
 
   type Props = {
@@ -24,13 +25,7 @@
   });
 
   function toggleIndex(index: number) {
-    selectedIndexes = selectedIndexes.includes(index)
-      ? selectedIndexes.filter((item) => item !== index)
-      : decision.max <= 1
-        ? [index]
-        : selectedIndexes.length < decision.max
-          ? [...selectedIndexes, index]
-          : selectedIndexes;
+    selectedIndexes = toggleSelectionIndex(selectedIndexes, index, decision.max);
   }
 
   function submitSelectedIndexes() {

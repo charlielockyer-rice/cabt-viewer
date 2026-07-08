@@ -97,3 +97,15 @@ export function boardOptionForSlot(decision: DecisionView | undefined, slot: Boa
 function boardKey(ref: BoardSlotRef): string {
   return `${ref.ownerIndex}:${ref.slot}:${ref.index}`;
 }
+
+// Toggle an option in a prompt's multi-pick selection, honoring the select's
+// max: single-pick swaps, full selections ignore further adds.
+export function toggleSelectionIndex(selected: number[], index: number, max: number): number[] {
+  if (selected.includes(index)) {
+    return selected.filter((item) => item !== index);
+  }
+  if (max <= 1) {
+    return [index];
+  }
+  return selected.length < max ? [...selected, index] : selected;
+}
