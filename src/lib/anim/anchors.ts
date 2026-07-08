@@ -122,10 +122,11 @@ export function handSlots(player: number): HTMLElement[] {
 
 function pokemonElement(anchor: { player?: number; serial?: number; cardId?: number }): HTMLElement | null {
   if (anchor.serial !== undefined) {
-    const bySerial = query(`[data-pokemon-serial="${anchor.serial}"]`);
-    if (bySerial) {
-      return bySerial;
-    }
+    // A serial names one physical card. Never fall through to the cardId
+    // lookup: it would match a same-name copy elsewhere on the board, and a
+    // wrong-instance animation is worse than none (a KO'd active must not
+    // borrow its benched twin).
+    return query(`[data-pokemon-serial="${anchor.serial}"]`);
   }
   if (anchor.cardId !== undefined && anchor.player !== undefined) {
     return query(`[data-owner-index="${anchor.player}"][data-pokemon-card-id="${anchor.cardId}"]`);

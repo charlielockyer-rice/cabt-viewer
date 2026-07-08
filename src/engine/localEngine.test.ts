@@ -201,6 +201,81 @@ describe('LocalEngineController', () => {
     ]);
   });
 
+  it('animates a knock-out against a view where the dying Pokemon still exists', () => {
+    const engine = new LocalEngineController() as any;
+    const dyingHariyama = {
+      id: 700, serial: 5, playerIndex: 1, hp: 0, maxHp: 150, appearThisTurn: false,
+      energies: [6], energyCards: [{ id: 4, serial: 60, playerIndex: 1 }], tools: [],
+      preEvolution: [{ id: 699, serial: 4, playerIndex: 1 }],
+    };
+    const benchedTwin = {
+      id: 700, serial: 6, playerIndex: 1, hp: 150, maxHp: 150, appearThisTurn: false,
+      energies: [], energyCards: [], tools: [], preEvolution: [],
+    };
+    // The observation BEFORE the attack still has the dying active in place.
+    engine.applyBridgeResponse({
+      ok: true,
+      id: 1,
+      observation: {
+        select: null,
+        logs: [],
+        current: currentState({
+          yourIndex: 0,
+          players: [
+            playerState({ hand: [], handCount: 0 }),
+            playerState({ hand: null, handCount: 0, active: [dyingHariyama], bench: [benchedTwin] }),
+          ],
+        }),
+      },
+      autoSteps: [],
+    });
+    engine.viewResponse();
+
+    // The KO observation: active gone, same-name twin still benched, and the
+    // full cleanup + prize take in one log batch (real engine shape).
+    engine.applyBridgeResponse({
+      ok: true,
+      id: 2,
+      observation: {
+        select: null,
+        logs: [
+          { type: CabtLogType.ATTACK, playerIndex: 0, cardId: 42, serial: 1, attackId: 9 },
+          { type: CabtLogType.HP_CHANGE, playerIndex: 1, cardId: 700, serial: 5, value: -150 },
+          { type: CabtLogType.MOVE_CARD, playerIndex: 1, cardId: 700, serial: 5, fromArea: CabtAreaType.ACTIVE, toArea: CabtAreaType.DISCARD },
+          { type: CabtLogType.MOVE_CARD, playerIndex: 1, cardId: 699, serial: 4, fromArea: CabtAreaType.PRE_EVOLUTION, toArea: CabtAreaType.DISCARD },
+          { type: CabtLogType.MOVE_CARD, playerIndex: 1, cardId: 4, serial: 60, fromArea: CabtAreaType.ENERGY, toArea: CabtAreaType.DISCARD },
+          { type: CabtLogType.MOVE_CARD, playerIndex: 0, cardId: 55, serial: 70, fromArea: CabtAreaType.PRIZE, toArea: CabtAreaType.HAND },
+        ],
+        current: currentState({
+          yourIndex: 0,
+          players: [
+            playerState({ hand: [{ id: 55, serial: 70, playerIndex: 0 }], handCount: 1 }),
+            playerState({ hand: null, handCount: 0, active: [null], bench: [benchedTwin] }),
+          ],
+        }),
+      },
+      autoSteps: [],
+    });
+
+    const response = engine.viewResponse();
+    expect(response.ok).toBe(true);
+    if (!response.ok) return;
+    expect(response.sequence).toHaveLength(2);
+    const [departure, aftermath] = response.sequence!;
+    // The departure beat carries the attack through the discard cleanup, and
+    // its view restores the dying instance (serial 5) — the benched twin
+    // (serial 6) is untouched, so the fall can never anchor to it.
+    expect(departure.actionTimeline?.map((event) => event.kind)).toEqual([
+      'Attack', 'HPChange', 'MoveCard', 'MoveCard', 'MoveCard',
+    ]);
+    expect(departure.players[1].active.pokemon?.serial).toBe(5);
+    expect(departure.players[1].active.energy.map((card) => card.serial)).toEqual([60]);
+    expect(departure.players[1].bench[0]?.pokemon?.serial).toBe(6);
+    // The aftermath beat shows the true empty active while the prize lands.
+    expect(aftermath.actionTimeline?.map((event) => event.kind)).toEqual(['MoveCard']);
+    expect(aftermath.players[1].active.empty).toBe(true);
+  });
+
   it('splits a play-that-draws into a pre-draw beat and the deal', () => {
     const engine = new LocalEngineController() as any;
     const hand = [

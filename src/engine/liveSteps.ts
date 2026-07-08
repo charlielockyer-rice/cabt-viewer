@@ -260,6 +260,103 @@ function isDrawLog(log: BridgeLog): boolean {
   return log.type === CabtLogType.DRAW || log.type === CabtLogType.DRAW_REVERSE;
 }
 
+// A knock-out delivers the attack, the board→discard departure, and its
+// aftermath (prize takes, turn end) in one observation — whose board no
+// longer contains the dying Pokemon. The departure must animate against a
+// view where its source instance still exists, or the anchor degrades and
+// the board corrects abruptly. Split the step at the discard-cleanup
+// boundary and restore the departed Pokemon (with its stack and
+// attachments, from the previous observation) into the first beat's view.
+export type KnockOutSplit = {
+  departure: BridgeLog[];
+  rest: BridgeLog[];
+  // The observation with the knocked-out Pokemon still in its slot.
+  departureObservation: CabtObservation;
+};
+
+const BOARD_AREAS = new Set<unknown>([CabtAreaType.ACTIVE, CabtAreaType.BENCH]);
+const CLEANUP_FROM_AREAS = new Set<unknown>([
+  CabtAreaType.ACTIVE,
+  CabtAreaType.BENCH,
+  CabtAreaType.ENERGY,
+  CabtAreaType.TOOL,
+  CabtAreaType.PRE_EVOLUTION,
+]);
+
+export function splitKnockOut(
+  previous: CabtObservation | null,
+  observation: CabtObservation,
+  logs: BridgeLog[],
+): KnockOutSplit | null {
+  const current = observation.current;
+  if (!current || !previous?.current) {
+    return null;
+  }
+  const knockOuts = logs.filter((log) =>
+    log.type === CabtLogType.MOVE_CARD
+    && BOARD_AREAS.has(log.fromArea)
+    && log.toArea === CabtAreaType.DISCARD
+    && typeof log.serial === 'number');
+  if (!knockOuts.length) {
+    return null;
+  }
+
+  // The departure beat runs through the last discard-cleanup line (the
+  // Pokemon itself, then its attachments and evolution stack).
+  let cleanupEnd = -1;
+  logs.forEach((log, index) => {
+    const isCleanup = (log.type === CabtLogType.MOVE_CARD || log.type === CabtLogType.MOVE_CARD_REVERSE)
+      && log.toArea === CabtAreaType.DISCARD
+      && CLEANUP_FROM_AREAS.has(log.fromArea);
+    if (isCleanup) {
+      cleanupEnd = index;
+    }
+  });
+  const departure = logs.slice(0, cleanupEnd + 1);
+  // Aftermath (prize takes, turn end) becomes its own beat against the true
+  // board; when nothing follows, the next step or interactive view corrects
+  // the restored slot after the fall animates.
+  const rest = logs.slice(cleanupEnd + 1);
+
+  // Restore each departed Pokemon into its (now empty) slot from the
+  // previous observation, matched by serial so a same-name copy can never
+  // stand in.
+  let restored = false;
+  const players = current.players.map((player, seat) => {
+    const previousPlayer = previous.current!.players[seat];
+    let active = player.active;
+    let bench = player.bench;
+    for (const knockOut of knockOuts) {
+      if (knockOut.playerIndex !== seat) {
+        continue;
+      }
+      if (knockOut.fromArea === CabtAreaType.ACTIVE) {
+        const departed = previousPlayer?.active?.find((pokemon) => pokemon?.serial === knockOut.serial);
+        if (departed && !active[0]) {
+          active = [departed, ...active.slice(1)];
+          restored = true;
+        }
+      } else {
+        const index = previousPlayer?.bench?.findIndex((pokemon) => pokemon?.serial === knockOut.serial) ?? -1;
+        if (index >= 0 && !bench[index]) {
+          bench = bench.map((pokemon, benchIndex) => (benchIndex === index ? previousPlayer!.bench[index] : pokemon));
+          restored = true;
+        }
+      }
+    }
+    return active === player.active && bench === player.bench ? player : { ...player, active, bench };
+  });
+  if (!restored) {
+    return null;
+  }
+
+  return {
+    departure,
+    rest,
+    departureObservation: { ...observation, current: { ...current, players } },
+  };
+}
+
 // The engine never logs ability usage — the only signal is which option was
 // selected on the previous observation. Synthesize the same `Ability`
 // announce log the replay pipeline synthesizes (choreograph renders it as

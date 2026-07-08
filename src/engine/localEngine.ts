@@ -5,7 +5,7 @@ import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { cabtObservationToGameView, projectDecision, type CabtDataMaps } from '../lib/cabt/cabtProjection';
 import { cabtLogsToTimeline } from '../lib/cabt/logFormat';
-import { LiveObservationNormalizer, splitTrailingDraws, synthesizedAnnounceLog } from './liveSteps';
+import { LiveObservationNormalizer, splitKnockOut, splitTrailingDraws, synthesizedAnnounceLog } from './liveSteps';
 import { workspaceAgentPath } from './workspaceAgents';
 import {
   type CabtAttack,
@@ -283,9 +283,10 @@ export class LocalEngineController {
     let previous = this.observation;
     for (let index = 0; index < observations.length; index += 1) {
       const { observation, newLogs } = this.normalizer.push(observations[index]);
+      const previousObservation = previous;
       // The engine never logs ability usage; announce it from the selection
       // that produced this observation (same synthesis as replay).
-      const announce = synthesizedAnnounceLog(previous, actions[index] ?? null, this.lastNewLogs, newLogs, this.dataMaps);
+      const announce = synthesizedAnnounceLog(previousObservation, actions[index] ?? null, this.lastNewLogs, newLogs, this.dataMaps);
       const stepLogs = announce ? [announce, ...newLogs] : newLogs;
       previous = observation;
       this.lastNewLogs = newLogs;
@@ -294,15 +295,27 @@ export class LocalEngineController {
       if (!stepLogs.length) {
         continue;
       }
-      // A play that draws is two beats: the cause against a pre-draw hand,
-      // then the deal. Without the split, the incoming cards would sit in
-      // the rendered hand while the play/shuffle still animates.
-      const split = splitTrailingDraws(observation, stepLogs);
-      if (split) {
-        steps.push(this.buildStep(split.preDrawObservation, split.prefix));
-        steps.push(this.buildStep(observation, split.draws));
-      } else {
-        steps.push(this.buildStep(observation, stepLogs));
+      // A knock-out's departure animates against a view where the dying
+      // Pokemon still exists (its anchor would otherwise degrade to a
+      // same-name copy); the aftermath becomes its own beat.
+      const knockOut = splitKnockOut(previousObservation, observation, stepLogs);
+      const beats: Array<{ observation: CabtObservation; logs: Array<Record<string, unknown>> }> = knockOut
+        ? [
+            { observation: knockOut.departureObservation, logs: knockOut.departure },
+            ...(knockOut.rest.length ? [{ observation, logs: knockOut.rest }] : []),
+          ]
+        : [{ observation, logs: stepLogs }];
+      for (const beat of beats) {
+        // A play that draws is two beats: the cause against a pre-draw hand,
+        // then the deal. Without the split, the incoming cards would sit in
+        // the rendered hand while the play/shuffle still animates.
+        const split = splitTrailingDraws(beat.observation, beat.logs);
+        if (split) {
+          steps.push(this.buildStep(split.preDrawObservation, split.prefix));
+          steps.push(this.buildStep(beat.observation, split.draws));
+        } else {
+          steps.push(this.buildStep(beat.observation, beat.logs));
+        }
       }
     }
     return steps;
