@@ -1926,7 +1926,7 @@
   :global([data-hand-evolve-animation-active='true'] > .energy-badges),
   :global([data-hand-evolve-animation-active='true'] > .tool-card-preview),
   :global([data-hand-evolve-animation-active='true'] > .slot-badges),
-  :global([data-hand-evolve-animation-active='true'] > .prompt-damage-badge) {
+  :global([data-hand-evolve-animation-active='true'] > .pick-chips) {
     animation: hand-evolve-slot-chrome-out 170ms ease var(--hand-evolve-delay) both;
   }
 

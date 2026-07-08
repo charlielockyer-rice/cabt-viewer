@@ -3,6 +3,7 @@
   import ActiveFocus from './lib/components/ActiveFocus.svelte';
   import AppHeader from './lib/components/AppHeader.svelte';
   import BoardLayer from './lib/components/BoardLayer.svelte';
+  import EffectSelectorBanner from './lib/components/EffectSelectorBanner.svelte';
   import EndGamePrompt from './lib/components/EndGamePrompt.svelte';
   import ViewportAnimationLayer from './lib/components/ViewportAnimationLayer.svelte';
   import RevealSessionLayer from './lib/components/RevealSessionLayer.svelte';
@@ -32,12 +33,14 @@
     isMainDecision,
     optionsForHandCard,
     playableHandIndexes,
+    sameBoardRef,
     slotRef,
     stadiumOption,
   } from './lib/game/decisions';
+  import { commitPick, observeDecision, pickTally, runProgress, type EffectRun } from './lib/game/effectSelector';
   import { loadAgentOptions, loadGameLogs, type AgentOption, type GameLogEntry } from './lib/home/catalog';
   import { kaggleEpisodeReplayUrl, type KaggleEpisodeDay, type KaggleEpisodeSummary } from './lib/kaggle/episodes';
-  import type { ActionTimelineEvent, DecisionOptionView, PokemonSlotView, PlayerView } from './lib/game/types';
+  import type { ActionTimelineEvent, BoardSlotRef, DecisionOptionView, PokemonSlotView, PlayerView } from './lib/game/types';
   import { deckImportStore } from './state/deckImport.svelte';
   import { gameStore } from './state/game.svelte';
   import { gameSessionStore } from './state/gameSession.svelte';
@@ -201,21 +204,43 @@
   let decisionSeatIsSelf = $derived(!!decision && isSelfControlled(decision.seat));
   let mainDecision = $derived(isMainDecision(decision) && decisionSeatIsSelf ? decision : undefined);
   let boardDecision = $derived(decisionSeatIsSelf ? boardDecisionOptions(decision) : []);
+  // The generic dialog can complete any select; board clicking is layered on
+  // top of it. `preferListFallback` lets the player drop back to the dialog
+  // for a board-shaped select (it stays on for the rest of the run).
+  let preferListFallback = $state(false);
   let dialogDecision = $derived(
-    decision && decision.kind !== 'main' && decisionSeatIsSelf && !boardDecision.length ? decision : undefined,
+    decision && decision.kind !== 'main' && decisionSeatIsSelf && (!boardDecision.length || preferListFallback)
+      ? decision
+      : undefined,
   );
+  $effect(() => {
+    if (!boardDecision.length) {
+      preferListFallback = false;
+    }
+  });
+
+  // Countdown effect run (damage counter placement, energy payment): tracks
+  // committed picks so targets wear chips and the banner shows progress.
+  let effectRun = $state<EffectRun | null>(null);
+  // The board slot just answered with, lit as confirmed until the engine's
+  // next decision lands.
+  let pendingPickSlot = $state<BoardSlotRef | null>(null);
+  let effectProgress = $derived(runProgress(effectRun));
   let actingPlayerIndex = $derived(decision?.seat ?? game?.activePlayerIndex ?? 0);
   let actingPlayerIsSelf = $derived(isSelfControlled(actingPlayerIndex));
   let modeLabel = $derived((game?.seats ?? []).map((seat) => controlLabel(seat.control)).join(' vs '));
   let promptDockMode = $derived<'default' | 'search'>(dialogDecision?.kind === 'choose-cards' ? 'search' : 'default');
 
-  // Clear stale hand selection whenever the engine moves to a new decision.
+  // Clear stale hand selection and fold the decision into the effect run
+  // whenever the engine moves to a new decision.
   let lastDecisionSeq = $state(-1);
   $effect(() => {
     const seq = decision?.seq ?? -1;
     if (seq !== lastDecisionSeq) {
       lastDecisionSeq = seq;
       selectionStore.setSelectedHand(null);
+      effectRun = observeDecision(effectRun, decision);
+      pendingPickSlot = null;
     }
   });
 
@@ -444,6 +469,10 @@
     if (!currentDecision || gameStore.busy || resolvingPrompt) {
       return;
     }
+    effectRun = commitPick(effectRun, currentDecision, indexes);
+    pendingPickSlot = indexes.length === 1
+      ? currentDecision.options.find((option) => option.index === indexes[0])?.board ?? null
+      : null;
     const send = () => localGameApi.select(currentDecision.seq, indexes);
     await (viaDialog ? gameSessionStore.resolve(send) : gameSessionStore.run(send));
   }
@@ -612,12 +641,12 @@
     return !!boardOptionForSlot(decisionSeatIsSelf ? decision : undefined, slotRef(slot));
   }
 
-  function isBoardPromptSelected(_slot: PokemonSlotView) {
-    return false;
+  function isBoardPromptSelected(slot: PokemonSlotView) {
+    return !!pendingPickSlot && sameBoardRef(pendingPickSlot, slotRef(slot));
   }
 
-  function boardSlotDelta(_slot: PokemonSlotView) {
-    return 0;
+  function boardPickTally(slot: PokemonSlotView) {
+    return pickTally(effectRun, slotRef(slot));
   }
 
   async function passTurn() {
@@ -841,11 +870,14 @@
         />
       {/if}
 
-      {#if boardDecision.length && decision}
-        <div class="board-decision-banner" role="status">
-          <strong>{decision.message}{decision.remaining ? ` — ${decision.remaining} left` : ''}</strong>
-          <span>Click a highlighted Pokemon on the board.</span>
-        </div>
+      {#if boardDecision.length && decision && !preferListFallback}
+        <EffectSelectorBanner
+          message={decision.message}
+          placed={effectProgress?.placed}
+          total={effectProgress?.total}
+          kind={effectRun?.remainingKind}
+          onShowList={() => (preferListFallback = true)}
+        />
       {:else if dialogDecision}
         <PromptDock mode={promptDockMode}>
           {#key dialogDecision.seq}
@@ -888,7 +920,8 @@
           {isPlayableTarget}
           {isBoardPromptSelectable}
           {isBoardPromptSelected}
-          {boardSlotDelta}
+          {boardPickTally}
+          boardPickKind={effectRun?.remainingKind}
           {clickSlot}
           {allowDrop}
           {dropToSlot}
@@ -1018,32 +1051,4 @@
     font-size: 13px;
   }
 
-  .board-decision-banner {
-    position: absolute;
-    left: calc((100vw - var(--board-right-rail)) / 2);
-    top: calc(var(--board-top-inset) + 48px);
-    z-index: 14;
-    transform: translate(-50%, -50%);
-    display: grid;
-    justify-items: center;
-    gap: 2px;
-    padding: 10px 18px;
-    border-radius: 8px;
-    border: 1px solid var(--surface-glass-border);
-    background: var(--surface-glass-bg);
-    color: var(--text-secondary);
-    box-shadow: var(--surface-glass-shadow);
-    backdrop-filter: blur(var(--backdrop-blur));
-    text-align: center;
-  }
-
-  .board-decision-banner strong {
-    color: var(--text-primary);
-    font-size: 14px;
-  }
-
-  .board-decision-banner span {
-    font-size: 11px;
-    color: var(--text-muted);
-  }
 </style>

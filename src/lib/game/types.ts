@@ -176,6 +176,9 @@ export type DecisionView = {
   // Sequential effects (damage counter placement, energy payment) count down
   // across repeated single-pick decisions; show the player their progress.
   remaining?: number;
+  // Which engine countdown `remaining` came from — picks the affordance
+  // styling (damage counter chips vs energy pips), never card semantics.
+  remainingKind?: 'damage' | 'energy';
   options: DecisionOptionView[];
 };
 

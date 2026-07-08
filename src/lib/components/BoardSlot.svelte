@@ -11,7 +11,10 @@
     canDrop?: boolean;
     promptSelectable?: boolean;
     promptSelected?: boolean;
-    slotDelta?: number;
+    // Effect-selector chips: how many picks the current run has placed on
+    // this slot, and which countdown kind styles them.
+    pickTally?: number;
+    pickKind?: 'damage' | 'energy';
     placement?: '' | 'top-active-slot' | 'bottom-active-slot';
     evolutionChromeIn?: boolean;
     onclick?: (event: MouseEvent) => void;
@@ -25,7 +28,8 @@
     canDrop = false,
     promptSelectable = false,
     promptSelected = false,
-    slotDelta = 0,
+    pickTally = 0,
+    pickKind = 'damage',
     placement = '',
     evolutionChromeIn = false,
     onclick,
@@ -96,9 +100,17 @@
   {ondragover}
   {ondrop}
 >
-  {#if slotDelta !== 0}
-    <div class="prompt-damage-badge" class:negative={slotDelta < 0}>
-      {slotDelta > 0 ? '+' : '−'}{Math.abs(slotDelta)}
+  {#if pickTally > 0}
+    <div
+      class="pick-chips"
+      data-kind={pickKind}
+      role="status"
+      aria-label={`${pickTally} placed here this effect`}
+      title={`${pickTally} placed here this effect`}
+    >
+      {#each Array.from({ length: pickTally }, (_, chip) => chip) as chip (chip)}
+        <span class="pick-chip">{pickKind === 'damage' ? '10' : ''}</span>
+      {/each}
     </div>
   {/if}
 
@@ -220,32 +232,70 @@
   .board-slot.evolution-chrome-in > .energy-badges,
   .board-slot.evolution-chrome-in > .tool-card-preview,
   .board-slot.evolution-chrome-in > .slot-badges,
-  .board-slot.evolution-chrome-in > .prompt-damage-badge {
+  .board-slot.evolution-chrome-in > .pick-chips {
     animation: board-slot-evolution-chrome-in 190ms ease-out both;
   }
 
-  .prompt-damage-badge {
+  /* Effect-selector chips: one coin per pick placed on this slot during the
+     current run, stacked up the slot's left edge. Damage chips wear the same
+     coin finish as the card's damage counter. */
+  .pick-chips {
+    --pick-chip-size: clamp(16px, calc(var(--slot-card-w) * 0.24), 24px);
     position: absolute;
-    top: 50%;
-    left: 50%;
-    z-index: 7;
-    min-width: 34px;
-    padding: 5px 8px;
-    border-radius: 999px;
-    transform: translate(-50%, -50%);
-    background: #c2410c;
-    color: #fff7ed;
-    box-shadow: 0 8px 18px rgba(94, 36, 12, 0.28);
-    font-size: 14px;
-    font-weight: 900;
-    line-height: 1;
-    text-align: center;
+    bottom: 12%;
+    left: calc(var(--pick-chip-size) * -0.4);
+    z-index: 8;
+    display: flex;
+    flex-direction: column-reverse;
+    align-items: center;
     pointer-events: none;
   }
 
-  .prompt-damage-badge.negative {
-    background: #166e5b;
-    box-shadow: 0 8px 18px rgba(15, 60, 49, 0.32);
+  .pick-chip {
+    display: inline-grid;
+    place-items: center;
+    width: var(--pick-chip-size);
+    height: var(--pick-chip-size);
+    margin-top: calc(var(--pick-chip-size) * -0.3);
+    border-radius: 999px;
+    border: 1px solid rgba(128, 76, 18, 0.46);
+    background:
+      radial-gradient(circle at 34% 24%, rgba(255, 232, 121, 0.9), transparent 34%),
+      linear-gradient(180deg, #ffb03d 0%, #f39023 54%, #c97018 100%);
+    box-shadow:
+      0 3px 8px rgba(95, 48, 13, 0.32),
+      inset 0 1px 1px rgba(255, 236, 155, 0.7),
+      inset 0 -1px 2px rgba(128, 60, 10, 0.34);
+    color: #fff8df;
+    font-size: calc(var(--pick-chip-size) * 0.42);
+    font-weight: 950;
+    line-height: 1;
+    -webkit-text-stroke: 0.8px #1f1f1f;
+    paint-order: stroke fill;
+    animation: pick-chip-in 220ms cubic-bezier(0.2, 0.82, 0.22, 1) both;
+  }
+
+  .pick-chips[data-kind='energy'] .pick-chip {
+    border-color: rgba(30, 64, 96, 0.5);
+    background:
+      radial-gradient(circle at 34% 24%, rgba(196, 228, 255, 0.9), transparent 34%),
+      linear-gradient(180deg, #6db3e8 0%, #3d86c4 54%, #235d92 100%);
+    box-shadow:
+      0 3px 8px rgba(17, 44, 68, 0.32),
+      inset 0 1px 1px rgba(214, 236, 255, 0.7),
+      inset 0 -1px 2px rgba(18, 48, 76, 0.34);
+    color: #eef7ff;
+  }
+
+  @keyframes pick-chip-in {
+    0% {
+      opacity: 0;
+      transform: scale(0.4) translateY(4px);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
   }
 
   .empty-zone {

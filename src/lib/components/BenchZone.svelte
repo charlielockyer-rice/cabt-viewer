@@ -18,7 +18,8 @@
     isPlayableTarget: (slot: PokemonSlotView) => boolean;
     isBoardPromptSelectable: (slot: PokemonSlotView) => boolean;
     isBoardPromptSelected: (slot: PokemonSlotView) => boolean;
-    boardSlotDelta: (slot: PokemonSlotView) => number;
+    boardPickTally: (slot: PokemonSlotView) => number;
+    boardPickKind?: 'damage' | 'energy';
     clickSlot: (slot: PokemonSlotView) => void;
     allowDrop: (event: DragEvent, slot: PokemonSlotView) => void;
     dropToSlot: (slot: PokemonSlotView, event: DragEvent) => void;
@@ -40,7 +41,8 @@
     isPlayableTarget,
     isBoardPromptSelectable,
     isBoardPromptSelected,
-    boardSlotDelta,
+    boardPickTally,
+    boardPickKind = 'damage',
     clickSlot,
     allowDrop,
     dropToSlot,
@@ -90,7 +92,8 @@
           canDrop={isPlayableTarget(slot)}
           promptSelectable={isBoardPromptSelectable(slot)}
           promptSelected={isBoardPromptSelected(slot)}
-          slotDelta={boardSlotDelta(slot)}
+          pickTally={boardPickTally(slot)}
+          pickKind={boardPickKind}
           onclick={() => clickSlot(slot)}
           ondragover={(event) => allowDrop(event, slot)}
           ondrop={(event) => dropToSlot(slot, event)}

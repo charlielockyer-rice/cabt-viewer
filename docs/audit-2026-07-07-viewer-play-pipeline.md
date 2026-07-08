@@ -640,6 +640,15 @@ refined by the findings above. What landed:
   decision option indexes as click targets. The select contract makes this
   clean; the reveal layer already knows each sprite's serial, and decisions
   resolve card→option via `cardForOption`.
+- **Select-shape inventory + coverage guard** (planned follow-up to the
+  effect-selector; same pattern as animation coverage): enumerate the
+  structural signatures the engine's selects can take (option kinds ×
+  min/max × countdown fields × target areas), rate each signature's UI
+  affordance (board-click / card grid / labeled list), and add a guard test
+  that surfaces any newly observed signature that only gets the plain
+  fallback. `effectSelector.ts` + `boardDecisionOptions` are the first
+  recognized signatures; the universal `SelectPrompt` fallback is the
+  safety floor the guard measures against.
 - Special-condition and coin events have no animation (board state changes
   at checkup).
 - `preEvolution→discard` after a KO pops rather than animating (needs a

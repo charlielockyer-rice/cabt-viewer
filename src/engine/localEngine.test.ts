@@ -257,6 +257,7 @@ describe('LocalEngineController', () => {
     for (let counter = 6; counter >= 1; counter -= 1) {
       const decision = view.decision!;
       expect(decision.remaining).toBe(counter);
+      expect(decision.remainingKind).toBe('damage');
       expect(decision.message).toBe('Put damage counters');
       expect(decision.min).toBe(1);
       expect(decision.max).toBe(1);

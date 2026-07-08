@@ -266,6 +266,8 @@ describe('cabtObservationToGameView', () => {
 
     expect(decision?.min).toBe(1);
     expect(decision?.max).toBe(1);
+    expect(decision?.remaining).toBe(4);
+    expect(decision?.remainingKind).toBe('energy');
     expect(decision?.options).toHaveLength(4);
     expect(decision?.options.every((option) => option.card?.name === 'Basic {W} Energy')).toBe(true);
   });

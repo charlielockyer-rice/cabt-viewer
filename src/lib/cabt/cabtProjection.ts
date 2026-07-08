@@ -229,6 +229,11 @@ export function projectDecision(observation: CabtObservation, seq: number, dataM
       : select.remainEnergyCost > 0
         ? select.remainEnergyCost
         : undefined,
+    remainingKind: select.remainDamageCounter > 0
+      ? 'damage'
+      : select.remainEnergyCost > 0
+        ? 'energy'
+        : undefined,
     options: select.option.map((option, index) => projectOption(option, index, observation, dataMaps, seat)),
   };
 }
