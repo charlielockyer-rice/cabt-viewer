@@ -130,6 +130,55 @@ describe.skipIf(!enabled)('live pipeline against the real CABT engine', () => {
     }
   }, 120_000);
 
+  it('prize takes deliver full identity to the taking seat immediately', async () => {
+    // Probe for the "taken prize shows face-down in my hand" report: does the
+    // taking seat's own stream carry the card identity on the PRIZE→HAND
+    // move, and does the event-sourced hand hold the real card right away?
+    const bridge = spawnBridge();
+    try {
+      const deck = readDeck();
+      const response = await bridge.request({
+        id: 1,
+        command: 'start',
+        deck0: deck,
+        deck1: deck,
+        agentPaths: [null, probeAgent ?? null],
+        agentControlled: [true, true],
+      });
+      expect(response.ok).toBe(true);
+      const observations: CabtObservation[] = response.autoSteps;
+      const normalizer = new LiveObservationNormalizer();
+      let ownStreamTakes = 0;
+      for (const observation of observations) {
+        const streamSeat = observation.current!.yourIndex;
+        const { observation: fixed, newLogs } = normalizer.push(observation);
+        for (const log of newLogs) {
+          const isTake = (log.type === CabtLogType.MOVE_CARD || log.type === CabtLogType.MOVE_CARD_REVERSE)
+            && log.fromArea === CabtAreaType.PRIZE
+            && log.toArea === CabtAreaType.HAND;
+          if (!isTake || log.playerIndex !== streamSeat) {
+            continue;
+          }
+          ownStreamTakes += 1;
+          // The taking seat's own delivery must name the card...
+          expect(log.type, 'own-stream prize take is not reversed').toBe(CabtLogType.MOVE_CARD);
+          expect(typeof log.serial, 'own-stream prize take carries a serial').toBe('number');
+          expect(typeof log.cardId, 'own-stream prize take carries a cardId').toBe('number');
+          // ...and the event-sourced hand must hold the real card right away,
+          // not a face-down placeholder.
+          const hand = fixed.current!.players[streamSeat].hand!;
+          expect(hand.some((card) => card.serial === log.serial && card.id === log.cardId),
+            'tracked hand holds the taken prize identity immediately').toBe(true);
+        }
+      }
+      // Abomasnow mirrors reliably reach knock-outs; if this ever plays a
+      // no-KO game the probe is inconclusive rather than green.
+      expect(ownStreamTakes, 'game reached at least one own-stream prize take').toBeGreaterThan(0);
+    } finally {
+      bridge.close();
+    }
+  }, 120_000);
+
   it('controller plays a full agent-vs-agent game into coherent playback steps', async () => {
     process.env.CABT_ENGINE_MODE = 'native';
     // Optionally give seat 1 a real agent file via a throwaway workspace

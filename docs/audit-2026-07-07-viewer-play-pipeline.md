@@ -649,6 +649,26 @@ refined by the findings above. What landed:
   fallback. `effectSelector.ts` + `boardDecisionOptions` are the first
   recognized signatures; the universal `SelectPrompt` fallback is the
   safety floor the guard measures against.
+- **Full-deck search dialog** (Charlie, 2026-07-08; inventory-confirmed):
+  from_deck selects deliver `select.deck` = the entire remaining deck while
+  `select.option` lists only the legal picks. Real-PTCG presentation: show
+  the whole deck in the search dialog, legal targets selectable, the rest
+  visible but inert. Design sketch: projection attaches
+  `deckCards: CardView[]` (projected `select.deck`) to DecisionView plus a
+  raw `areaIndex` per option (the engine option's own `index` names the deck
+  position, so deck position → engine option is a lookup);
+  ChooseCardsPrompt renders `deckCards` when present, wiring clicks through
+  the mapped option indexes and dimming unmapped cards. Open UI questions
+  for Charlie: sort order (engine order vs by-name), grid size for ~40
+  cards, and whether inert cards group behind the legal ones.
+- **Prize-take identity: no information boundary** (probe-verified,
+  2026-07-08): the taking seat's own stream delivers PRIZE→HAND as a
+  non-reversed MOVE_CARD with full serial + cardId, and the event-sourced
+  hand holds the real card immediately (integration test "prize takes
+  deliver full identity to the taking seat immediately"). A taken prize
+  rendering face-down in the owner's hand is a viewer bug, not an engine
+  limit — if it recurs after the 2026-07-08 batch, re-probe the rendering
+  path, not the stream.
 - Special-condition and coin events have no animation (board state changes
   at checkup).
 - `preEvolution→discard` after a KO pops rather than animating (needs a
