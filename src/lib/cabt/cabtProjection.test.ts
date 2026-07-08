@@ -643,6 +643,118 @@ function promptObservation(): CabtObservation {
   };
 }
 
+describe('dedicated evolve select (product options: hand card × board target)', () => {
+  // Shape from the select inventory (signature c430c31c7bf5): options carry
+  // BOTH the hand source (area/index) and the evolve target
+  // (inPlayArea/inPlayIndex). Two identical hand copies × two eligible
+  // targets = four options wearing the same face — the target dimension must
+  // survive projection or the choice is silently dangerous.
+  const dataMaps: CabtDataMaps = {
+    cardData: {
+      900: { cardId: 900, name: 'Dragapult ex', cardType: CabtCardType.POKEMON, stage2: true, hp: 320 },
+      800: { cardId: 800, name: 'Drakloak', cardType: CabtCardType.POKEMON, stage1: true, hp: 90 },
+    },
+    attacks: {},
+  };
+  const drakloak = (serial: number) => ({
+    id: 800, serial, playerIndex: 0, hp: 90, maxHp: 90, appearThisTurn: false,
+    energies: [], energyCards: [], tools: [], preEvolution: [],
+  });
+  const observation = {
+    select: {
+      type: CabtSelectType.EVOLVE,
+      context: CabtSelectContext.EVOLVE,
+      minCount: 1,
+      maxCount: 1,
+      remainDamageCounter: 0,
+      remainEnergyCost: 0,
+      option: [0, 1].flatMap((handIndex) => [0, 1].map((benchIndex) => ({
+        type: CabtOptionType.EVOLVE,
+        area: CabtAreaType.HAND,
+        index: handIndex,
+        inPlayArea: CabtAreaType.BENCH,
+        inPlayIndex: benchIndex,
+      }))),
+      deck: null,
+      contextCard: null,
+      effect: null,
+    },
+    logs: [],
+    current: {
+      turn: 4,
+      turnActionCount: 1,
+      yourIndex: 0,
+      firstPlayer: 0,
+      supporterPlayed: false,
+      stadiumPlayed: false,
+      energyAttached: false,
+      retreated: false,
+      result: -1,
+      stadium: [],
+      looking: null,
+      players: [
+        {
+          ...player(),
+          hand: [
+            { id: 900, serial: 10, playerIndex: 0 },
+            { id: 900, serial: 11, playerIndex: 0 },
+          ],
+          handCount: 2,
+          bench: [drakloak(20), drakloak(21)],
+        },
+        player(),
+      ],
+    },
+  } satisfies CabtObservation;
+
+  it('projects both dimensions: hand source, board target, target card, labeled', () => {
+    const decision = projectDecision(observation, 1, dataMaps);
+
+    expect(decision?.kind).toBe('choose-cards');
+    expect(decision?.message).toBe('Choose evolution');
+    expect(decision?.options).toHaveLength(4);
+    expect(decision?.options.map((option) => option.hand)).toEqual([
+      { playerIndex: 0, handIndex: 0 },
+      { playerIndex: 0, handIndex: 0 },
+      { playerIndex: 0, handIndex: 1 },
+      { playerIndex: 0, handIndex: 1 },
+    ]);
+    expect(decision?.options.map((option) => option.boardTarget)).toEqual([
+      { ownerIndex: 0, slot: 'bench', index: 0 },
+      { ownerIndex: 0, slot: 'bench', index: 1 },
+      { ownerIndex: 0, slot: 'bench', index: 0 },
+      { ownerIndex: 0, slot: 'bench', index: 1 },
+    ]);
+    expect(decision?.options.every((option) => option.card?.name === 'Dragapult ex')).toBe(true);
+    expect(decision?.options.every((option) => option.boardTargetCard?.name === 'Drakloak')).toBe(true);
+    // Identical faces must never wear identical labels for different targets.
+    expect(decision?.options.map((option) => option.label)).toEqual([
+      'Dragapult ex → Drakloak (Bench 1)',
+      'Dragapult ex → Drakloak (Bench 2)',
+      'Dragapult ex → Drakloak (Bench 1)',
+      'Dragapult ex → Drakloak (Bench 2)',
+    ]);
+  });
+
+  it('keeps main-phase labels free of target suffixes', () => {
+    const mainObservation = {
+      ...observation,
+      select: {
+        ...observation.select,
+        type: CabtSelectType.MAIN,
+        context: CabtSelectContext.MAIN,
+      },
+    } satisfies CabtObservation;
+
+    const decision = projectDecision(mainObservation, 1, dataMaps);
+
+    expect(decision?.kind).toBe('main');
+    expect(decision?.options.every((option) => !option.label.includes('→'))).toBe(true);
+    // The two-dimensional refs still project for the hand→target click flow.
+    expect(decision?.options[0]?.boardTarget).toEqual({ ownerIndex: 0, slot: 'bench', index: 0 });
+  });
+});
+
 function player() {
   return {
     active: [null],

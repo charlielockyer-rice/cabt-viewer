@@ -154,6 +154,10 @@ export type DecisionOptionView = {
   hand?: { playerIndex: number; handIndex: number };
   // In-play destination for targeted hand plays (attach, evolve).
   boardTarget?: BoardSlotRef;
+  // The Pokemon currently occupying boardTarget. Product options (hand card
+  // × board target) can wear identical faces with different consequences;
+  // the target is what tells them apart.
+  boardTargetCard?: CardView;
   // Board slot this option points at (switch targets, new active, …).
   board?: BoardSlotRef;
   // The option selects a card attached to `board` rather than the slot itself.

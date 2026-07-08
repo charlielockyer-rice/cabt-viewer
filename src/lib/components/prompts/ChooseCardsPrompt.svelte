@@ -4,7 +4,7 @@
   import PromptIcon from './primitives/PromptIcon.svelte';
   import SelectableCard from './primitives/SelectableCard.svelte';
   import SelectedCardStrip from './primitives/SelectedCardStrip.svelte';
-  import { toggleSelectionIndex } from '../../game/decisions';
+  import { boardTargetCaption, toggleSelectionIndex } from '../../game/decisions';
   import type { DecisionView } from '../../game/types';
 
   type Props = {
@@ -58,13 +58,19 @@
   />
 
   <div class="search-card-grid">
-    {#each cards as card (card.index)}
+    {#each decision.options as option, optionPosition (option.index)}
+      {@const caption = boardTargetCaption(option)}
       <SelectableCard
-        selected={selectedIndexes.includes(card.index)}
+        selected={selectedIndexes.includes(option.index)}
         disabled={resolving}
-        onclick={() => toggleIndex(card.index)}
+        onclick={() => toggleIndex(option.index)}
       >
-        <CardTile {card} compact />
+        <div class="card-option" title={caption ? `${option.label}` : undefined}>
+          <CardTile card={cards[optionPosition]} compact />
+          {#if caption}
+            <span class="card-target-caption">→ {caption}</span>
+          {/if}
+        </div>
       </SelectableCard>
     {/each}
   </div>
@@ -78,3 +84,23 @@
     </button>
   {/snippet}
 </PromptPanel>
+
+<style>
+  .card-option {
+    display: grid;
+    gap: 4px;
+    justify-items: center;
+  }
+
+  .card-target-caption {
+    max-width: 100%;
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.2;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+</style>

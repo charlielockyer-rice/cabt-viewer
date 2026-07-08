@@ -249,14 +249,17 @@ function projectOption(
   const abilityName = option.type === CabtOptionType.ABILITY
     ? optionCard ? dataMaps.cardData[optionCard.id]?.skills?.[0]?.name : undefined
     : undefined;
+  const boardTarget = inPlayTargetFor(option, seat);
+  const targetPokemon = boardTarget ? pokemonAt(observation, boardTarget) : null;
   const projected: DecisionOptionView = {
     index,
     type: option.type,
     area: option.area ?? undefined,
-    label: decisionOptionLabel(option, dataMaps, observation, abilityName),
+    label: decisionOptionLabel(option, dataMaps, observation, abilityName, targetPokemon),
     card: optionCard ? cabtCardToView(optionCard, dataMaps) : undefined,
     hand: handSourceFor(option, seat),
-    boardTarget: inPlayTargetFor(option, seat),
+    boardTarget,
+    boardTargetCard: targetPokemon ? cabtCardToView(targetPokemon, dataMaps) : undefined,
     board: boardRefFor(option, seat),
     attached: (option.energyIndex ?? option.toolIndex) != null ? true : undefined,
     attackName: option.type === CabtOptionType.ATTACK && option.attackId
@@ -273,10 +276,28 @@ function decisionOptionLabel(
   dataMaps: CabtDataMaps,
   observation: CabtObservation,
   abilityName: string | undefined,
+  targetPokemon: CabtCard | CabtPokemon | null,
 ): string {
   if (option.type === CabtOptionType.RETREAT) return 'Retreat';
   if (option.type === CabtOptionType.ABILITY && abilityName) return abilityName;
-  return optionLabel(option, dataMaps, observation, observation.select?.context);
+  const base = optionLabel(option, dataMaps, observation, observation.select?.context);
+  // Product options (hand card × board target) outside the main phase carry
+  // the same face for different targets; the label must say which one.
+  if (observation.select?.type !== CabtSelectType.MAIN && targetPokemon) {
+    const targetName = cabtCardToView(targetPokemon, dataMaps).name;
+    const slotName = option.inPlayArea === CabtAreaType.BENCH ? `Bench ${(option.inPlayIndex ?? 0) + 1}` : 'Active';
+    return `${base} → ${targetName} (${slotName})`;
+  }
+  return base;
+}
+
+// The Pokemon currently occupying a board slot in this observation.
+function pokemonAt(observation: CabtObservation, ref: BoardSlotRef): CabtPokemon | null {
+  const player = observation.current?.players[ref.ownerIndex];
+  if (!player) {
+    return null;
+  }
+  return (ref.slot === 'bench' ? player.bench[ref.index] : player.active[ref.index]) ?? null;
 }
 
 // Main-phase options that play a card out of the acting seat's hand: PLAY /

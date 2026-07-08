@@ -28,6 +28,8 @@
   import {
     boardDecisionOptions,
     boardOptionForSlot,
+    boardTargetDecisionOptions,
+    boardTargetPickForSlot,
     endTurnOption,
     handOptionForSlot,
     isMainDecision,
@@ -204,17 +206,24 @@
   let decisionSeatIsSelf = $derived(!!decision && isSelfControlled(decision.seat));
   let mainDecision = $derived(isMainDecision(decision) && decisionSeatIsSelf ? decision : undefined);
   let boardDecision = $derived(decisionSeatIsSelf ? boardDecisionOptions(decision) : []);
+  // Product options (evolve: hand card × board target) answer by clicking
+  // the TARGET; identical faces with different consequences never reach a
+  // flat dialog unlabeled.
+  let boardTargetDecision = $derived(
+    decisionSeatIsSelf && !boardDecision.length ? boardTargetDecisionOptions(decision) : [],
+  );
+  let boardAnswerable = $derived(boardDecision.length > 0 || boardTargetDecision.length > 0);
   // The generic dialog can complete any select; board clicking is layered on
   // top of it. `preferListFallback` lets the player drop back to the dialog
   // for a board-shaped select (it stays on for the rest of the run).
   let preferListFallback = $state(false);
   let dialogDecision = $derived(
-    decision && decision.kind !== 'main' && decisionSeatIsSelf && (!boardDecision.length || preferListFallback)
+    decision && decision.kind !== 'main' && decisionSeatIsSelf && (!boardAnswerable || preferListFallback)
       ? decision
       : undefined,
   );
   $effect(() => {
-    if (!boardDecision.length) {
+    if (!boardAnswerable) {
       preferListFallback = false;
     }
   });
@@ -470,9 +479,10 @@
       return;
     }
     effectRun = commitPick(effectRun, currentDecision, indexes);
-    pendingPickSlot = indexes.length === 1
-      ? currentDecision.options.find((option) => option.index === indexes[0])?.board ?? null
-      : null;
+    const answered = indexes.length === 1
+      ? currentDecision.options.find((option) => option.index === indexes[0])
+      : undefined;
+    pendingPickSlot = answered?.board ?? answered?.boardTarget ?? null;
     const send = () => localGameApi.select(currentDecision.seq, indexes);
     await (viaDialog ? gameSessionStore.resolve(send) : gameSessionStore.run(send));
   }
@@ -518,6 +528,10 @@
     if (board) {
       return board;
     }
+    const target = targetPickForSlot(slot);
+    if (target && target !== 'ambiguous') {
+      return target;
+    }
     const hand = selectedHand ?? draggingHand;
     if (!hand || !canAct(hand.playerIndex)) {
       return undefined;
@@ -525,10 +539,21 @@
     return handOptionForSlot(mainDecision, hand.playerIndex, hand.handIndex, slotRef(slot));
   }
 
+  function targetPickForSlot(slot: PokemonSlotView) {
+    return boardTargetPickForSlot(decisionSeatIsSelf ? decision : undefined, slotRef(slot));
+  }
+
   function clickSlot(slot: PokemonSlotView) {
     const option = slotOption(slot);
     if (option) {
       selectDecisionOption(option.index);
+      return;
+    }
+
+    // Distinct cards competing for this target — the dialog carries the
+    // labeled choice.
+    if (targetPickForSlot(slot) === 'ambiguous') {
+      preferListFallback = true;
       return;
     }
 
@@ -638,7 +663,8 @@
   }
 
   function isBoardPromptSelectable(slot: PokemonSlotView) {
-    return !!boardOptionForSlot(decisionSeatIsSelf ? decision : undefined, slotRef(slot));
+    return !!boardOptionForSlot(decisionSeatIsSelf ? decision : undefined, slotRef(slot))
+      || !!targetPickForSlot(slot);
   }
 
   function isBoardPromptSelected(slot: PokemonSlotView) {
@@ -826,7 +852,7 @@
         bind:actionStepDelayMs={viewSettingsStore.actionStepDelayMs}
         bind:themePreference={viewSettingsStore.themePreference}
         busy={commandBusy}
-        promptActive={replayMode || !!dialogDecision || !!boardDecision.length}
+        promptActive={replayMode || !!dialogDecision || boardAnswerable}
         {gameFinished}
         {error}
         resetPerspective={() => viewSettingsStore.resetPerspective()}
@@ -870,7 +896,7 @@
         />
       {/if}
 
-      {#if boardDecision.length && decision && !preferListFallback}
+      {#if boardAnswerable && decision && !preferListFallback}
         <EffectSelectorBanner
           message={decision.message}
           placed={effectProgress?.placed}
@@ -979,7 +1005,7 @@
             slot={focusedSlot}
             availableActions={focusedPlayer?.availableActions}
             busy={sessionBusy}
-            promptActive={!!dialogDecision || !!boardDecision.length}
+            promptActive={!!dialogDecision || boardAnswerable}
             canAct={focusedCanAct}
             close={() => {
               selectionStore.clearFocus();

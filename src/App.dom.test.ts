@@ -182,6 +182,116 @@ describe('App board click path (happy-dom)', () => {
       expect(gameStore.decision).toBeUndefined();
     }, { timeout: 5000 });
   });
+
+  it('answers the dedicated evolve select by clicking the target Pokemon', async () => {
+    // Product options from the select inventory: two identical Dragapult in
+    // hand × two Drakloak targets = four options wearing the same face.
+    // Clicking the TARGET is the disambiguation.
+    const engine = new LocalEngineController() as any;
+    const drakloak = (serial: number) => ({
+      id: 800, serial, playerIndex: 0, hp: 90, maxHp: 90, appearThisTurn: false,
+      energies: [], energyCards: [], tools: [], preEvolution: [],
+    });
+    const evolveSelect = {
+      type: CabtSelectType.EVOLVE,
+      context: CabtSelectContext.EVOLVE,
+      minCount: 1,
+      maxCount: 1,
+      remainDamageCounter: 0,
+      remainEnergyCost: 0,
+      option: [0, 1].flatMap((handIndex) => [0, 1].map((benchIndex) => ({
+        type: CabtOptionType.EVOLVE,
+        area: CabtAreaType.HAND,
+        index: handIndex,
+        inPlayArea: CabtAreaType.BENCH,
+        inPlayIndex: benchIndex,
+      }))),
+      deck: null,
+      contextCard: null,
+      effect: null,
+    };
+    const evolveState = () => ({
+      turn: 4,
+      turnActionCount: 1,
+      yourIndex: 0,
+      firstPlayer: 0,
+      supporterPlayed: false,
+      stadiumPlayed: false,
+      energyAttached: false,
+      retreated: false,
+      result: -1,
+      stadium: [],
+      looking: null,
+      players: [
+        playerState({
+          hand: [
+            { id: 900, serial: 10, playerIndex: 0 },
+            { id: 900, serial: 11, playerIndex: 0 },
+          ],
+          handCount: 2,
+          bench: [drakloak(20), drakloak(21)],
+        }),
+        playerState({ hand: null, handCount: 0 }),
+      ],
+    });
+
+    const bridgeSelections: number[][] = [];
+    engine.sessionId = 'test-session';
+    engine.playerControls = ['self', 'agent'];
+    engine.decisionSeq = 1;
+    engine.dataMaps = {
+      cardData: {
+        900: { cardId: 900, name: 'Dragapult ex', cardType: 0, stage2: true, hp: 320 },
+        800: { cardId: 800, name: 'Drakloak', cardType: 0, stage1: true, hp: 90 },
+      },
+      attacks: {},
+    };
+    engine.observation = { select: evolveSelect, logs: [], current: evolveState() };
+    engine.bridge = {
+      request: async ({ selection }: { selection: number[] }) => {
+        bridgeSelections.push(selection);
+        return {
+          ok: true,
+          observation: { select: null, logs: [], current: evolveState() },
+        };
+      },
+    };
+    const selectSpy = vi.spyOn(localGameApi, 'select').mockImplementation(
+      (seq: number, indexes: number[]) => engine.handle({
+        type: 'select',
+        payload: { sessionId: 'test-session', seq, indexes },
+      }),
+    );
+
+    const initial = engine.viewResponse();
+    expect(initial.ok).toBe(true);
+    expect(initial.view.decision?.message).toBe('Choose evolution');
+    gameStore.game = initial.view;
+    gameStore.decision = initial.view.decision;
+    const seq = initial.view.decision!.seq;
+
+    app = mount(App, { target: document.body });
+    flushSync();
+
+    // Both Drakloak targets highlight on the player's own bench; the banner
+    // (not a six-identical-cards dialog) offers the click.
+    const target = (index: number) => {
+      const element = document.querySelector<HTMLButtonElement>(`[data-testid="slot-0-bench-${index}"]`);
+      expect(element, `own bench slot ${index} should render`).toBeTruthy();
+      return element!;
+    };
+    expect(target(0).classList.contains('prompt-selectable')).toBe(true);
+    expect(target(1).classList.contains('prompt-selectable')).toBe(true);
+    expect(document.querySelector('.effect-selector-banner')).toBeTruthy();
+
+    // Clicking the second Drakloak evolves THAT one: the first option whose
+    // boardTarget is bench 1 (duplicate hand copies are game-equivalent).
+    target(1).click();
+    flushSync();
+    await vi.waitFor(() => expect(selectSpy).toHaveBeenCalledTimes(1));
+    expect(selectSpy.mock.calls[0]).toEqual([seq, [1]]);
+    expect(bridgeSelections).toEqual([[1]]);
+  });
 });
 
 function playerState(overrides: Record<string, unknown> = {}) {
