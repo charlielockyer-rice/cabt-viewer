@@ -434,3 +434,34 @@ describe('choreograph viewport family', () => {
     expect(take.motions[0].to).toEqual({ kind: 'hand-slot', player: 0, serial: 30, fromEnd: 1 });
   });
 });
+
+describe('attack announce robustness', () => {
+  it('announces an identified attack over the attacker', () => {
+    const { effects } = choreograph([
+      { id: 900, message: "Player 2 used Arm Thrust with Makuhita.", playerIndex: 1, kind: 'Attack', params: { cardId: 500, serial: 12, attackId: 33 } },
+    ], [player(0), player(1)]);
+    const announce = effects.find((effect) => effect.kind === 'announce-attack');
+    expect(announce).toBeTruthy();
+    expect(announce!.anchor).toEqual({ kind: 'pokemon', player: 1, serial: 12, cardId: 500 });
+    expect(announce!.label).toBe('Arm Thrust');
+  });
+
+  it('still announces an attack with no card identity, over the active slot', () => {
+    // Some live shapes deliver the opponent attack without serial/cardId; an
+    // attack always comes from the active, so the bubble must not be dropped.
+    const { effects } = choreograph([
+      { id: 901, message: "Player 2 used Arm Thrust with Makuhita.", playerIndex: 1, kind: 'Attack', params: { attackId: 33 } },
+    ], [player(0), player(1)]);
+    const announce = effects.find((effect) => effect.kind === 'announce-attack');
+    expect(announce).toBeTruthy();
+    expect(announce!.anchor).toEqual({ kind: 'slot', player: 1, slot: 'active', index: 0 });
+    expect(announce!.label).toBe('Arm Thrust');
+  });
+
+  it('still drops ability announces without identity (bench abilities need the exact Pokemon)', () => {
+    const { effects } = choreograph([
+      { id: 902, message: 'Player 2 used Sudowoodo Watch with Sudowoodo.', playerIndex: 1, kind: 'Ability', params: {} },
+    ], [player(0), player(1)]);
+    expect(effects.find((effect) => effect.kind === 'announce-ability')).toBeUndefined();
+  });
+});

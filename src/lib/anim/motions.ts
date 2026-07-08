@@ -232,17 +232,24 @@ function announceEffects(event: ActionTimelineEvent, batch: ActionTimelineEvent[
   const cardId = num(params.cardId);
   const targetSerial = num(params.serialTarget);
   const targetCardId = num(params.cardIdTarget);
-  if (player === undefined || (serial === undefined && cardId === undefined)) {
+  const attack = event.kind === 'Attack';
+  // Abilities need the exact Pokemon (bench abilities exist); an attack
+  // always comes from the active, so a missing identity still announces —
+  // anchored to the attacker's active slot.
+  if (player === undefined || (!attack && serial === undefined && cardId === undefined)) {
     return [];
   }
-  const attack = event.kind === 'Attack';
+  const identitySerial = targetSerial ?? serial;
+  const identityCardId = targetCardId ?? cardId;
   const stadium = !attack && num(params.area) === CabtAreaType.STADIUM;
   return [{
     id: `${event.id}-announce`,
     kind: attack ? 'announce-attack' : 'announce-ability',
     anchor: stadium
       ? { kind: 'stadium', player, serial }
-      : { kind: 'pokemon', player, serial: targetSerial ?? serial, cardId: targetCardId ?? cardId },
+      : attack && identitySerial === undefined && identityCardId === undefined
+        ? { kind: 'slot', player, slot: 'active', index: 0 }
+        : { kind: 'pokemon', player, serial: identitySerial, cardId: identityCardId },
     player,
     order: 0,
     label: announceLabel(event),
