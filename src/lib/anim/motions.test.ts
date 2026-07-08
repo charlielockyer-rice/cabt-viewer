@@ -395,6 +395,24 @@ describe('choreograph viewport family', () => {
     expect(motions[3].toDeck).toBe(true);
   });
 
+  it('classifies deck-bottom returns as reveal-returns (Recon Directive shape)', () => {
+    // Probe-verified engine shape: look at top 2, take one to hand, the
+    // other goes to area 14 (deck bottom) — previously unmapped, which
+    // stranded the unchosen sprite in the reveal layer.
+    const players = [player(0), player(1)];
+    const { motions } = choreograph([
+      moveCard(0, CabtAreaType.DECK, CabtAreaType.LOOKING, 1086, 83),
+      moveCard(0, CabtAreaType.DECK, CabtAreaType.LOOKING, 1097, 86),
+      moveCard(0, CabtAreaType.LOOKING, CabtAreaType.HAND, 1086, 83),
+      moveCard(0, CabtAreaType.LOOKING, CabtAreaType.DECK_BOTTOM, 1097, 86),
+    ], players);
+
+    const bottomReturn = motions.at(-1);
+    expect(bottomReturn?.style).toBe('reveal-return');
+    expect(bottomReturn?.revealSerial).toBe(86);
+    expect(bottomReturn?.toDeck).toBe(true);
+  });
+
   it('classifies prize placement effects and prize takes, including facedown moves', () => {
     const players = [player(0), player(1)];
     const placement = choreograph([

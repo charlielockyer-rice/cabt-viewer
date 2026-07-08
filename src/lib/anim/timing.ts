@@ -180,7 +180,7 @@ function animationPhaseForEvent(event: ActionTimelineEvent): AnimationPhase | nu
         stepMs: actionAnimationTiming.handMoveStepMs,
       };
     }
-    if (fromArea === CabtAreaType.LOOKING && toArea === CabtAreaType.DECK) {
+    if (fromArea === CabtAreaType.LOOKING && (toArea === CabtAreaType.DECK || toArea === CabtAreaType.DECK_BOTTOM)) {
       return {
         key: `DeckRevealReturn:${playerKey}`,
         durationMs: actionAnimationTiming.deckRevealReturnMs,

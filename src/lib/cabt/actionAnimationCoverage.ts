@@ -19,6 +19,7 @@ const polishedMoveAreas = new Set([
   moveKey(CabtAreaType.DECK, CabtAreaType.BENCH),
   moveKey(CabtAreaType.DECK, CabtAreaType.LOOKING),
   moveKey(CabtAreaType.LOOKING, CabtAreaType.DECK),
+  moveKey(CabtAreaType.LOOKING, CabtAreaType.DECK_BOTTOM),
   moveKey(CabtAreaType.LOOKING, CabtAreaType.HAND),
   moveKey(CabtAreaType.HAND, CabtAreaType.DECK),
   moveKey(CabtAreaType.HAND, CabtAreaType.DISCARD),
@@ -103,7 +104,7 @@ export function classifyAnimationCoverage(
       };
     }
 
-    if (fromArea === CabtAreaType.LOOKING && toArea === CabtAreaType.DECK) {
+    if (fromArea === CabtAreaType.LOOKING && (toArea === CabtAreaType.DECK || toArea === CabtAreaType.DECK_BOTTOM)) {
       notes.push('Depends on the reveal sprite still being held from an earlier deck reveal phase.');
       return { key, level: 'conditional', label: 'Revealed card return', notes };
     }
@@ -278,6 +279,7 @@ export function areaName(area: number): string {
     [CabtAreaType.PLAYER]: 'player',
     [CabtAreaType.LOOKING]: 'looking',
     [CabtAreaType.PLAYING]: 'playing',
+    [CabtAreaType.DECK_BOTTOM]: 'deck-bottom',
   };
   return areaMap[area] ?? `area-${area}`;
 }

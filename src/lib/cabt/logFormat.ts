@@ -150,6 +150,9 @@ function moveCardMessage(actor: string, card: string, log: Record<string, unknow
   if (Number(log.fromArea) === CabtAreaType.DECK && Number(log.toArea) === CabtAreaType.DISCARD) {
     return `${actor} discarded ${card} from the deck.`;
   }
+  if (Number(log.toArea) === CabtAreaType.DECK_BOTTOM) {
+    return `${actor} put ${card} on the bottom of the deck.`;
+  }
   return `${actor} moved ${card} from ${areaName(log.fromArea)} to ${areaName(log.toArea)}.`;
 }
 
@@ -180,6 +183,7 @@ function areaName(area: unknown): string {
     [CabtAreaType.PLAYER]: 'player',
     [CabtAreaType.LOOKING]: 'selection',
     [CabtAreaType.PLAYING]: 'the play zone',
+    [CabtAreaType.DECK_BOTTOM]: 'the bottom of the deck',
   };
   return areaMap[Number(area)] ?? 'zone';
 }

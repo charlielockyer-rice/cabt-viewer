@@ -632,6 +632,24 @@ refined by the findings above. What landed:
   `CABT_SAMPLE_SUBMISSION_DIR=… PYTHON=… npx vitest run liveBridge`;
   `CABT_PROBE_AGENT` optionally seats a real agent file.
 
+## Polish backlog (recorded, not built)
+
+- **Click-the-revealed-cards prompts** (Charlie, 2026-07-07): selection
+  prompts for revealed cards should let the player click the reveal-layer
+  sprites directly instead of a separate dialog — the sprites would carry
+  decision option indexes as click targets. The select contract makes this
+  clean; the reveal layer already knows each sprite's serial, and decisions
+  resolve card→option via `cardForOption`.
+- Special-condition and coin events have no animation (board state changes
+  at checkup).
+- `preEvolution→discard` after a KO pops rather than animating (needs a
+  motion style for stacked cards; the pre-KO beat already gives it a live
+  source anchor).
+- Attached-card→hand moves lack a cross-plane motion.
+- A card whose identity hasn't reached the viewer's stream yet (face-down
+  prize taken as the turn passes) renders as a back until the next own
+  observation — an information-theoretic limit, not fixable client-side.
+
 ## Probe appendix
 
 Probes ran headless against the real engine (Abomasnow mirror,

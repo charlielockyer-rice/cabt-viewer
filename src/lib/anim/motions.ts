@@ -491,7 +491,8 @@ function moveCardChoreography(
     }], effects: [] };
   }
 
-  if (fromArea === CabtAreaType.LOOKING && (toArea === CabtAreaType.HAND || toArea === CabtAreaType.DECK)) {
+  if (fromArea === CabtAreaType.LOOKING
+    && (toArea === CabtAreaType.HAND || toArea === CabtAreaType.DECK || toArea === CabtAreaType.DECK_BOTTOM)) {
     if (serial === undefined) {
       return none;
     }

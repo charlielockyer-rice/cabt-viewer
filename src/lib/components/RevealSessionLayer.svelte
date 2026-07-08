@@ -115,7 +115,71 @@
       takeRevealedCard(motion);
     }
     returnRevealedCards(revealMotions.filter((item) => item.style === 'reveal-return'));
+    concludeSessionLeftovers(revealMotions, existingSessionAttaches);
   });
+
+  // Safety net: once a session's resolution batch arrives (any take, return,
+  // or attach), every sprite the batch did not address returns to the deck
+  // instead of lingering — a stranded full-size card sprite is the worst-case
+  // UI state, and an unmapped resolution encoding must degrade to a clean
+  // departure, never a hang.
+  function concludeSessionLeftovers(revealMotions: CardMotion[], attaches: TargetEffect[]) {
+    const resolutions = revealMotions.filter((motion) => motion.style === 'reveal-take' || motion.style === 'reveal-return');
+    if (!resolutions.length && !attaches.length) {
+      return;
+    }
+    const addressed = new Set<number>();
+    for (const motion of revealMotions) {
+      if (motion.revealSerial !== undefined) {
+        addressed.add(motion.revealSerial);
+      }
+    }
+    for (const effect of attaches) {
+      if (effect.sourceSerial !== undefined) {
+        addressed.add(effect.sourceSerial);
+      }
+    }
+    const holdingModes: RevealMode[] = ['revealing', 'searching', 'held', 'selecting'];
+    const leftovers = reveals
+      .flatMap((animation) => animation.sprites)
+      .filter((sprite) => holdingModes.includes(sprite.mode)
+        && (sprite.serial === undefined || !addressed.has(sprite.serial)));
+    if (!leftovers.length) {
+      return;
+    }
+    const baseMs = Math.max(0, ...resolutions.map((motion) => motion.startMs), ...attaches.map((effect) => effect.startMs));
+    const startedGeneration = generation;
+    for (const sprite of leftovers) {
+      const player = sprite.card.playerIndex ?? 0;
+      const deckRect = resolveAnchor({ kind: 'deck', player })?.geometry.getBoundingClientRect();
+      const center = spriteCenter(sprite);
+      const exit = deckRect && deckRect.width > 0
+        ? centerOf(deckRect)
+        : { x: center.x, y: center.y + 60 };
+      updateSprites((item) => (item.id === sprite.id
+        ? {
+            ...item,
+            mode: 'returning',
+            delayMs: baseMs,
+            exitX: exit.x - center.x,
+            exitY: exit.y - center.y,
+            exitScale: deckRect && deckRect.width > 0
+              ? Math.max(0.32, Math.min(0.9, deckRect.width / item.width))
+              : 0.5,
+          }
+        : item));
+      const timer = setTimeout(() => {
+        if (startedGeneration !== generation) {
+          return;
+        }
+        removeSprites((item) => item.id === sprite.id);
+      }, baseMs + actionAnimationTiming.deckRevealReturnMs + 80);
+      timers.push(timer);
+    }
+    if (!replayMode) {
+      animationActivity.extendBy(baseMs + actionAnimationTiming.deckRevealReturnMs + 120);
+    }
+  }
 
   function isRevealMotion(motion: CardMotion): boolean {
     return motion.style === 'reveal'

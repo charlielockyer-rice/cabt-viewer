@@ -12,6 +12,9 @@ export const CabtAreaType = {
   PLAYER: 11,
   LOOKING: 12,
   PLAYING: 13,
+  // Undocumented in the sample bundle: destination for cards placed on the
+  // bottom of the deck (e.g. Recon Directive's unchosen card). Probe-verified.
+  DECK_BOTTOM: 14,
 } as const;
 
 export const CabtEnergyType = {
