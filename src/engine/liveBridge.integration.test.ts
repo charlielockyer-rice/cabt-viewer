@@ -16,6 +16,8 @@ import { describe, expect, it } from 'vitest';
 import { LiveObservationNormalizer } from './liveSteps';
 import { LocalEngineController } from './localEngine';
 import { cabtObservationToGameView } from '../lib/cabt/cabtProjection';
+import { classifyAnimationCoverage } from '../lib/cabt/actionAnimationCoverage';
+import { cabtLogsToTimeline } from '../lib/cabt/logFormat';
 import { CabtAreaType, CabtLogType, type CabtObservation } from '../lib/cabt/types';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -97,6 +99,17 @@ describe.skipIf(!enabled)('live pipeline against the real CABT engine', () => {
         expect(newLogs).toHaveLength(freshTruth);
         emitted += newLogs.length;
 
+        // Animation-coverage sweep: every event the engine emits live must
+        // classify into a known animation mapping — anything 'unsupported'
+        // beyond the documented complex-mutation kinds is a regression.
+        const { events } = cabtLogsToTimeline(newLogs);
+        for (const event of events) {
+          const coverage = classifyAnimationCoverage(event, events);
+          if (coverage.level === 'unsupported') {
+            expect(['Devolve', 'Change', 'MoveAttached']).toContain(event.kind);
+          }
+        }
+
         // Seat-stable perspective: both hands always materialized to
         // handCount, every card carrying a serial for animation anchors.
         for (const player of fixed.current!.players) {
@@ -177,6 +190,46 @@ describe.skipIf(!enabled)('live pipeline against the real CABT engine', () => {
         delete process.env.CABT_AGENTS_FILE;
         fs.rmSync(path.dirname(manifestFile), { recursive: true, force: true });
       }
+    }
+  }, 180_000);
+
+  it('synthesizes ability announces live, ahead of their effects', async () => {
+    process.env.CABT_ENGINE_MODE = 'native';
+    const controller = new LocalEngineController();
+    try {
+      // The rule-based Lucario agents use abilities and retreats heavily.
+      const deck = fs.readFileSync(path.join(FRONTEND_ROOT, 'public', 'agents', 'mega-lucario-ex', 'deck.csv'), 'utf8')
+        .split('\n').filter(Boolean).map(Number);
+      const response = await controller.handle({
+        type: 'startGame',
+        payload: {
+          player1: { name: 'Lucario A', deck, control: 'agent', agentId: 'mega-lucario-ex' },
+          player2: { name: 'Lucario B', deck, control: 'agent', agentId: 'mega-lucario-ex' },
+        },
+      });
+      expect(response.ok).toBe(true);
+      if (!response.ok) return;
+
+      const sequence = response.sequence ?? [];
+      let announces = 0;
+      for (const step of sequence) {
+        const events = step.actionTimeline ?? [];
+        for (let index = 0; index < events.length; index += 1) {
+          if (events[index].kind !== 'Ability') {
+            continue;
+          }
+          announces += 1;
+          // The announce leads its step: effects resolve after the bubble.
+          expect(index).toBe(0);
+          const params = events[index].params as Record<string, unknown>;
+          expect(typeof params.abilityName).toBe('string');
+          expect(typeof params.cardId).toBe('number');
+        }
+      }
+      expect(announces).toBeGreaterThan(0);
+    } finally {
+      controller.close();
+      delete process.env.CABT_ENGINE_MODE;
     }
   }, 180_000);
 

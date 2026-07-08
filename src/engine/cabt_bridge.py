@@ -118,42 +118,51 @@ class Session:
 
         self.obs = obs
         self.active = True
-        auto_steps = self.play_ai_turns()
-        return self.snapshot([obs, *auto_steps])
+        auto_steps, auto_actions = self.play_ai_turns()
+        return self.snapshot([obs, *auto_steps], [None, *auto_actions])
 
     def select(self, selection: list[int]) -> dict[str, Any]:
         if not self.active:
             raise RuntimeError("No active CABT battle.")
         selected_step = battle_select(selection)
         self.obs = selected_step
-        auto_steps = self.play_ai_turns()
-        return self.snapshot([selected_step, *auto_steps])
+        auto_steps, auto_actions = self.play_ai_turns()
+        return self.snapshot([selected_step, *auto_steps], [list(selection), *auto_actions])
 
     def state(self) -> dict[str, Any]:
         return self.snapshot()
 
-    def play_ai_turns(self) -> list[dict[str, Any]]:
+    def play_ai_turns(self) -> tuple[list[dict[str, Any]], list[list[int]]]:
         auto_steps: list[dict[str, Any]] = []
+        auto_actions: list[list[int]] = []
         for _ in range(MAX_AUTO_STEPS):
             if not self.obs:
-                return auto_steps
+                return auto_steps, auto_actions
             current = self.obs.get("current")
             select = self.obs.get("select")
             if not current or current.get("result", -1) >= 0 or select is None:
-                return auto_steps
+                return auto_steps, auto_actions
             player_index = current.get("yourIndex")
             if player_index not in (0, 1) or not self.agent_controlled[player_index]:
-                return auto_steps
+                return auto_steps, auto_actions
             action = self.agents[player_index](self.obs)
             self.obs = battle_select(action)
             auto_steps.append(self.obs)
+            auto_actions.append(list(action))
         raise RuntimeError(f"AI auto-play limit exceeded ({MAX_AUTO_STEPS} selections).")
 
-    def snapshot(self, auto_steps: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    def snapshot(
+        self,
+        auto_steps: list[dict[str, Any]] | None = None,
+        auto_actions: list[list[int] | None] | None = None,
+    ) -> dict[str, Any]:
         return {
             "ok": True,
             "observation": self.obs,
             "autoSteps": auto_steps or [],
+            # autoActions[i] is the selection that produced autoSteps[i]
+            # (None for an initial observation nothing acted on).
+            "autoActions": auto_actions or [],
             "cards": [to_jsonable(card) for card in all_card_data()],
             "attacks": [to_jsonable(attack) for attack in all_attack()],
         }

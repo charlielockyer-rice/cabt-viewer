@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { LiveObservationNormalizer } from './liveSteps';
-import { CabtAreaType, CabtLogType, type CabtObservation, type CabtPlayerState } from '../lib/cabt/types';
+import { LiveObservationNormalizer, synthesizedAnnounceLog } from './liveSteps';
+import { CabtAreaType, CabtLogType, CabtOptionType, CabtSelectType, type CabtObservation, type CabtPlayerState } from '../lib/cabt/types';
 
 describe('LiveObservationNormalizer', () => {
   describe('canonical event stream (positional dedupe)', () => {
@@ -146,6 +146,145 @@ describe('LiveObservationNormalizer', () => {
       ], { seat0HandCount: 1 }));
 
       expect(result.observation.current!.players[0].hand).toEqual([{ id: 10, serial: 1, playerIndex: 0 }]);
+    });
+  });
+
+  describe('synthesized ability announces', () => {
+    const dataMaps = {
+      cardData: {
+        700: {
+          cardId: 700,
+          name: 'Hariyama',
+          cardType: 0,
+          skills: [{ name: 'Punk Up', text: 'Boost your Fighting Pokemon.' }],
+        },
+        701: {
+          cardId: 701,
+          name: 'Dragapult ex',
+          cardType: 0,
+          skills: [{ name: 'We Draw', text: 'When you play this Pokemon from your hand to evolve 1 of your Pokemon, you may draw 3 cards.' }],
+        },
+      },
+      attacks: {},
+    };
+
+    it('announces a selected ability option with the source Pokemon', () => {
+      const previous = observation(0, []);
+      previous.select = {
+        type: CabtSelectType.MAIN,
+        context: 0,
+        minCount: 1,
+        maxCount: 1,
+        remainDamageCounter: 0,
+        remainEnergyCost: 0,
+        option: [
+          { type: CabtOptionType.END },
+          { type: CabtOptionType.ABILITY, area: CabtAreaType.ACTIVE, index: 0, playerIndex: 0 },
+        ],
+        deck: null,
+        contextCard: null,
+        effect: null,
+      };
+      previous.current!.players[0].active = [{
+        id: 700, serial: 5, playerIndex: 0, hp: 150, maxHp: 150,
+        appearThisTurn: false, energies: [], energyCards: [], tools: [], preEvolution: [],
+      }];
+
+      const log = synthesizedAnnounceLog(previous, [1], [], [], dataMaps);
+
+      expect(log).toEqual(expect.objectContaining({
+        type: 'Ability',
+        playerIndex: 0,
+        cardId: 700,
+        serial: 5,
+        abilityName: 'Punk Up',
+      }));
+    });
+
+    it('announces retreat like an ability over the retreating active', () => {
+      const previous = observation(1, []);
+      previous.select = {
+        type: CabtSelectType.MAIN,
+        context: 0,
+        minCount: 1,
+        maxCount: 1,
+        remainDamageCounter: 0,
+        remainEnergyCost: 0,
+        option: [{ type: CabtOptionType.RETREAT, area: CabtAreaType.ACTIVE, index: 0, playerIndex: 1 }],
+        deck: null,
+        contextCard: null,
+        effect: null,
+      };
+      previous.current!.players[1].active = [{
+        id: 700, serial: 9, playerIndex: 1, hp: 150, maxHp: 150,
+        appearThisTurn: false, energies: [], energyCards: [], tools: [], preEvolution: [],
+      }];
+
+      const log = synthesizedAnnounceLog(previous, [0], [], [], dataMaps);
+
+      expect(log).toEqual(expect.objectContaining({ type: 'Ability', abilityName: 'Retreat', cardId: 700, serial: 9 }));
+    });
+
+    it('announces a confirmed yes/no ability trigger from its context card', () => {
+      const previous = observation(0, []);
+      previous.select = {
+        type: CabtSelectType.YES_NO,
+        context: 43,
+        minCount: 1,
+        maxCount: 1,
+        remainDamageCounter: 0,
+        remainEnergyCost: 0,
+        option: [{ type: CabtOptionType.YES }, { type: CabtOptionType.NO }],
+        deck: null,
+        contextCard: { id: 700, serial: 7, playerIndex: 0 },
+        effect: null,
+      };
+
+      expect(synthesizedAnnounceLog(previous, [0], [], [], dataMaps)).toEqual(expect.objectContaining({
+        type: 'Ability',
+        cardId: 700,
+        abilityName: 'Punk Up',
+      }));
+      // Answering No announces nothing.
+      expect(synthesizedAnnounceLog(previous, [1], [], [], dataMaps)).toBeNull();
+    });
+
+    it('announces on-evolve draw abilities when the draws land', () => {
+      const previousNewLogs = [
+        { type: CabtLogType.EVOLVE, playerIndex: 0, cardId: 701, serial: 12 },
+      ];
+      const draws = [
+        { type: CabtLogType.DRAW, playerIndex: 0, cardId: 5, serial: 30 },
+        { type: CabtLogType.DRAW, playerIndex: 0, cardId: 6, serial: 31 },
+        { type: CabtLogType.DRAW, playerIndex: 0, cardId: 7, serial: 32 },
+      ];
+
+      expect(synthesizedAnnounceLog(null, null, previousNewLogs, draws, dataMaps)).toEqual(expect.objectContaining({
+        type: 'Ability',
+        cardId: 701,
+        abilityName: 'We Draw',
+        trigger: 'Evolve',
+      }));
+      // A different draw count is not the trigger.
+      expect(synthesizedAnnounceLog(null, null, previousNewLogs, draws.slice(0, 2), dataMaps)).toBeNull();
+    });
+
+    it('announces nothing for ordinary selections', () => {
+      const previous = observation(0, []);
+      previous.select = {
+        type: CabtSelectType.MAIN,
+        context: 0,
+        minCount: 1,
+        maxCount: 1,
+        remainDamageCounter: 0,
+        remainEnergyCost: 0,
+        option: [{ type: CabtOptionType.END }],
+        deck: null,
+        contextCard: null,
+        effect: null,
+      };
+
+      expect(synthesizedAnnounceLog(previous, [0], [], [], dataMaps)).toBeNull();
     });
   });
 

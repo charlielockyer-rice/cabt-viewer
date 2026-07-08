@@ -5,7 +5,7 @@ import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { cabtObservationToGameView, projectDecision, type CabtDataMaps } from '../lib/cabt/cabtProjection';
 import { cabtLogsToTimeline } from '../lib/cabt/logFormat';
-import { LiveObservationNormalizer } from './liveSteps';
+import { LiveObservationNormalizer, synthesizedAnnounceLog } from './liveSteps';
 import { workspaceAgentPath } from './workspaceAgents';
 import {
   type CabtAttack,
@@ -27,6 +27,7 @@ type BridgeResponse = {
   traceback?: string;
   observation?: CabtObservation;
   autoSteps?: CabtObservation[];
+  autoActions?: Array<number[] | null>;
   cards?: CabtCardData[];
   attacks?: CabtAttack[];
 };
@@ -84,6 +85,7 @@ export class LocalEngineController {
   private actionTimeline: ActionTimelineEvent[] = [];
   private timelineId = 1;
   private normalizer = new LiveObservationNormalizer();
+  private lastNewLogs: Array<Record<string, unknown>> = [];
   private pendingSequence: GameView[] = [];
   private sessionId = '';
   private decisionSeq = 0;
@@ -174,6 +176,7 @@ export class LocalEngineController {
     this.actionTimeline = [];
     this.timelineId = 1;
     this.normalizer = new LiveObservationNormalizer(concealedSeats(playerControls));
+    this.lastNewLogs = [];
     this.pendingSequence = [];
     this.replayFrames = [];
     this.playerControls = playerControls;
@@ -275,15 +278,23 @@ export class LocalEngineController {
   // they are history frames; only the final interactive view prompts.
   private appendSteps(response: BridgeResponse): GameView[] {
     const observations = response.autoSteps?.length ? response.autoSteps : response.observation ? [response.observation] : [];
+    const actions = response.autoActions ?? [];
     const steps: GameView[] = [];
-    for (const rawObservation of observations) {
-      const { observation, newLogs } = this.normalizer.push(rawObservation);
+    let previous = this.observation;
+    for (let index = 0; index < observations.length; index += 1) {
+      const { observation, newLogs } = this.normalizer.push(observations[index]);
+      // The engine never logs ability usage; announce it from the selection
+      // that produced this observation (same synthesis as replay).
+      const announce = synthesizedAnnounceLog(previous, actions[index] ?? null, this.lastNewLogs, newLogs, this.dataMaps);
+      const stepLogs = announce ? [announce, ...newLogs] : newLogs;
+      previous = observation;
+      this.lastNewLogs = newLogs;
       this.observation = observation;
       this.replayFrames.push(observation);
-      if (!newLogs.length) {
+      if (!stepLogs.length) {
         continue;
       }
-      const result = cabtLogsToTimeline(newLogs, { nextId: this.timelineId });
+      const result = cabtLogsToTimeline(stepLogs, { nextId: this.timelineId });
       this.timelineId = result.nextId;
       this.actionTimeline = [...this.actionTimeline, ...result.events].slice(-200);
       for (const event of result.events) {
@@ -320,6 +331,7 @@ export class LocalEngineController {
     this.actionTimeline = [];
     this.timelineId = 1;
     this.normalizer = new LiveObservationNormalizer();
+    this.lastNewLogs = [];
     this.pendingSequence = [];
     this.replayFrames = [];
     this.logs = [...this.logs, { id: this.logId++, message }];
