@@ -14,6 +14,7 @@ import {
 } from '../game/types';
 import {
   CabtAreaType,
+  CabtCardType,
   CabtOptionType,
   CabtSelectContext,
   CabtSelectType,
@@ -347,16 +348,27 @@ function buildPlayerView(
 // The engine parks a resolving or turn-long Trainer in its Playing zone,
 // exposed through the select payload as contextCard/effect. Surfacing those
 // as the play zone keeps the card visible between play and eventual discard.
+// Only Trainer cards belong there: the engine also uses contextCard/effect to
+// name an ability's source Pokemon (already on the board) or an energy being
+// attached, and rendering those in the play zone duplicates them.
 function playZoneForPlayer(
   select: CabtObservation['select'],
   playerIndex: number,
   dataMaps: CabtDataMaps,
 ): CardView[] {
   const cards = [select?.contextCard, select?.effect]
-    .filter((card): card is CabtCard => !!card && card.playerIndex === playerIndex);
+    .filter((card): card is CabtCard => !!card
+      && card.playerIndex === playerIndex
+      && isTrainerCardType(dataMaps.cardData[card.id]?.cardType));
   const unique = cards.filter((card, index) =>
     cards.findIndex((other) => other.serial === card.serial && other.id === card.id) === index);
   return unique.map((card) => cardToView(card, dataMaps));
+}
+
+function isTrainerCardType(cardType: number | undefined): boolean {
+  return cardType !== undefined
+    && cardType >= CabtCardType.ITEM
+    && cardType <= CabtCardType.STADIUM;
 }
 
 export function cabtCardToView(cardRef: ProjectableCard, dataMaps: CabtDataMaps): CardView {

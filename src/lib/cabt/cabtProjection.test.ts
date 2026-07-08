@@ -582,6 +582,28 @@ describe('cabtObservationToGameView', () => {
     expect(finished(2).winner).toBe(3);
     expect(finished(2).phaseLabel).toBe('Finished');
   });
+
+  it('keeps the play zone for resolving Trainers only, never ability-source Pokemon', () => {
+    const dataMaps: CabtDataMaps = {
+      cardData: {
+        700: { cardId: 700, name: 'Hariyama', cardType: CabtCardType.POKEMON, stage1: true, hp: 150 },
+        1123: { cardId: 1123, name: 'Switch', cardType: CabtCardType.ITEM, set: 'SVI', setNumber: '194' },
+      },
+      attacks: {},
+    };
+    const withEffect = (effect: { id: number; serial: number; playerIndex: number }) => {
+      const observation = promptObservation();
+      observation.select.effect = effect;
+      return cabtObservationToGameView(observation, [], dataMaps);
+    };
+
+    // The engine names an ability's source Pokemon (already on the board) via
+    // select.effect — that must not duplicate into the play zone.
+    expect(withEffect({ id: 700, serial: 9, playerIndex: 0 }).players[0]?.playZone).toEqual([]);
+    expect(withEffect({ id: 1123, serial: 9, playerIndex: 0 }).players[0]?.playZone).toEqual([
+      expect.objectContaining({ name: 'Switch' }),
+    ]);
+  });
 });
 
 function promptObservation(): CabtObservation {
