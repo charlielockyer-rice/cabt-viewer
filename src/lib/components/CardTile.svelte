@@ -183,8 +183,11 @@
     box-shadow: var(--glow-playable-shadow);
   }
 
-  button.card-tile.selected:disabled {
+  /* Cards never gray out: selectability is signalled by the playable glow,
+     and an inert card simply rests at full color. */
+  button.card-tile:disabled {
     opacity: 1;
+    cursor: default;
   }
 
   .card-tile img {

@@ -8,10 +8,10 @@
     player: PlayerView;
     selectedHand?: { playerIndex: number; handIndex: number } | null;
     disabled?: boolean;
-    dimDisabled?: boolean;
     concealed?: boolean;
+    // The engine's actual legality: these cards glow as selectable; everything
+    // else stays full-color and quietly inert (no gray-out).
     playableIndexes?: number[];
-    placedIndexes?: number[];
     onSelect: (playerIndex: number, handIndex: number) => void;
     onDrag: (playerIndex: number, handIndex: number, event: DragEvent) => void;
     onDragEnd?: () => void;
@@ -21,25 +21,20 @@
     player,
     selectedHand = null,
     disabled = false,
-    dimDisabled = true,
     concealed = false,
     playableIndexes = [],
-    placedIndexes = [],
     onSelect,
     onDrag,
     onDragEnd = () => {},
   }: Props = $props();
 
   let playableSet = $derived(new Set(playableIndexes));
-  let placedSet = $derived(new Set(placedIndexes));
-  let hasPlayableFilter = $derived(playableIndexes.length > 0);
   let visibleHandEntries = $derived(player.hand
     .map((card, index) => ({
       card,
       index,
       key: cardKey(card, index),
-    }))
-    .filter((entry) => !placedSet.has(entry.index)));
+    })));
   let handElement = $state<HTMLDivElement>();
   let canScrollLeft = $state(false);
   let canScrollRight = $state(false);
@@ -77,7 +72,6 @@
 
   $effect(() => {
     player.hand.length;
-    placedIndexes.length;
     concealed;
     updateScrollIndicators();
   });
@@ -94,7 +88,6 @@
 
 <div
   bind:this={handElement}
-  class:disabled={disabled && dimDisabled}
   class:concealed
   class:can-scroll-left={canScrollLeft}
   class:can-scroll-right={canScrollRight}
@@ -106,7 +99,7 @@
   {#each visibleHandEntries as entry (entry.key)}
     {@const card = entry.card}
     {@const index = entry.index}
-    {@const cardDisabled = disabled || (hasPlayableFilter && (!playableSet.has(index) || placedSet.has(index)))}
+    {@const cardDisabled = disabled || !playableSet.has(index)}
     <div
       class="hand-card-frame"
       data-hand-card-slot={`player:${player.index}:hand:${index}`}

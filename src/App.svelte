@@ -859,9 +859,7 @@
             player={topPlayer}
             selectedHand={selectedHand}
             disabled={!canAct(topPlayer.index)}
-            dimDisabled={!replayMode}
             playableIndexes={playableIndexesFor(topPlayer)}
-            placedIndexes={[]}
             concealed
             onSelect={selectHandCard}
             onDrag={onHandDrag}
@@ -930,9 +928,7 @@
             player={bottomPlayer}
             selectedHand={selectedHand}
             disabled={!canAct(bottomPlayer.index)}
-            dimDisabled={!replayMode}
             playableIndexes={playableIndexesFor(bottomPlayer)}
-            placedIndexes={[]}
             concealed={!replayMode && !isSelfControlled(bottomPlayer.index)}
             onSelect={selectHandCard}
             onDrag={onHandDrag}
