@@ -119,6 +119,9 @@
   let selectedPlayer2Deck = $derived(agents.find((agent) => agent.id === player2DeckSource && agent.deckUrl));
   onMount(() => {
     const stopThemeSync = viewSettingsStore.startThemeSync();
+    if (initialSearchParam('debug') === 'clickability') {
+      void import('./lib/debug/clickabilityProbe').then(({ startClickabilityProbe }) => startClickabilityProbe());
+    }
     void visualAssetsStore.loadConfiguredManifest();
     void refreshCatalog();
     if (initialReplayMode) {
