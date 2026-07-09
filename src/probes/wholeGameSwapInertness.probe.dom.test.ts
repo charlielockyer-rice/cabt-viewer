@@ -242,4 +242,101 @@ describe.skipIf(!hasLog)('whole-game swap inertness (happy-dom, real game log)',
     // Enough real swaps actually exercised the invariant to make it meaningful.
     expect(discardTopComparable).toBeGreaterThan(20);
   });
+
+  // M2 guard (the second, un-pinned mode the audit called out): with
+  // follow-active ON, the bottom seat flips to the acting player at every turn
+  // boundary. That flip used to remount both hands (every card <img> reloaded).
+  // Panels are now keyed by player.index and repositioned by CSS, so a hand
+  // card present before and after a flip must keep its DOM node. The hand
+  // anchor is player-index based (player:N:hand), so a player's cards are
+  // tracked whether they sit at top or bottom.
+  it('keeps hand-card nodes stable across follow-active seat flips', () => {
+    const snapshot = cabtReplayToSnapshot(JSON.parse(readFileSync(logPath, 'utf8')));
+    const views = viewSequence(snapshot);
+
+    viewSettingsStore.animateActions = false;
+    // Un-pinned: let App's follow-active effect flip the seat to the acting
+    // player, exactly the behaviour that reproduced the whole-hand flash.
+    viewSettingsStore.followActive = true;
+    viewSettingsStore.viewIndex = 0;
+
+    gameStore.game = views[0];
+    app = mount(App, { target: document.body });
+    flushSync();
+
+    const handCardEls = (playerIndex: number): Map<number, HTMLElement> => {
+      const map = new Map<number, HTMLElement>();
+      const hand = document.querySelector(`[data-card-anchor="player:${playerIndex}:hand"]`);
+      for (const frame of hand?.querySelectorAll('.hand-card-frame[data-card-serial]') ?? []) {
+        if (frame instanceof HTMLElement) {
+          const serial = Number(frame.dataset.cardSerial);
+          if (Number.isFinite(serial)) {
+            map.set(serial, frame);
+          }
+        }
+      }
+      return map;
+    };
+
+    const findings: Array<{ swap: number; detail: string }> = [];
+    let prev = views[0];
+    let prevBottom = viewSettingsStore.viewIndex;
+    let prevHand: Record<number, Map<number, HTMLElement>> = { 0: handCardEls(0), 1: handCardEls(1) };
+    let flips = 0;
+    let acrossFlipChecks = 0;
+    // Node comparisons where both the before and after DOM frames were actually
+    // found — guards against a vacuous pass from an anchor-selector mismatch.
+    let acrossFlipNodeComparisons = 0;
+
+    for (let i = 1; i < views.length; i += 1) {
+      const view = views[i];
+      gameStore.game = view;
+      flushSync();
+      const bottom = viewSettingsStore.viewIndex;
+      const flipped = bottom !== prevBottom;
+      if (flipped) {
+        flips += 1;
+      }
+
+      for (const p of [0, 1] as const) {
+        const prevPlayer = prev.players?.[p] as PlayerView | undefined;
+        const curPlayer = view.players?.[p] as PlayerView | undefined;
+        const curHand = handCardEls(p);
+        const prevHandMap = prevHand[p];
+        const prevSerials = new Set((prevPlayer?.hand ?? []).map((c) => c.serial).filter((s): s is number => s !== undefined));
+        const curSerials = new Set((curPlayer?.hand ?? []).map((c) => c.serial).filter((s): s is number => s !== undefined));
+        for (const serial of prevSerials) {
+          if (!curSerials.has(serial)) {
+            continue;
+          }
+          if (flipped) {
+            acrossFlipChecks += 1;
+          }
+          const before = prevHandMap.get(serial);
+          const after = curHand.get(serial);
+          if (flipped && before && after) {
+            acrossFlipNodeComparisons += 1;
+          }
+          if (before && after && before !== after) {
+            findings.push({
+              swap: i,
+              detail: `player ${p} hand serial ${serial} persisted across ${flipped ? 'a seat flip' : 'a swap'} but its DOM frame was recreated`,
+            });
+          }
+        }
+        prevHand[p] = curHand;
+      }
+
+      prev = view;
+      prevBottom = bottom;
+    }
+
+    // eslint-disable-next-line no-console
+    console.log('[swap-inertness probe / follow-active]', JSON.stringify({ flips, acrossFlipChecks, acrossFlipNodeComparisons, findings: findings.slice(0, 20) }, null, 2));
+    expect(findings, JSON.stringify(findings.slice(0, 20), null, 2)).toEqual([]);
+    // The game must actually flip seats, and real hand-card DOM nodes must have
+    // been compared across those flips, or the guard proves nothing.
+    expect(flips).toBeGreaterThan(2);
+    expect(acrossFlipNodeComparisons).toBeGreaterThan(0);
+  });
 });

@@ -920,18 +920,27 @@
       {/if}
 
       <BoardLayer>
-        <PlayerPanel side="top">
-          <Hand
-            player={topPlayer}
-            selectedHand={selectedHand}
-            disabled={!canAct(topPlayer.index)}
-            playableIndexes={playableIndexesFor(topPlayer)}
-            concealed
-            onSelect={selectHandCard}
-            onDrag={onHandDrag}
-            onDragEnd={clearDragState}
-          />
-        </PlayerPanel>
+        <!-- Panels are keyed by player.index and rendered in a stable order, so
+             the follow-active seat flip is a pure CSS reposition (side class)
+             over the SAME Hand instance — the hand's card elements survive the
+             flip instead of every card unmounting/reloading (M2). Both panels
+             are position:absolute and never overlap, so grouping them here does
+             not change layout or their stacking under the fixed anim layers. -->
+        {#each game.players as panelPlayer (panelPlayer.index)}
+          {@const isBottom = panelPlayer.index === bottomPlayer.index}
+          <PlayerPanel side={isBottom ? 'bottom' : 'top'}>
+            <Hand
+              player={panelPlayer}
+              selectedHand={selectedHand}
+              disabled={!canAct(panelPlayer.index)}
+              playableIndexes={playableIndexesFor(panelPlayer)}
+              concealed={isBottom ? (!replayMode && !isSelfControlled(panelPlayer.index)) : true}
+              onSelect={selectHandCard}
+              onDrag={onHandDrag}
+              onDragEnd={clearDragState}
+            />
+          </PlayerPanel>
+        {/each}
 
         <GameBoard
           {topPlayer}
@@ -989,19 +998,6 @@
           {replayMode}
           players={game.players}
         />
-
-        <PlayerPanel side="bottom">
-          <Hand
-            player={bottomPlayer}
-            selectedHand={selectedHand}
-            disabled={!canAct(bottomPlayer.index)}
-            playableIndexes={playableIndexesFor(bottomPlayer)}
-            concealed={!replayMode && !isSelfControlled(bottomPlayer.index)}
-            onSelect={selectHandCard}
-            onDrag={onHandDrag}
-            onDragEnd={clearDragState}
-          />
-        </PlayerPanel>
 
         {#if focusedSlot}
           <ActiveFocus
