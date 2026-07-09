@@ -3,9 +3,9 @@
   import BoardSlot from './BoardSlot.svelte';
   import CardTile from './CardTile.svelte';
   import { localRectIn, localRectCenter, type LocalRect } from '../dom/planeGeometry';
-  import { AnimationEventGate } from '../anim/gate';
+  import { AnimationEventGate, scopeEnded } from '../anim/gate';
   import { animationActivity, scheduledEndMs } from '../anim/activity';
-  import { resolveAnchor, type Anchor } from '../anim/anchors';
+  import { resolveAnchor } from '../anim/anchors';
   import { choreograph, type CardMotion } from '../anim/motions';
   import { animVisibility, type ReleaseClaim } from '../anim/visibility';
   import { cardBackCssVar } from '../game/cardAssets';
@@ -15,9 +15,11 @@
   type Props = {
     events?: ActionTimelineEvent[];
     scopeKey?: string | number;
-    // Live-only turn boundary: claims and sprites never outlive the turn
-    // that created them. Ignored in replay (scopeKey owns boundaries there).
     turnKey?: string | number;
+    // Live scope-end boundary: bumps on every applied view. Sprites and claims
+    // hold until it changes, then hand off at the newly-rendered destination —
+    // replay's deterministic model. Ignored in replay (scopeKey owns it).
+    applySignal?: number;
     replayMode?: boolean;
     players?: PlayerView[];
   };
@@ -34,20 +36,18 @@
     measuring: boolean;
   };
 
-  const handoffPollMs = 16;
-  const handoffMaxWaitMs = 300;
   const settleMs = 40;
-  const liveAttachedHoldMs = 90;
 
   let {
     events = [],
     scopeKey = '',
     turnKey = '',
+    applySignal = 0,
     replayMode = false,
     players = [],
   }: Props = $props();
 
-  let liveTurnKey: string | number | undefined;
+  let lastApplySignal: number | undefined;
 
   let layerElement = $state<HTMLElement>();
   let sprites = $state<RenderSprite[]>([]);
@@ -119,10 +119,10 @@
 
   $effect(() => {
     const { scopeChanged, batch } = gate.update(events, scopeKey);
-    const turnChanged = !replayMode && liveTurnKey !== undefined && turnKey !== liveTurnKey;
-    liveTurnKey = turnKey;
-    if (scopeChanged || turnChanged) {
-      endScope({ settle: replayMode });
+    const applyChanged = !replayMode && lastApplySignal !== undefined && applySignal !== lastApplySignal;
+    lastApplySignal = applySignal;
+    if (scopeEnded(replayMode, { scopeChanged, applyChanged })) {
+      endScope({ settle: true });
     }
     if (!batch.length || reduceMotion) {
       return;
@@ -136,24 +136,24 @@
       return;
     }
     if (!replayMode) {
-      // Report how long this batch runs so the live stepper waits for it;
-      // pad covers destination polling and the settle window.
-      animationActivity.extendBy(scheduledEndMs(motions) + handoffMaxWaitMs + settleMs + 60);
+      // Report how long this batch runs so the live stepper waits for it before
+      // applying the next view (which ends this scope). Pad covers the settle
+      // window and the pre-paint handoff.
+      animationActivity.extendBy(scheduledEndMs(motions) + settleMs + 60);
     }
     const startedGeneration = generation;
-    const latestDeckPlacementStartMs = Math.max(0, ...motions.filter((motion) => motion.fromDeck).map((motion) => motion.startMs));
     for (const motion of motions) {
       applyClaims(motion, (claim) => claim.early === true);
     }
     for (const motion of motions) {
       const timer = setTimeout(() => {
-        void beginMotion(motion, startedGeneration, latestDeckPlacementStartMs);
+        void beginMotion(motion, startedGeneration);
       }, motion.startMs);
       timers.push(timer);
     }
   }
 
-  async function beginMotion(motion: CardMotion, startedGeneration: number, latestDeckPlacementStartMs: number) {
+  async function beginMotion(motion: CardMotion, startedGeneration: number) {
     if (startedGeneration !== generation) {
       return;
     }
@@ -163,18 +163,18 @@
     }
 
     if (motion.style === 'board-move') {
-      await beginBoardMove(motion, plane, startedGeneration, latestDeckPlacementStartMs);
+      await beginBoardMove(motion, plane, startedGeneration);
       return;
     }
     if (motion.style === 'attached-move') {
-      beginAttachedMove(motion, plane, startedGeneration);
+      beginAttachedMove(motion, plane);
       return;
     }
     if (motion.style === 'deck-shuffle') {
       beginDeckShuffle(motion, plane, startedGeneration);
       return;
     }
-    beginDeckDiscard(motion, plane, startedGeneration);
+    beginDeckDiscard(motion, plane);
   }
 
   function beginDeckShuffle(motion: CardMotion, plane: HTMLElement, startedGeneration: number) {
@@ -227,7 +227,7 @@
     ].join('; ');
   }
 
-  async function beginBoardMove(motion: CardMotion, plane: HTMLElement, startedGeneration: number, latestDeckPlacementStartMs: number) {
+  async function beginBoardMove(motion: CardMotion, plane: HTMLElement, startedGeneration: number) {
     const from = resolveAnchor(motion.from);
     const to = resolveAnchor(motion.to);
     if (!from || !to) {
@@ -265,18 +265,11 @@
     sprites = sprites.map((item) => item.id === sprite.id
       ? { ...item, vars: boardMoveVars(fromRect, toRect, correction.x, correction.y), measuring: false }
       : item);
-
-    if (replayMode) {
-      return;
-    }
-    const extraMs = motion.fromDeck ? Math.max(0, latestDeckPlacementStartMs - motion.startMs) : 0;
-    const finishTimer = setTimeout(() => {
-      handOffWhenDestinationReady(motion, from.element, to.element, Date.now(), startedGeneration);
-    }, motion.durationMs + extraMs);
-    timers.push(finishTimer);
+    // Sprite and claims hold until the scope ends (the next view is applied),
+    // then hand off at the now-rendered destination — no per-motion poll.
   }
 
-  function beginAttachedMove(motion: CardMotion, plane: HTMLElement, startedGeneration: number) {
+  function beginAttachedMove(motion: CardMotion, plane: HTMLElement) {
     const from = resolveAnchor(motion.from);
     const to = resolveAnchor(motion.to);
     if (!to) {
@@ -312,21 +305,10 @@
       opponentSide: false,
       measuring: false,
     }];
-
-    if (replayMode) {
-      return;
-    }
-    const cleanupTimer = setTimeout(() => {
-      if (startedGeneration !== generation) {
-        return;
-      }
-      releaseMotion(motion.id);
-      sprites = sprites.filter((item) => item.id !== motion.id);
-    }, motion.durationMs + liveAttachedHoldMs);
-    timers.push(cleanupTimer);
+    // Holds until the scope ends (see beginBoardMove).
   }
 
-  function beginDeckDiscard(motion: CardMotion, plane: HTMLElement, startedGeneration: number) {
+  function beginDeckDiscard(motion: CardMotion, plane: HTMLElement) {
     const from = resolveAnchor(motion.from);
     const to = resolveAnchor(motion.to);
     if (!from || !to) {
@@ -358,17 +340,7 @@
       opponentSide: false,
       measuring: false,
     }];
-
-    if (replayMode) {
-      return;
-    }
-    const cleanupTimer = setTimeout(() => {
-      if (startedGeneration !== generation) {
-        return;
-      }
-      sprites = sprites.filter((item) => item.id !== motion.id);
-    }, motion.durationMs + 120);
-    timers.push(cleanupTimer);
+    // Holds until the scope ends (see beginBoardMove).
   }
 
   function applyClaims(motion: CardMotion, includeClaim: (claim: CardMotion['hide'][number]) => boolean) {
@@ -397,45 +369,6 @@
     for (const release of releases) {
       release();
     }
-  }
-
-  function handOffWhenDestinationReady(
-    motion: CardMotion,
-    source: HTMLElement,
-    target: HTMLElement,
-    startTime: number,
-    startedGeneration: number,
-  ) {
-    if (startedGeneration !== generation) {
-      return;
-    }
-    const destinationReady = motion.waitForDestinationCard
-      ? destinationContainsCard(target, motion.to)
-      : motion.toDeck
-        ? true
-        : !!target.querySelector('.card-tile');
-    const timedOut = Date.now() - startTime >= handoffMaxWaitMs;
-    const detached = !document.body.contains(source) || !document.body.contains(target);
-    if (destinationReady || timedOut || detached) {
-      releaseMotion(motion.id);
-      removeSpritesAfterPrepaint(new Set([motion.id]), startedGeneration);
-      return;
-    }
-    const retry = setTimeout(() => {
-      handOffWhenDestinationReady(motion, source, target, startTime, startedGeneration);
-    }, handoffPollMs);
-    timers.push(retry);
-  }
-
-  function destinationContainsCard(target: HTMLElement, anchor: Anchor): boolean {
-    const serial = 'serial' in anchor ? anchor.serial : undefined;
-    const cardId = 'cardId' in anchor ? anchor.cardId : undefined;
-    const selector = serial !== undefined
-      ? `.card-tile[data-card-serial="${serial}"]`
-      : cardId !== undefined
-        ? `.card-tile[data-card-id="${cardId}"]`
-        : '.card-tile';
-    return target.matches(selector) || !!target.querySelector(selector);
   }
 
   function endScope({ settle = false }: { settle?: boolean } = {}) {

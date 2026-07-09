@@ -38,6 +38,7 @@
     animationEvents?: ActionTimelineEvent[];
     animationScopeKey?: string | number;
     animationTurnKey?: string | number;
+    animationApplySignal?: number;
     evolutionChromeEvents?: ActionTimelineEvent[];
     replayMode?: boolean;
   };
@@ -73,6 +74,7 @@
     animationEvents = [],
     animationScopeKey = '',
     animationTurnKey = '',
+    animationApplySignal = 0,
     evolutionChromeEvents = [],
     replayMode = false,
   }: Props = $props();
@@ -253,6 +255,7 @@
       events={animationEvents}
       scopeKey={animationScopeKey}
       turnKey={animationTurnKey}
+      applySignal={animationApplySignal}
       {replayMode}
       players={[topPlayer, bottomPlayer]}
     />

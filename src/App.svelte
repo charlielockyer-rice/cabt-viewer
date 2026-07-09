@@ -93,6 +93,10 @@
   // Live turn boundary for the animation layers: stale claims/sprites are
   // released when the turn counter advances. Constant in replay.
   let animationTurnKey = $derived(replayMode ? 'replay' : `turn-${game?.turn ?? 0}`);
+  // Live scope-end boundary for the animation layers: bumps on every applied
+  // view (including the settled interactive one), so held sprites release the
+  // moment the next authoritative view lands. Ignored in replay (scope key drives).
+  let animationApplySignal = $derived(gameStore.liveApplyGeneration);
   let finalEvolutionEvents = $derived(replayMode ? replayFinalEvolutionEvents() : []);
   let error = $derived(homeMode === 'logs' ? replayStore.error : gameStore.error);
   let busy = $derived(replayMode ? replayStore.loading : gameStore.busy);
@@ -976,6 +980,7 @@
           animationEvents={animationEvents}
           {animationScopeKey}
           {animationTurnKey}
+          animationApplySignal={animationApplySignal}
           evolutionChromeEvents={finalEvolutionEvents}
           {replayMode}
         />
@@ -994,6 +999,7 @@
           stepEvents={animationStepEvents}
           scopeKey={animationScopeKey}
           turnKey={animationTurnKey}
+          applySignal={animationApplySignal}
           {replayMode}
           players={game.players}
         />

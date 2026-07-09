@@ -8,6 +8,12 @@ const maxStepWaitMs = 5000;
 
 class GameStore {
   game = $state<GameView | null>(null);
+  // Monotonic counter bumped on EVERY live view application (each playback
+  // step, the settled interactive view, error/cancellation, reset). The
+  // animation layers release the previous scope's held sprites when it changes
+  // — a deterministic "next-view-applied" boundary that replaces the live
+  // destination poll, so live gets replay's hold-to-boundary handoff.
+  liveApplyGeneration = $state(0);
   // The current engine decision, held at response level so it survives
   // playback: sequence step views carry no decision, but rapid sequential
   // selects (damage counter placement) must stay clickable while the
@@ -31,9 +37,16 @@ class GameStore {
     this.error = message;
   }
 
+  // Every live view application goes through here so liveApplyGeneration bumps
+  // exactly once per applied view — the animation layers' scope-end boundary.
+  private setGame(view: GameView | null) {
+    this.game = view;
+    this.liveApplyGeneration += 1;
+  }
+
   reset() {
     this.generation += 1;
-    this.game = null;
+    this.setGame(null);
     this.decision = undefined;
     this.error = '';
     this.busy = false;
@@ -96,7 +109,7 @@ class GameStore {
             return response;
           }
           for (const view of response.sequence) {
-            this.game = view;
+            this.setGame(view);
             this.error = '';
             // Step ms is the minimum gap between views; after it, wait for
             // the animation layers to report idle so playback is strictly
@@ -120,14 +133,14 @@ class GameStore {
       if (generation !== this.generation) {
         return response;
       }
-      this.game = response.view;
+      this.setGame(response.view);
       this.error = '';
       return response;
     }
 
     this.error = response.error;
     if (response.view) {
-      this.game = response.view;
+      this.setGame(response.view);
       this.decision = response.view.decision;
     }
     return response;

@@ -26,3 +26,16 @@ export class AnimationEventGate {
     return { scopeChanged, batch: scopeChanged ? events : [] };
   }
 }
+
+// The one definition of "the current scope has ended; release its held sprites
+// and visibility claims". Replay ends a scope when the phase key changes; live
+// ends it when the next authoritative view is applied (a monotonic apply
+// signal), which also covers the settled interactive view at the end of a
+// sequence — the poll-free hold-to-boundary handoff. The three animation layers
+// share this instead of each hand-rolling the predicate.
+export function scopeEnded(
+  replayMode: boolean,
+  { scopeChanged, applyChanged }: { scopeChanged: boolean; applyChanged: boolean },
+): boolean {
+  return replayMode ? scopeChanged : applyChanged;
+}

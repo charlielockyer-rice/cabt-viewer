@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import CardTile from './CardTile.svelte';
-  import { AnimationEventGate } from '../anim/gate';
+  import { AnimationEventGate, scopeEnded } from '../anim/gate';
   import { animationActivity, scheduledEndMs } from '../anim/activity';
   import { applyTargetEffect } from '../anim/effects';
   import { handSlots, resolveAnchor, type Anchor, type ResolvedAnchor } from '../anim/anchors';
@@ -25,9 +25,11 @@
     events?: ActionTimelineEvent[];
     stepEvents?: ActionTimelineEvent[];
     scopeKey?: string | number;
-    // Live-only turn boundary: claims and sprites never outlive the turn
-    // that created them. Ignored in replay (scopeKey owns boundaries there).
     turnKey?: string | number;
+    // Live scope-end boundary: bumps on every applied view. Held sprites/claims
+    // release when it changes, handing off at the newly-rendered destination —
+    // replay's deterministic model. Ignored in replay (scopeKey owns it).
+    applySignal?: number;
     replayMode?: boolean;
     players?: PlayerView[];
   };
@@ -75,11 +77,12 @@
     stepEvents = [],
     scopeKey = '',
     turnKey = '',
+    applySignal = 0,
     replayMode = false,
     players = [],
   }: Props = $props();
 
-  let liveTurnKey: string | number | undefined;
+  let lastApplySignal: number | undefined;
   const gate = new AnimationEventGate();
   const timers: ReturnType<typeof setTimeout>[] = [];
   const releases: ReleaseClaim[] = [];
@@ -149,9 +152,9 @@
 
   $effect(() => {
     const { scopeChanged, batch } = gate.update(events, scopeKey);
-    const turnChanged = !replayMode && liveTurnKey !== undefined && turnKey !== liveTurnKey;
-    liveTurnKey = turnKey;
-    if ((scopeChanged && replayMode) || turnChanged) {
+    const applyChanged = !replayMode && lastApplySignal !== undefined && applySignal !== lastApplySignal;
+    lastApplySignal = applySignal;
+    if (scopeEnded(replayMode, { scopeChanged, applyChanged })) {
       endScope();
     }
     if (!batch.length || reduceMotion) {
@@ -441,11 +444,11 @@
       ].join('; '),
     }];
 
-    // In replay, pile destinations only show the landed card when the phase
-    // view advances, so the sprite holds at its final position until the
-    // scope ends instead of releasing on a timer.
-    const holdUntilScopeEnd = replayMode
-      && (target.anchor.kind === 'discard' || target.anchor.kind === 'playZone');
+    // Pile destinations only show the landed card when the next view advances
+    // (a replay phase, or the next live step), so the sprite holds at its final
+    // position until the scope ends instead of releasing on a timer — the same
+    // hold-to-boundary handoff in both modes.
+    const holdUntilScopeEnd = target.anchor.kind === 'discard' || target.anchor.kind === 'playZone';
     if (holdUntilScopeEnd) {
       return;
     }
