@@ -59,10 +59,18 @@ Machinery: `animationEventPhases` / `animationPhaseKey` / `animationPhaseUsesSou
   NOT: `localEngine.appendSteps` runs `stepAnimationPhases` on each whole
   observation and never splits at `TurnStart`, so the opponent's start-of-turn
   draw animates inside the attacker's step (then the seat flip re-renders and it
-  re-animates). FIX: port replay's turn-boundary split to the live step builder
-  (events after `TurnStart` become their own step with the new turn's pre-state).
-  Testable at the step level; touches live runtime + the seat-flip re-render, so
-  wants Charlie's visual confirmation.
+  re-animates). FIX (concrete mechanism): `replayActionGroups(events, turn)` is
+  the reusable pure splitter — its `forcedStepTypes` = {TurnEnd, TurnStart,
+  PokemonCheckup, Result} already start new groups. `localEngine.appendSteps`
+  should split each observation's `stepLogs` into groups with it and emit a step
+  per group, the new-turn group's view PROJECTED (post-transition, pre-draw)
+  rather than the single bridge end-state — i.e. adopt replay's
+  buildDecisionSteps/projection discipline on the live side instead of one step
+  per observation. Two sub-parts: (1) the partition (step-level testable, low
+  risk); (2) the seat-flip double-render (the second draw after the perspective
+  switch) — a live-runtime concern still to be located (game.svelte.ts / the
+  follow-active flip / turnKey release) needing Charlie's visual confirmation.
+  Ship (1)+(2) together; a partition-only fix may still double-render.
 - **Task 7 — same boundary machinery.** Real KO→promotion (frames 92-95): KO
   frame (active→discard + area-10 pre-evo stack→discard + energy→discard), then
   opponent prize-take frame, then a promotion frame [BENCH→ACTIVE, TurnEnd,
