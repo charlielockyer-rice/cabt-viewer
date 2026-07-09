@@ -8,6 +8,7 @@
   import { choreograph, type CardMotion, type TargetEffect } from '../anim/motions';
   import { cardVisual, fallbackHandTarget, handCardVisualRect, revealLayout, settledHandLandingWidth } from '../anim/revealLayout';
   import { animVisibility, type HideMode, type ReleaseClaim } from '../anim/visibility';
+  import { replayStore } from '../../state/replay.svelte';
   import { cardBackCssVar, cardFaceImageUrl, cssAssetUrl } from '../game/cardAssets';
   import { replayAnimationPhaseGapMs } from '../game/replay';
   import { actionAnimationTiming } from '../anim/timing';
@@ -162,10 +163,22 @@
     }
   });
 
+  // Scrub mode: the replay timeline is being navigated faster than animations can
+  // play. Sourced from the store (not a prop) to keep this off the shared,
+  // contended App render path; guarded by replayMode so live play is unaffected.
+  let scrub = $derived(replayMode && replayStore.scrubbing);
+
   $effect(() => {
+    const scrubbing = scrub;
     const { scopeChanged, batch } = gate.update(events, scopeKey);
     const applyChanged = !replayMode && lastApplySignal !== undefined && applySignal !== lastApplySignal;
     lastApplySignal = applySignal;
+    if (scrubbing) {
+      // gate.update already consumed this view's events (no stale batch on exit);
+      // drop all choreography and hard-purge so nothing lingers as an artifact.
+      purgeForScrub();
+      return;
+    }
     if (scopeEnded(replayMode, { scopeChanged, applyChanged })) {
       endScope();
     }
@@ -903,6 +916,22 @@
     // claims and timers and release on the destination-ready handoff, so the
     // evolved card's not-yet-decoded art never flashes its pre-evolution.
     sprites = sprites.filter((sprite) => evolveHolds.has(sprite.id));
+  }
+
+  // Scrub purges everything endScope PRESERVES — including evolve holds. A hold
+  // exists to keep a not-yet-decoded evolved card from flashing its base; during a
+  // rapid scrub nobody sees that paint, so the hold is pure liability (a sprite
+  // that outlives its scope, drained only by a safety timer — exactly what piles
+  // up as fast-scrub artifacts). finish() releases each hold's claim, clears its
+  // timers, and drops its sprite; endScope() then clears the rest. Idempotent.
+  function purgeForScrub() {
+    for (const finish of [...evolveHolds.values()]) {
+      finish();
+    }
+    endScope();
+    if (sprites.length) {
+      sprites = [];
+    }
   }
 
   function resolveFirst(anchors: Anchor[]): { anchor: Anchor; resolved: ResolvedAnchor } | null {

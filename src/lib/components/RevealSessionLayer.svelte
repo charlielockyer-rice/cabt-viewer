@@ -8,6 +8,7 @@
   import { choreograph, type CardMotion, type TargetEffect } from '../anim/motions';
   import { fallbackHandTarget, handCardVisualRect, revealLayout, settledHandLandingWidth } from '../anim/revealLayout';
   import { animVisibility, type ReleaseClaim } from '../anim/visibility';
+  import { replayStore } from '../../state/replay.svelte';
   import { cardBackCssVar } from '../game/cardAssets';
   import { centerOf } from '../dom/planeGeometry';
   import type { ActionTimelineEvent, CardView, PlayerView } from '../game/types';
@@ -79,8 +80,20 @@
     clearSession();
   });
 
+  // Scrub mode: the replay timeline is being navigated faster than animations can
+  // play. Sourced from the store (not a prop) to keep this off the shared,
+  // contended App render path; guarded by replayMode so live play is unaffected.
+  let scrub = $derived(replayMode && replayStore.scrubbing);
+
   $effect(() => {
+    const scrubbing = scrub;
     const { scopeChanged, batch } = gate.update(events, scopeKey);
+    if (scrubbing) {
+      // gate.update already consumed this view's events; drop the reveal session
+      // entirely (clearSession is already a full purge) so nothing lingers.
+      clearSession();
+      return;
+    }
     const { motions, effects } = choreograph(batch, players, stepEvents.length ? stepEvents : batch);
     const revealMotions = motions.filter(isRevealMotion);
     const attachCandidates = effects.filter((effect) => effect.kind === 'attach-under');

@@ -640,3 +640,36 @@ and (c) active-scale-to-slot are ruled out). Fix (owned by #29): collapse the
 vacated bench slot at flight LAUNCH (the R4 HandToDeck "leave at launch" pattern)
 so the FLIP runs DURING the flight and settles before the card lands — one settle
 beat, not two.
+
+## Fast-scrub artifacts + SCRUB MODE (#36)
+
+**The flip side of the round-4 rule: timer-based cleanup loses to any path that
+outruns the scope lifecycle.** Round 4 established that a claim/sprite must release
+on the destination-view landing, and several sites hold a sprite past `endScope`
+draining only on a bounded safety timer (evolve destination-ready hold), or remove
+a sprite on a fixed cleanup timer rather than scope change (`startHandPlay`
+`startMs+visibleMs+24`, draws, prize-takes, resets, decorative floats). Under RAPID
+timeline navigation (scrub-bar drag) those timers are the weak link: Svelte
+COALESCES the reactive $effect so the intermediate scopes' `endScope`s never run,
+yet each coalesced-through step still synchronously spawned its sprite — orphaning
+it onto its own cleanup timer.
+
+Rig repro (programmatic scrub sweeping all states): peak simultaneous viewport
+sprites scale with scrub speed — **12 @ 50ms/step, 15 @ 16ms, 21 @ 4ms** (all
+`hand-play-card` + `draw-card`). After the scrub stops they drain one-by-one over
+~2.3s as each fixed timer expires — the "cleaned up after a timer" Charlie feels.
+Board-move sprites and visibility claims do NOT accumulate (scope-torn, drain in
+<1ms) — so it is specifically the timer-gated ViewportAnimationLayer sprites.
+
+**Fix — scrub mode.** `ReplayStore.markNavigation()` (called from `setStep`, the
+single funnel for every nav path) arms `scrubbing` when steps arrive < 120ms apart
+and debounces it off 150ms after the last step. Paced playback (one step per phase
+duration, >> 120ms) never arms it, so playback stays fully animated. The three
+anim layers derive `scrub = replayMode && replayStore.scrubbing` (sourced from the
+store, not a prop, to stay off the shared App/GameBoard render path) and, while it
+is set, drop all choreography and `purgeForScrub()` — a HARD purge that, unlike
+`endScope`, kills even evolve holds (a hold protects a paint nobody is watching
+during a scrub, so it is pure liability). The settled view renders bare, instantly.
+
+Rig evidence: scrub peak sprites **21/15/12 → 0/0/0** at 4/16/50ms; paced playback
+still animates (76/120 sampled frames show sprites, scrub never engages).

@@ -9,6 +9,7 @@
   import { choreograph, type CardMotion } from '../anim/motions';
   import { animVisibility, type ReleaseClaim } from '../anim/visibility';
   import { claimSignature, boardClaimIsAuthoritative } from '../anim/settleClaim';
+  import { replayStore } from '../../state/replay.svelte';
   import { cardBackCssVar } from '../game/cardAssets';
   import { replayAnimationPhaseGapMs } from '../game/replay';
   import type { ActionTimelineEvent, PlayerView } from '../game/types';
@@ -118,10 +119,24 @@
     }
   });
 
+  // Scrub mode: the replay timeline is being navigated faster than animations can
+  // play. Sourced from the store (not a prop) to keep this fix off the shared,
+  // contended App/GameBoard render path; guarded by replayMode so live play is
+  // never affected.
+  let scrub = $derived(replayMode && replayStore.scrubbing);
+
   $effect(() => {
+    const scrubbing = scrub;
     const { scopeChanged, batch } = gate.update(events, scopeKey);
     const applyChanged = !replayMode && lastApplySignal !== undefined && applySignal !== lastApplySignal;
     lastApplySignal = applySignal;
+    if (scrubbing) {
+      // gate.update already consumed this view's events (so no stale batch fires
+      // when scrub ends); now drop all choreography and let the settled view show
+      // bare. Purge anything outstanding so nothing lingers as an artifact.
+      purgeForScrub();
+      return;
+    }
     if (scopeEnded(replayMode, { scopeChanged, applyChanged })) {
       endScope({ settle: true });
     }
@@ -130,6 +145,35 @@
     }
     startMotions(batch);
   });
+
+  // Unlike endScope — which preserves gap-avoidance timing and may DEFER sprites
+  // to the settle window — scrub purges unconditionally: nobody is watching the
+  // choreography, so a lingering sprite or held claim is pure artifact, never a
+  // gap worth protecting. Clear every timer, release every claim, drop every
+  // sprite. Idempotent, so it is safe to run on each scrubbed view.
+  function purgeForScrub() {
+    generation += 1;
+    for (const timer of timers) {
+      clearTimeout(timer);
+    }
+    timers.length = 0;
+    for (const timer of settleTimers) {
+      clearTimeout(timer);
+    }
+    settleTimers.length = 0;
+    for (const frameId of settleFrameIds) {
+      cancelAnimationFrame(frameId);
+    }
+    settleFrameIds.length = 0;
+    for (const claim of scopeClaims) {
+      claim.release();
+    }
+    scopeClaims.length = 0;
+    motionReleases.clear();
+    if (sprites.length) {
+      sprites = [];
+    }
+  }
 
   function startMotions(batch: ActionTimelineEvent[]) {
     const motions = choreograph(batch, players).motions.filter((motion) => motion.space === 'board');
