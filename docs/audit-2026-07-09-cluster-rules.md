@@ -342,3 +342,48 @@ Requires: reclassify the status kinds to `polished`/`conditional` in
 `actionAnimationCoverage.ts`, a checkup phase key + view in `cabtReplay.ts`, and a
 status-tick motion in `motions.ts`. Deferred: additive, DOM-runtime, and better
 built once the real-browser rig gates the status-badge visuals.
+
+---
+
+# Round 3 (2026-07-09, browser-verified) — the deferred items landed
+
+Charlie approved local browser automation, so the three items deferred as
+"paint-timing / DOM-runtime, unverifiable headlessly" were implemented AND
+verified with the real-browser rig (Playwright + a private vite on 5174 loading
+episode 84924975 in replay; Charlie's live 5173/8095 stack untouched). Method for
+each: reproduce the defect with a per-frame DOM recorder (requestAnimationFrame),
+CPU/network-throttled to force the seam, then prove it gone.
+
+- **R5 — evolution base-card blink — FIXED (`c23a073`).** The evolve sprite + a
+  destination `'contents'` claim now HOLD past `endScope`'s unconditional clear
+  and release only when the evolved card element has rendered AND its `<img>`
+  decoded (destination-ready poll, bounded safety). Polling starts after the
+  full flourish (`evolveVisibleMs`) so a cache-warm evolve is unchanged. Rig
+  evidence, identical throttle: blink frames (sprite gone AND evolved img
+  undecoded) **70 → 0**; after-fix the sprite releases 34ms AFTER the paint vs
+  ~580ms before it. Supersedes the "documented, not built" note above.
+
+- **R8 — retreat cosmetics — FIXED (`c1a4262`).** (1) Shadow flicker: dropped
+  `filter` from the `.board-slot` `--transition-fast` transition so a retreat's
+  drop-shadow re-compute is instant, not animated. Verified: the slot's computed
+  transition-property is now `background, box-shadow`. (2) White flash:
+  `.attached-move-card` background `#f7f8fa` → `transparent` (the inner card-tile
+  supplies the surface). Verified: near-white-bg-while-undecoded frames **3 → 0**.
+  Supersedes the "documented for a verified polish pass" note above.
+
+- **R18 / Task 9 — discard recovery flight — FIXED (`6696e75`).** DISCARD→HAND
+  (Night Stretcher, Lana's Aid, Super Rod) now lifts from the discard pile and
+  flies to the settled hand-card rect. Keyed on the MOVE so every recovery gets
+  it free; reuses the hand-play flight (startHandPlay resolves the discard pile
+  as the source when `from.kind === 'discard'`) — no new sprite/CSS. Coverage
+  reclassified DISCARD→HAND static → polished (conditional without a cardId). Rig
+  evidence: at the Lana's Aid 3-card recovery, **five hand-play sprites now fly
+  discard→hand where there were zero**. One approved oracle reshape: the
+  "uncommon static" coverage test's example moved to ENERGY→HAND (still static)
+  plus positive DISCARD→HAND tests.
+
+Still open: R9 (Pokemon Checkup animation) — design note only, not built.
+
+The rig recipe (private vite 5174, no engine needed for replay, Playwright rAF
+frame recorder, CDP CPU/network throttle to force paint-timing seams) is the tool
+for the remaining paint-class work; see the `viewer-real-browser-probe` memory.
