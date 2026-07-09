@@ -673,3 +673,28 @@ during a scrub, so it is pure liability). The settled view renders bare, instant
 
 Rig evidence: scrub peak sprites **21/15/12 → 0/0/0** at 4/16/50ms; paced playback
 still animates (76/120 sampled frames show sprites, scrub never engages).
+
+### Follow-up: the scrub purge FROZE the game — a reactive-loop regression (`7de4b1d`)
+
+The first scrub landing (`1377ab7`) hard-FROZE the game on a fast drag — worse than
+the artifacts it fixed. Root cause: `purgeForScrub` READS the state it clears
+(`sprites` — via `endScope`'s `sprites.filter(...)` and the `if (sprites.length)`
+guard) AND writes it, INSIDE the scrub `$effect`. Svelte 5 subscribes the effect to
+`sprites` on the read, so the write re-triggers the effect; with `scrubbing` stuck
+true there's no gate to break it (the non-scrub path is safe only because
+`gate.scopeChanged` goes false on the re-run) → `effect_update_depth_exceeded` →
+under a continuous real drag, a thrown-error storm = hard freeze.
+
+**RULE: a purge/teardown that READS the state it clears must not run tracked inside
+the `$effect` that gates it — wrap it in Svelte's `untrack()`.** Fix:
+`untrack(() => purgeForScrub())` (and `untrack(() => clearSession())`) in all three
+layers.
+
+Two rig-method lessons, both load-bearing (the bug shipped because the original
+census lacked them): (1) drive REAL pointer input (mouse down/move/up), not
+programmatic `setStep` — the freeze needs the continuous drag event-rate to re-arm
+the loop; (2) run WITH the eval sidecar, because the trigger is dragging
+`EvalGraph` (`seek → setStateIndex`), which only renders when the eval curve is
+loaded. Rig proof: same-script `effect_update_depth_exceeded` **1 → 0**;
+main-thread heartbeat holds ~80fps through a sustained 240-move drag; scrub still
+suppresses (0 sprites), playback unaffected.
