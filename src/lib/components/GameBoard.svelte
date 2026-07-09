@@ -201,6 +201,7 @@
   <div
     class="game-board-plane"
     class:can-play-on-board={canPlayOnBoard}
+    class:has-eval-bar={showEvalBar}
     role="presentation"
     ondragover={allowBoardPlayDrop}
     ondrop={dropToBoardPlay}
@@ -325,6 +326,11 @@
   .game-board-plane {
     position: absolute;
     inset: 0;
+    /* Left lane for the eval bar OUTSIDE the board outline. 0 unless the bar is
+       shown, in which case the outline + content shift right by this much and
+       the rail rides the freed tilted lane (Charlie: bar outside the board,
+       board padded away from the left edge to make room). */
+    --board-eval-gutter: 0px;
     display: grid;
     grid-template-areas:
       "top-left top-bench top-right"
@@ -344,7 +350,8 @@
     padding:
       var(--board-content-inset-y)
       var(--board-content-inset-x)
-      var(--board-content-inset-bottom, var(--board-content-inset-y));
+      var(--board-content-inset-bottom, var(--board-content-inset-y))
+      calc(var(--board-content-inset-x) + var(--board-eval-gutter));
     background: var(--board-plane-bg);
     overflow: visible;
     transform: rotateX(var(--board-tilt, 8deg)) scaleY(var(--board-scale-y, 0.94)) translateY(var(--board-lift, 0px));
@@ -360,30 +367,38 @@
     background: var(--board-plane-debug-bg);
   }
 
-  /* Win-probability rail hugging the board's tilted LEFT edge. Pinned to the
-     same insets the board outline (::before) uses, so it runs exactly along
-     that edge; being a plane child, it foreshortens with the board tilt. It
-     sits in the edge margin left of the side-field content, so it never covers
-     a clickable slot. */
+  /* Win-probability rail riding the tilted plane in the gutter OUTSIDE the
+     board's left outline (the outline + content are shifted right by
+     --board-eval-gutter to make room). Being a plane child, it foreshortens
+     with the board tilt; sitting outside the outline, it can't cover a slot.
+     Height matches the outline (outline-pad-y insets). */
   .board-eval-rail {
     position: absolute;
     top: var(--board-outline-pad-y);
     bottom: var(--board-outline-pad-y);
-    /* Hug just inside the outline's left edge. Caps extend to the board-interior
-       side (never off the left screen edge, where the forward-tilted bottom
-       corner would clip them) but stay within the empty edge padding, clear of
-       the side-field content. */
-    left: var(--board-edge-pad-x);
+    /* Centered in the gutter: [edge-pad-x .. edge-pad-x + gutter], which is left
+       of the shifted outline (at edge-pad-x + gutter). */
+    left: calc(var(--board-edge-pad-x) + (var(--board-eval-gutter) - 26px) / 2);
     width: 26px;
     z-index: 2;
     display: flex;
     justify-content: center;
   }
 
+  .game-board-plane.has-eval-bar {
+    /* The eval bar's lane. Wide enough for the 26px rail plus a small gap to the
+       outline; the board content compresses to fit. */
+    --board-eval-gutter: 42px;
+  }
+
   .game-board-plane::before {
     content: "";
     position: absolute;
-    inset: var(--board-outline-pad-y) var(--board-edge-pad-x);
+    inset:
+      var(--board-outline-pad-y)
+      var(--board-edge-pad-x)
+      var(--board-outline-pad-y)
+      calc(var(--board-edge-pad-x) + var(--board-eval-gutter));
     z-index: 0;
     border: 2px solid var(--board-border);
     border-radius: 18px;
