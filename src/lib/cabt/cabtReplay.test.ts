@@ -3680,34 +3680,43 @@ describe('cabtReplayToSnapshot', () => {
       }],
     });
 
+    // The knockout is its own beat now: the attack step carries announce +
+    // attack-cost discard + damage, and the knockout departure is a separate step.
     const step = snapshot.steps[1];
     expect(step.actionTimeline?.map((event) => event.kind)).toEqual([
       'Attack',
       'MoveCard',
       'MoveCard',
       'HPChange',
-      'MoveCard',
-      'MoveCard',
     ]);
     expect(step.animationPhases?.map((phase) => phase.key.replace(/:\d+$/, ''))).toEqual([
       'Attack',
       'DeckDiscard',
       'Damage',
-      'KnockOut',
     ]);
     expect(step.animationPhases?.[0].view.players[1].active.pokemon?.serial).toBe(64);
     expect(step.animationPhases?.[2].view.players[1].active.pokemon?.serial).toBe(64);
     expect(step.animationPhases?.[2].view.players[1].active.damage).toBe(0);
-    expect(step.animationPhases?.[3].view.players[1].active.pokemon?.serial).toBe(64);
-    expect(step.animationPhases?.[3].view.players[1].active.damage).toBe(400);
-    expect(step.animationPhases?.[3].view.players[1].bench[0].pokemon?.serial).toBe(99);
-    expect(step.animationPhases?.[3].view.players[1].bench[0].damage).toBe(0);
-    expect(snapshot.views[step.stateIndex].players[1].active.empty).toBe(true);
-    expect(snapshot.views[step.stateIndex].players[1].discard.map((card) => card.serial)).toEqual([64, 96]);
-    expect(snapshot.views[step.stateIndex].players[1].discard.at(-1)?.serial).toBe(96);
+
+    const knockOutStep = snapshot.steps[2];
+    expect(knockOutStep.type).toBe('KnockOut');
+    expect(knockOutStep.actionTimeline?.map((event) => event.kind)).toEqual([
+      'MoveCard',
+      'MoveCard',
+    ]);
+    expect(knockOutStep.animationPhases?.map((phase) => phase.key.replace(/:\d+$/, ''))).toEqual([
+      'KnockOut',
+    ]);
+    expect(knockOutStep.animationPhases?.[0].view.players[1].active.pokemon?.serial).toBe(64);
+    expect(knockOutStep.animationPhases?.[0].view.players[1].active.damage).toBe(400);
+    expect(knockOutStep.animationPhases?.[0].view.players[1].bench[0].pokemon?.serial).toBe(99);
+    expect(knockOutStep.animationPhases?.[0].view.players[1].bench[0].damage).toBe(0);
+    expect(snapshot.views[knockOutStep.stateIndex].players[1].active.empty).toBe(true);
+    expect(snapshot.views[knockOutStep.stateIndex].players[1].discard.map((card) => card.serial)).toEqual([64, 96]);
+    expect(snapshot.views[knockOutStep.stateIndex].players[1].discard.at(-1)?.serial).toBe(96);
   });
 
-  it('keeps KO prize and promotion consequences sequential inside the attack step', () => {
+  it('splits a knockout attack into attack, knockout, prize, and promotion steps', () => {
     const attacker = { id: 723, serial: 13, hp: 350, maxHp: 350 };
     const knockedOut = { id: 721, serial: 64, hp: 150, maxHp: 150 };
     const promoted = { id: 722, serial: 67, hp: 90, maxHp: 90 };
@@ -3840,22 +3849,42 @@ describe('cabtReplayToSnapshot', () => {
       'Attack',
       'HPChange',
       'HPChange',
-      'MoveCard',
-      'MoveCard',
-      'MoveCard',
     ]);
-    expect(attackStep?.displayView?.players[0].active.pokemon?.serial).toBe(67);
+    // The attack beat settles with the knocked-out Pokemon STILL on the active
+    // spot at lethal damage; removing it (and everything after) is its own beat.
+    // The old single step showed the settled aftermath (the promoted Pokemon) —
+    // exactly the run-together sequence the partition separates.
+    expect(attackStep?.displayView?.players[0].active.pokemon?.serial).toBe(64);
+    expect(attackStep?.displayView?.players[0].active.damage).toBe(150);
     expect(attackStep?.displayView?.players[0].hand).toHaveLength(0);
     expect(attackStep?.animationPhases?.map((phase) => phase.key)).toEqual([
       'Attack:1',
       'Damage:0',
-      'KnockOut:0',
-      'PrizeTake:1',
-      'BoardMove:0',
     ]);
-    expect(attackStep?.animationPhases?.[2].actionTimeline.map((event) => event.kind)).toEqual(['MoveCard']);
-    expect(attackStep?.animationPhases?.[3].actionTimeline.map((event) => event.kind)).toEqual(['MoveCard']);
-    expect(attackStep?.animationPhases?.[4].actionTimeline.map((event) => event.kind)).toEqual(['MoveCard']);
+
+    const knockOutStep = snapshot.steps.find((step) => step.type === 'KnockOut');
+    expect(knockOutStep?.actionTimeline?.map((event) => event.kind)).toEqual(['MoveCard']);
+    expect(knockOutStep?.animationPhases?.map((phase) => phase.key)).toEqual(['KnockOut:0']);
+    expect(knockOutStep?.displayView?.players[0].active.empty).toBe(true);
+    expect(knockOutStep?.displayView?.players[0].discard.map((card) => card.serial)).toEqual([64]);
+
+    const prizeStep = snapshot.steps.find((step) => step.type === 'PrizeTake');
+    expect(prizeStep?.actionTimeline?.map((event) => event.kind)).toEqual(['MoveCard']);
+    expect(prizeStep?.animationPhases?.map((phase) => phase.key)).toEqual(['PrizeTake:1']);
+    expect(prizeStep?.displayView?.players[1].prizesLeft).toBe(0);
+    expect(prizeStep?.displayView?.players[1].hand).toHaveLength(1);
+
+    const promotionStep = snapshot.steps.find((step) => step.type === 'Promotion');
+    expect(promotionStep?.actionTimeline?.map((event) => event.kind)).toEqual(['MoveCard']);
+    expect(promotionStep?.animationPhases?.map((phase) => phase.key)).toEqual(['BoardMove:0']);
+    expect(promotionStep?.displayView?.players[0].active.pokemon?.serial).toBe(67);
+
+    // The four beats are consecutive and in engine emission order.
+    const beatOrder = snapshot.steps
+      .filter((step) => ['Attack', 'KnockOut', 'PrizeTake', 'Promotion'].includes(step.type))
+      .map((step) => step.type);
+    expect(beatOrder).toEqual(['Attack', 'KnockOut', 'PrizeTake', 'Promotion']);
+
     expect(snapshot.views[attackStep!.stateIndex].players[0].active.empty).toBe(true);
 
     const turnSteps = snapshot.steps.filter((step) => step.type === 'TurnEnd' || step.type === 'TurnStart');
@@ -3863,6 +3892,112 @@ describe('cabtReplayToSnapshot', () => {
       ['TurnEnd'],
       ['TurnStart', 'Draw'],
     ]);
+  });
+
+  it('collapses N knockouts and N prize takes from one attack into one knockout step and one prize step', () => {
+    // Not exercisable by episode 84924975 (which is a single knockout), so it is
+    // pinned synthetically: one attack that knocks out two of the defender's
+    // Pokemon (active + bench), the attacker takes two prizes, then one promotion.
+    const attacker = { id: 723, serial: 13, hp: 350, maxHp: 350 };
+    const koActive = { id: 721, serial: 64, hp: 150, maxHp: 150 };
+    const koBench = { id: 721, serial: 65, hp: 150, maxHp: 150 };
+    const promoted = { id: 722, serial: 67, hp: 90, maxHp: 90 };
+    const prizeA = { id: 3, serial: 120 };
+    const prizeB = { id: 4, serial: 121 };
+    const p1Base = { active: [attacker], bench: [], benchMax: 5, hand: [], deckCount: 45, discard: [], prize: [prizeA, prizeB] };
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        select: { type: 'Main', option: [{ type: 'Attack', attackId: 1046 }, { type: 'End' }] },
+        current: { turn: 3, yourIndex: 0, result: -1, players: [
+          { active: [koActive], bench: [koBench, promoted], benchMax: 5, hand: [], deckCount: 46, discard: [], prize: [] }, p1Base] },
+      }, {
+        action: [[], [0]],
+        logs: [
+          { type: 'Attack', playerIndex: 1, cardId: 723, serial: 13, attackId: 1046 },
+          { type: 'HpChange', playerIndex: 0, cardId: 721, serial: 64, value: -150, putDamageCounter: false },
+          { type: 'HpChange', playerIndex: 0, cardId: 721, serial: 65, value: -150, putDamageCounter: false },
+          { type: 'MoveCard', playerIndex: 0, cardId: 721, serial: 64, fromArea: CabtAreaType.ACTIVE, toArea: CabtAreaType.DISCARD },
+          { type: 'MoveCard', playerIndex: 0, cardId: 721, serial: 65, fromArea: CabtAreaType.BENCH, toArea: CabtAreaType.DISCARD },
+          { type: 'MoveCard', playerIndex: 1, cardId: 3, serial: 120, fromArea: CabtAreaType.PRIZE, toArea: CabtAreaType.HAND },
+          { type: 'MoveCard', playerIndex: 1, cardId: 4, serial: 121, fromArea: CabtAreaType.PRIZE, toArea: CabtAreaType.HAND },
+          { type: 'MoveCard', playerIndex: 0, cardId: 722, serial: 67, fromArea: CabtAreaType.BENCH, toArea: CabtAreaType.ACTIVE }],
+        select: { type: 'Main', option: [{ type: 'End' }] },
+        current: { turn: 3, yourIndex: 0, result: -1, players: [
+          { active: [promoted], bench: [], benchMax: 5, hand: [], deckCount: 46, discard: [{ id: 721, serial: 64 }, { id: 721, serial: 65 }], prize: [] },
+          { ...p1Base, hand: [prizeA, prizeB], prize: [] }] },
+      }],
+    });
+
+    const beatSteps = snapshot.steps.filter((step) =>
+      ['Attack', 'KnockOut', 'PrizeTake', 'Promotion'].includes(step.type));
+    expect(beatSteps.map((step) => step.type)).toEqual(['Attack', 'KnockOut', 'PrizeTake', 'Promotion']);
+
+    // Both knockouts collapse into ONE step (one beat, two departure animations).
+    const knockOutStep = beatSteps.find((step) => step.type === 'KnockOut');
+    expect(knockOutStep?.actionTimeline?.map((event) => event.kind)).toEqual(['MoveCard', 'MoveCard']);
+    expect(knockOutStep?.animationPhases?.map((phase) => phase.key)).toEqual(['KnockOut:0', 'KnockOut:0']);
+    expect(knockOutStep?.label).toBe("Player 1's Kyogre and Kyogre were Knocked Out.");
+
+    // Both prize takes collapse into ONE step.
+    const prizeStep = beatSteps.find((step) => step.type === 'PrizeTake');
+    expect(prizeStep?.actionTimeline?.map((event) => event.kind)).toEqual(['MoveCard', 'MoveCard']);
+    expect(prizeStep?.label).toBe('Player 2 took 2 Prize cards.');
+    expect(prizeStep?.displayView?.players[1].prizesLeft).toBe(0);
+
+    const promotionStep = beatSteps.find((step) => step.type === 'Promotion');
+    expect(promotionStep?.displayView?.players[0].active.pokemon?.serial).toBe(67);
+  });
+
+  it('collapses a mutual knockout into one knockout step and a both-owner promotion step', () => {
+    // Both actives are knocked out by one attack (recoil), each player takes a
+    // prize, then BOTH promote — the promotion beat carries a BoardMove per owner
+    // in a single step, and the cross-owner labels degrade to a count.
+    const aAttacker = { id: 723, serial: 13, hp: 350, maxHp: 350 };
+    const aBench = { id: 722, serial: 14, hp: 90, maxHp: 90 };
+    const dActive = { id: 721, serial: 64, hp: 150, maxHp: 150 };
+    const dBench = { id: 722, serial: 67, hp: 90, maxHp: 90 };
+    const prizeA = { id: 3, serial: 120 };
+    const prizeD = { id: 4, serial: 121 };
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        select: { type: 'Main', option: [{ type: 'Attack', attackId: 1046 }, { type: 'End' }] },
+        current: { turn: 3, yourIndex: 0, result: -1, players: [
+          { active: [dActive], bench: [dBench], benchMax: 5, hand: [], deckCount: 46, discard: [], prize: [prizeD] },
+          { active: [aAttacker], bench: [aBench], benchMax: 5, hand: [], deckCount: 45, discard: [], prize: [prizeA] }] },
+      }, {
+        action: [[], [0]],
+        logs: [
+          { type: 'Attack', playerIndex: 1, cardId: 723, serial: 13, attackId: 1046 },
+          { type: 'HpChange', playerIndex: 0, cardId: 721, serial: 64, value: -150, putDamageCounter: false },
+          { type: 'HpChange', playerIndex: 1, cardId: 723, serial: 13, value: -350, putDamageCounter: false },
+          { type: 'MoveCard', playerIndex: 0, cardId: 721, serial: 64, fromArea: CabtAreaType.ACTIVE, toArea: CabtAreaType.DISCARD },
+          { type: 'MoveCard', playerIndex: 1, cardId: 723, serial: 13, fromArea: CabtAreaType.ACTIVE, toArea: CabtAreaType.DISCARD },
+          { type: 'MoveCard', playerIndex: 1, cardId: 3, serial: 120, fromArea: CabtAreaType.PRIZE, toArea: CabtAreaType.HAND },
+          { type: 'MoveCard', playerIndex: 0, cardId: 4, serial: 121, fromArea: CabtAreaType.PRIZE, toArea: CabtAreaType.HAND },
+          { type: 'MoveCard', playerIndex: 0, cardId: 722, serial: 67, fromArea: CabtAreaType.BENCH, toArea: CabtAreaType.ACTIVE },
+          { type: 'MoveCard', playerIndex: 1, cardId: 722, serial: 14, fromArea: CabtAreaType.BENCH, toArea: CabtAreaType.ACTIVE }],
+        select: { type: 'Main', option: [{ type: 'End' }] },
+        current: { turn: 3, yourIndex: 0, result: -1, players: [
+          { active: [dBench], bench: [], benchMax: 5, hand: [prizeD], deckCount: 46, discard: [{ id: 721, serial: 64 }], prize: [] },
+          { active: [aBench], bench: [], benchMax: 5, hand: [prizeA], deckCount: 45, discard: [{ id: 723, serial: 13 }], prize: [] }] },
+      }],
+    });
+
+    const beatSteps = snapshot.steps.filter((step) =>
+      ['Attack', 'KnockOut', 'PrizeTake', 'Promotion'].includes(step.type));
+    expect(beatSteps.map((step) => step.type)).toEqual(['Attack', 'KnockOut', 'PrizeTake', 'Promotion']);
+
+    const knockOutStep = beatSteps.find((step) => step.type === 'KnockOut');
+    expect(knockOutStep?.animationPhases?.map((phase) => phase.key)).toEqual(['KnockOut:0', 'KnockOut:1']);
+    expect(knockOutStep?.label).toBe('2 Pokemon were Knocked Out.');
+
+    // One promotion step, one BoardMove per owner, both actives promoted.
+    const promotionStep = beatSteps.find((step) => step.type === 'Promotion');
+    expect(promotionStep?.actionTimeline?.map((event) => event.kind)).toEqual(['MoveCard', 'MoveCard']);
+    expect(promotionStep?.animationPhases?.map((phase) => phase.key)).toEqual(['BoardMove:0', 'BoardMove:1']);
+    expect(promotionStep?.label).toBe('2 Pokemon were promoted to the Active Spot.');
+    expect(promotionStep?.displayView?.players[0].active.pokemon?.serial).toBe(67);
+    expect(promotionStep?.displayView?.players[1].active.pokemon?.serial).toBe(14);
   });
 
   it('keeps a same-id hand energy when a deck-sourced attach names its own serial (Punk Up)', () => {

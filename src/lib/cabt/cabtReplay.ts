@@ -396,7 +396,7 @@ function buildDecisionSteps(entries: ReplayFrameEntry[], views: GameView[]): Rep
     if (!open) {
       return null;
     }
-    steps.push(openStepToReplayStep(entries, views, open));
+    steps.push(...openStepToReplaySteps(entries, views, open));
     const group = open.group;
     open = null;
     return group;
@@ -564,7 +564,7 @@ function mergedGroup(groups: ReplayActionGroup[]): ReplayActionGroup {
   };
 }
 
-function openStepToReplayStep(entries: ReplayFrameEntry[], views: GameView[], open: OpenReplayStep): ReplayStep {
+function openStepToReplaySteps(entries: ReplayFrameEntry[], views: GameView[], open: OpenReplayStep): ReplayStep[] {
   const entry = entries[open.endIndex];
   const consumedEntry = entries[open.consumedIndex] ?? entry;
   // Finalize the merged group on the open step so callers that reuse it as
@@ -583,27 +583,199 @@ function openStepToReplayStep(entries: ReplayFrameEntry[], views: GameView[], op
   const forcedTail = open.consumedIndex === open.endIndex
     ? consumedEntry.groups.filter(isForcedStepGroup)
     : [];
-  return replayStepForFrame({
+  const previousView = views[open.startIndex - 1];
+
+  // A knockout attack resolves as four distinct beats — attack (announce +
+  // damage), the knockout(s), the prize draw(s), the promotion(s) — that Charlie
+  // wants as separately scrubbable/forkable timeline steps rather than five
+  // auto-advancing animation phases inside one step. Split the group at those
+  // beat boundaries; every non-knockout action stays a single step (byte-
+  // identical to before). The animation phases are computed once against the
+  // whole group — the KnockOut/Damage classifiers require the Attack phase to be
+  // present in the same pass — then sliced to the beat that owns each one, so a
+  // beat's animations still play against the pre-state projected across the
+  // earlier beats. Live playback already sequences these as phase views (one
+  // clock); this only reshapes the replay step list.
+  const beats = attackBeatPartition(
+    group,
+    animationEventPhases(group.events),
+    groupedStepAnimationPhases(previousView, entry.view, [group], 0),
+  );
+  const contextGroups = beats
+    ? [...beats.map((beat) => beat.group), ...forcedTail]
+    : [group, ...forcedTail];
+
+  const beatSources = beats
+    ? beats.map((beat, beatIndex) => ({ group: beat.group, animationPhases: beat.animationPhases, groupIndex: beatIndex }))
+    : [{ group, animationPhases: groupedStepAnimationPhases(previousView, entry.view, [group], 0), groupIndex: 0 }];
+
+  return beatSources.map((source) => replayStepForFrame({
     view: entry.view,
     stateIndex: open.endIndex,
-    label: group.label,
-    type: group.type,
-    actionTimeline: group.events,
+    label: source.group.label,
+    type: source.group.type,
+    actionTimeline: source.group.events,
     displayView: groupedStepDisplayView(
-      views[open.startIndex - 1],
+      previousView,
       consumedEntry.view,
-      [group, ...forcedTail],
-      0,
-      open.consumedIndex !== open.endIndex,
+      contextGroups,
+      source.groupIndex,
+      open.consumedIndex !== open.endIndex || (beats?.length ?? 0) > 1,
     ),
-    animationPhases: groupedStepAnimationPhases(views[open.startIndex - 1], entry.view, [group], 0),
+    animationPhases: source.animationPhases,
     payload: {
-      events: group.events,
+      events: source.group.events,
       select: entry.frame.select,
       selected: entry.frame.selected,
       action: entry.frame.action,
     },
+  }));
+}
+
+type AttackBeat = {
+  group: ReplayActionGroup;
+  animationPhases: ReplayAnimationPhase[] | undefined;
+};
+
+type AttackBeatKind = 'attack' | 'ko' | 'prize' | 'promotion';
+
+// Partition a knockout attack's merged group into ordered beats. Returns null
+// (no split) for any group without a knockout — a plain attack, a retreat, an
+// ability-driven promotion — so those keep their single-step shape. The beat of
+// each animation phase is decided by its key against engine emission order:
+// everything up to the first KnockOut is the attack beat; KnockOut phases the
+// knockout beat; PrizeTake phases the prize beat; a BoardMove after the knockout
+// the promotion beat. Empty beats collapse (a knockout that ends the game emits
+// no prize/promotion beat).
+function attackBeatPartition(
+  group: ReplayActionGroup,
+  eventPhases: AnimationEventPhase[],
+  renderPhases: ReplayAnimationPhase[] | undefined,
+): AttackBeat[] | null {
+  const firstKnockOut = eventPhases.findIndex((phase) => phase.key.startsWith('KnockOut:'));
+  if (firstKnockOut < 0) {
+    return null;
+  }
+  const beatForPhase = (phaseIndex: number): AttackBeatKind => {
+    const key = eventPhases[phaseIndex].key;
+    if (key.startsWith('KnockOut:')) {
+      return 'ko';
+    }
+    if (key.startsWith('PrizeTake:')) {
+      return 'prize';
+    }
+    if (key.startsWith('BoardMove:') && phaseIndex > firstKnockOut) {
+      return 'promotion';
+    }
+    return 'attack';
+  };
+
+  const eventBeat = new Map<ActionTimelineEvent, AttackBeatKind>();
+  const phasesByBeat: Record<AttackBeatKind, ReplayAnimationPhase[]> = { attack: [], ko: [], prize: [], promotion: [] };
+  eventPhases.forEach((phase, phaseIndex) => {
+    const beat = beatForPhase(phaseIndex);
+    for (const event of phase.events) {
+      eventBeat.set(event, beat);
+    }
+    const renderPhase = renderPhases?.[phaseIndex];
+    if (renderPhase) {
+      phasesByBeat[beat].push(renderPhase);
+    }
   });
+
+  // Every group event lands in exactly one beat, order preserved; anything the
+  // phase pass did not key (a leading event before the Attack) defaults to the
+  // attack beat.
+  const eventsByBeat: Record<AttackBeatKind, ActionTimelineEvent[]> = { attack: [], ko: [], prize: [], promotion: [] };
+  for (const event of group.events) {
+    eventsByBeat[eventBeat.get(event) ?? 'attack'].push(event);
+  }
+
+  const order: AttackBeatKind[] = ['attack', 'ko', 'prize', 'promotion'];
+  const beats: AttackBeat[] = [];
+  for (const beat of order) {
+    const events = eventsByBeat[beat];
+    if (!events.length) {
+      continue;
+    }
+    beats.push({
+      group: {
+        ...group,
+        events,
+        type: beat === 'attack' ? group.type : attackBeatType(beat),
+        label: beat === 'attack' ? group.label : attackBeatLabel(beat, events, phasesByBeat[beat]),
+      },
+      animationPhases: phasesByBeat[beat].length ? phasesByBeat[beat] : undefined,
+    });
+  }
+  // A lone attack beat (no distinct consequence beat survived) is not a split.
+  return beats.length > 1 ? beats : null;
+}
+
+function attackBeatType(beat: AttackBeatKind): string {
+  if (beat === 'ko') {
+    return 'KnockOut';
+  }
+  if (beat === 'prize') {
+    return 'PrizeTake';
+  }
+  return 'Promotion';
+}
+
+function attackBeatLabel(beat: AttackBeatKind, events: ActionTimelineEvent[], phases: ReplayAnimationPhase[]): string {
+  if (beat === 'ko') {
+    return knockOutBeatLabel(events);
+  }
+  if (beat === 'promotion') {
+    return promotionBeatLabel(events);
+  }
+  // Prize beat: reuse the PrizeTake phase label ("took X as a Prize card" /
+  // "took N Prize cards").
+  return phases[0]?.label ?? events[0]?.message ?? 'Prize card taken.';
+}
+
+function knockOutBeatLabel(events: ActionTimelineEvent[]): string {
+  const knockOuts = events.filter(isKnockOutEvent);
+  const names = knockOuts.map((event) => eventCardName(event));
+  const playerIndex = knockOuts[0]?.playerIndex;
+  const samePlayer = knockOuts.every((event) => event.playerIndex === playerIndex);
+  if (!names.length) {
+    return events[0]?.message ?? 'Pokemon Knocked Out.';
+  }
+  if (names.length === 1) {
+    return `${playerLabel(playerIndex)}'s ${names[0]} was Knocked Out.`;
+  }
+  if (samePlayer && playerIndex !== undefined) {
+    return `${playerLabel(playerIndex)}'s ${joinNames(names)} were Knocked Out.`;
+  }
+  return `${names.length} Pokemon were Knocked Out.`;
+}
+
+function promotionBeatLabel(events: ActionTimelineEvent[]): string {
+  const promotions = events.filter((event) => {
+    const params = event.params as Record<string, unknown> | undefined;
+    return isMoveCardKind(event.kind) && isBoardPositionMove(Number(params?.fromArea), Number(params?.toArea));
+  });
+  const names = promotions.map((event) => eventCardName(event));
+  const playerIndex = promotions[0]?.playerIndex;
+  const samePlayer = promotions.every((event) => event.playerIndex === playerIndex);
+  if (!names.length) {
+    return events[0]?.message ?? 'Pokemon promoted to the Active Spot.';
+  }
+  if (samePlayer && playerIndex !== undefined) {
+    return `${playerLabel(playerIndex)} promoted ${joinNames(names)} to the Active Spot.`;
+  }
+  return `${names.length} Pokemon were promoted to the Active Spot.`;
+}
+
+function joinNames(names: string[]): string {
+  if (names.length <= 1) {
+    return names[0] ?? '';
+  }
+  if (names.length === 2) {
+    return `${names[0]} and ${names[1]}`;
+  }
+  return `${names.slice(0, -1).join(', ')}, and ${names.at(-1)}`;
 }
 
 function stepsForFrameGroups(
