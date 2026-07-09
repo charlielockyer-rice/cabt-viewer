@@ -200,10 +200,10 @@ function abilityLogForTriggeredEvolution(context: AnnounceContext): AnnounceLog 
 // it over the attaching card.
 function abilityLogForTriggeredAttach(context: AnnounceContext): { afterIndex: number; log: AnnounceLog } | null {
   const { newLogs } = context;
-  const attachIndex = newLogs.findIndex((log, index) =>
+  const attachIndex = newLogs.findIndex((log) =>
     context.logTypeName(log) === 'Attach'
-    && newLogs.slice(index + 1).some((candidate) => context.logTypeName(candidate) !== 'Attach')
-    && attachedCardWasInHand(context, log));
+    && attachedCardWasInHand(context, log)
+    && attachedCardHasOnAttachEffect(context, numberField(log.cardId)));
   if (attachIndex < 0) {
     return null;
   }
@@ -226,6 +226,22 @@ function abilityLogForTriggeredAttach(context: AnnounceContext): { afterIndex: n
       trigger: 'Attach',
     },
   };
+}
+
+// A card announces its own name on attach only when it carries an ON-ATTACH
+// effect (printed "When you attach this card ..." — e.g. Telepath Psychic
+// Energy's deck search, Enriching Energy). Plain basic energies (no skill) and
+// passive/continuous Special Energies and Tools stay silent: an ability-style
+// bubble that resolved nothing would read as noise. This keys on the card, not
+// on a same-frame follow-up event, so the announce fires at the attach beat
+// even when the effect's own events land in the NEXT frame (the real card-19
+// shape: attach in one frame, deck placements in the next).
+function attachedCardHasOnAttachEffect(context: AnnounceContext, cardId: number | undefined): boolean {
+  if (cardId === undefined) {
+    return false;
+  }
+  return (context.cardMeta(cardId)?.skills ?? []).some((skill) =>
+    /when you attach this/i.test(skill.text ?? ''));
 }
 
 function attachedCardWasInHand(context: AnnounceContext, log: AnnounceLog): boolean {

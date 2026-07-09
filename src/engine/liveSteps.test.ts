@@ -164,6 +164,12 @@ describe('LiveObservationNormalizer', () => {
           cardType: 0,
           skills: [{ name: 'We Draw', text: 'When you play this Pokemon from your hand to evolve 1 of your Pokemon, you may draw 3 cards.' }],
         },
+        702: {
+          cardId: 702,
+          name: 'Enriching Energy',
+          cardType: 6,
+          skills: [{ name: 'Enriching Energy', text: 'When you attach this card from your hand to a Pokemon, draw a card.' }],
+        },
       },
       attacks: {},
     };
@@ -270,12 +276,12 @@ describe('LiveObservationNormalizer', () => {
     });
 
     it('inserts a triggered-attach announce after the attach (replay-shape oracle)', () => {
-      // Acting seat attaches a hand card (Hariyama, serial 50) whose effect then
-      // resolves as a further log in the same step. Oracle: cabtReplay.ts's
-      // abilityLogForTriggeredAttach produces the same Ability log, INSERTED
-      // right after the attach (not prepended).
-      const previous = observation(0, [], { seat0Hand: [{ id: 700, serial: 50, playerIndex: 0 }] });
-      const attach = { type: CabtLogType.ATTACH, playerIndex: 0, cardId: 700, serial: 50, cardIdTarget: 99, serialTarget: 5 };
+      // Acting seat attaches a hand card WITH an on-attach effect (Enriching
+      // Energy, serial 50 — "When you attach this card ..."). Oracle:
+      // cabtReplay.ts's abilityLogForTriggeredAttach announces the card by name,
+      // INSERTED right after the attach (not prepended).
+      const previous = observation(0, [], { seat0Hand: [{ id: 702, serial: 50, playerIndex: 0 }] });
+      const attach = { type: CabtLogType.ATTACH, playerIndex: 0, cardId: 702, serial: 50, cardIdTarget: 99, serialTarget: 5 };
       const effect = { type: CabtLogType.DRAW, playerIndex: 0, cardId: 5, serial: 30 };
 
       const result = logsWithSynthesizedAnnounce(previous, null, [], [attach, effect], dataMaps);
@@ -285,22 +291,38 @@ describe('LiveObservationNormalizer', () => {
         expect.objectContaining({
           type: 'Ability',
           playerIndex: 0,
-          cardId: 700,
+          cardId: 702,
           serial: 50,
           cardIdTarget: 99,
           serialTarget: 5,
-          abilityName: 'Hariyama',
+          abilityName: 'Enriching Energy',
           trigger: 'Attach',
         }),
         effect,
       ]);
     });
 
-    it('does not announce a plain attach with no follow-up effect', () => {
+    it('does not announce a plain attach of a card with no on-attach effect', () => {
+      // Card 700's skill is passive/continuous ("Boost your Fighting Pokemon"),
+      // not an on-attach trigger — so it stays silent even though it has a skill.
       const previous = observation(0, [], { seat0Hand: [{ id: 700, serial: 50, playerIndex: 0 }] });
       const attach = { type: CabtLogType.ATTACH, playerIndex: 0, cardId: 700, serial: 50 };
 
       expect(logsWithSynthesizedAnnounce(previous, null, [], [attach], dataMaps)).toEqual([attach]);
+    });
+
+    it('announces an on-attach-effect energy attached alone, no same-frame follow-up (Task 10 cross-frame)', () => {
+      // Enriching Energy (702) carries "When you attach this card ...". Its
+      // triggered events land in the NEXT frame (real Telepath shape), so the
+      // announce must fire from the card's effect, at the attach beat — not from
+      // a same-frame follow-up event.
+      const previous = observation(0, [], { seat0Hand: [{ id: 702, serial: 50, playerIndex: 0 }] });
+      const attach = { type: CabtLogType.ATTACH, playerIndex: 0, cardId: 702, serial: 50, cardIdTarget: 99, serialTarget: 5 };
+
+      expect(logsWithSynthesizedAnnounce(previous, null, [], [attach], dataMaps)).toEqual([
+        attach,
+        expect.objectContaining({ type: 'Ability', cardId: 702, abilityName: 'Enriching Energy', trigger: 'Attach' }),
+      ]);
     });
 
     it('does not announce an attach of a card that was not in hand', () => {

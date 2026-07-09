@@ -462,7 +462,7 @@ describe('cabtReplayToSnapshot', () => {
     expect(snapshot.views[step.stateIndex].players[0].deckCount).toBe(39);
   });
 
-  it('synthesizes attach-trigger announces after hand attachments with follow-up effects', () => {
+  it('announces an on-attach-effect energy by name, inserted right after the attach', () => {
     const target = { id: 722, serial: 6, hp: 90, maxHp: 90 };
     const opponent = { active: [], bench: [], benchMax: 5, handCount: 0, deckCount: 60, prize: [] };
     const snapshot = cabtReplayToSnapshot({
@@ -482,7 +482,7 @@ describe('cabtReplayToSnapshot', () => {
             active: [target],
             bench: [],
             benchMax: 5,
-            hand: [{ id: 3, serial: 32 }],
+            hand: [{ id: 19, serial: 32 }],
             deckCount: 40,
             discard: [],
             prize: [],
@@ -491,7 +491,7 @@ describe('cabtReplayToSnapshot', () => {
       }, {
         action: [[0], []],
         logs: [
-          { type: 'Attach', playerIndex: 0, cardId: 3, serial: 32, cardIdTarget: 722, serialTarget: 6 },
+          { type: 'Attach', playerIndex: 0, cardId: 19, serial: 32, cardIdTarget: 722, serialTarget: 6 },
           { type: 'Draw', playerIndex: 0, cardId: 4, serial: 101 },
           { type: 'Draw', playerIndex: 0, cardId: 5, serial: 102 },
           { type: 'Draw', playerIndex: 0, cardId: 6, serial: 103 },
@@ -505,7 +505,7 @@ describe('cabtReplayToSnapshot', () => {
           players: [{
             active: [{
               ...target,
-              energyCards: [{ id: 3, serial: 32 }],
+              energyCards: [{ id: 19, serial: 32 }],
             }],
             bench: [],
             benchMax: 5,
@@ -524,15 +524,15 @@ describe('cabtReplayToSnapshot', () => {
     });
 
     const step = snapshot.steps[1];
-    expect(step.label).toBe('Player 1 attached Basic Water Energy to Snover.');
+    expect(step.label).toBe('Player 1 attached Telepath Psychic Energy to Snover.');
     expect(step.actionTimeline?.map((event) => event.kind)).toEqual(['Attach', 'Ability', 'Draw', 'Draw', 'Draw', 'Draw']);
     expect(step.actionTimeline?.[1].params).toMatchObject({
       type: 'Ability',
-      cardId: 3,
+      cardId: 19,
       serial: 32,
       cardIdTarget: 722,
       serialTarget: 6,
-      abilityName: 'Basic Water Energy',
+      abilityName: 'Telepath Psychic Energy',
       trigger: 'Attach',
     });
     expect(step.animationPhases?.map((phase) => phase.key)).toEqual(['Attach:0', 'Ability:0', 'Draw:0']);
@@ -2657,25 +2657,37 @@ describe('cabtReplayToSnapshot', () => {
       }],
     });
 
-    // The attach and its triggered placement coalesce into one step.
-    const step = snapshot.steps.find((candidate) =>
-      candidate.animationPhases?.some((phase) => phase.key.startsWith('DeckBoardPlace:')));
-    expect(step).toBeDefined();
-    expect(step?.animationPhases?.map((phase) => phase.key.replace(/:\d+$/, ''))).toEqual([
-      'Attach',
-      'DeckBoardPlace',
-      'Shuffle',
-    ]);
-
-    // THE GUARD: the settled board and the attach phase must NOT yet show the
-    // two Abra the later placement phase benches — otherwise they flash in early.
     const benchSerials = (view: { players: Array<{ bench: Array<{ empty: boolean; pokemon?: { serial?: number } }> }> } | undefined) =>
       (view?.players[0].bench ?? []).filter((slot) => !slot.empty).map((slot) => slot.pokemon?.serial);
-    expect(benchSerials(step?.displayView ?? step?.view)).toEqual([]);
-    const phaseBench = (key: string) => benchSerials(
-      step?.animationPhases?.find((phase) => phase.key.startsWith(key))?.view);
-    expect(phaseBench('Attach:')).toEqual([]);
-    expect(phaseBench('DeckBoardPlace:')).toEqual([21, 18]);
+
+    // The placement animates the two Abra in.
+    const placementStepIndex = snapshot.steps.findIndex((candidate) =>
+      candidate.animationPhases?.some((phase) => phase.key.startsWith('DeckBoardPlace:')));
+    expect(placementStepIndex).toBeGreaterThanOrEqual(0);
+    const placementStep = snapshot.steps[placementStepIndex];
+    expect(benchSerials(placementStep.animationPhases?.find((phase) => phase.key.startsWith('DeckBoardPlace:'))?.view))
+      .toEqual([21, 18]);
+
+    // THE GUARD: no beat BEFORE the placement — the attach and its on-attach
+    // announce — may show the two Abra on its settled board or in any of its
+    // phase views. Otherwise they flash in early.
+    for (let index = 0; index < placementStepIndex; index += 1) {
+      const step = snapshot.steps[index];
+      expect(benchSerials(step.displayView ?? step.view)).toEqual([]);
+      for (const phase of step.animationPhases ?? []) {
+        expect(benchSerials(phase.view)).toEqual([]);
+      }
+    }
+
+    // Task 10: the on-attach effect announces "Telepath Psychic Energy" — an
+    // Ability beat appears between the attach and the placement.
+    const attachStepIndex = snapshot.steps.findIndex((candidate) =>
+      candidate.actionTimeline?.some((event) => event.kind === 'Attach'));
+    const abilityStepIndex = snapshot.steps.findIndex((candidate) =>
+      candidate.actionTimeline?.some((event) => event.kind === 'Ability'));
+    expect(attachStepIndex).toBeGreaterThanOrEqual(0);
+    expect(abilityStepIndex).toBeGreaterThan(attachStepIndex);
+    expect(abilityStepIndex).toBeLessThanOrEqual(placementStepIndex);
   });
 
   // Whiff variant (real frames 34/107): the search finds no eligible Basic {P}
