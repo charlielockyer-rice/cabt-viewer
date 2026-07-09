@@ -55,7 +55,9 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: linear-gradient(var(--accent-base), var(--accent-strong));
+    /* Neutral, chess.com-style: a light rail for my share against the dark
+       slate track (the opponent's). No brand hue -- stays in the board palette. */
+    background: linear-gradient(#eef1f5, #ccd3dc);
     transition: height 420ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
