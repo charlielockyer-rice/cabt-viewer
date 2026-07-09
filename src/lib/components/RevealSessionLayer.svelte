@@ -9,6 +9,7 @@
   import { fallbackHandTarget, handCardVisualRect, revealLayout } from '../anim/revealLayout';
   import { animVisibility, type ReleaseClaim } from '../anim/visibility';
   import { cardBackCssVar } from '../game/cardAssets';
+  import { centerOf } from '../dom/planeGeometry';
   import type { ActionTimelineEvent, CardView, PlayerView } from '../game/types';
 
   type Props = {
@@ -626,13 +627,6 @@
       exitY: 0,
       exitScale: 1,
       rotation: 0,
-    };
-  }
-
-  function centerOf(rect: DOMRect): { x: number; y: number } {
-    return {
-      x: rect.left + rect.width / 2,
-      y: rect.top + rect.height / 2,
     };
   }
 

@@ -14,8 +14,9 @@ These rules apply to `cabt-viewer`.
   long-lived singleton stores for prompt-local selections or assignments.
 - Component-local styling belongs in component `<style>` blocks. Global CSS is
   only for tokens, resets, and genuinely cross-cutting rules.
-- Prompt field access should go through helpers in `src/lib/game/prompts.ts`.
-  Do not add new prompt-field `as any` outside that module.
+- Decision/option field access should go through the typed helpers in
+  `src/lib/game/decisions.ts` over the `DecisionView`/`DecisionOptionView`
+  model. Do not reach into raw option fields with `as any`.
 - Keep leaf components presentational by default. Store imports belong in
   explicit container components.
 - Keep Kaggle-provided native engine files out of this repo. Use

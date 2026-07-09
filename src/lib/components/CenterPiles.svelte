@@ -109,7 +109,7 @@
   function visibleDiscardCards(discard: CardView[]) {
     return discard.slice(-2).map((card, index, cards) => ({
       card,
-      key: `${card.serial ?? ''}-${card.id ?? ''}-${card.name ?? ''}`,
+      key: cardKey(card),
       layer: index === cards.length - 1 ? 'top' : 'under',
     }));
   }

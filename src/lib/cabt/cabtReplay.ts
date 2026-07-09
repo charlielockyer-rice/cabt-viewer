@@ -248,7 +248,7 @@ function abilityLogForConfirmedTrigger(
   }
   const selected = selectedOptionFromAction(previousFrame.select, frame.action);
   const optionType = selected?.option?.type;
-  if (optionType !== 'Yes' && optionType !== CabtOptionType.YES) {
+  if (normalizedOptionType(optionType) !== 'Yes') {
     return null;
   }
   return {
@@ -302,7 +302,7 @@ function retreatLogForSelectedOption(
 ): Record<string, unknown> | null {
   const selected = selectedOptionFromAction(previousFrame.select, frame.action);
   const option = selected?.option;
-  if (!option || (option.type !== 'Retreat' && option.type !== CabtOptionType.RETREAT)) {
+  if (!option || normalizedOptionType(option.type) !== 'Retreat') {
     return null;
   }
   const playerIndex = numberField(option.playerIndex) ?? selected.playerIndex;
@@ -543,9 +543,18 @@ function abilitySourceCard(
   return undefined;
 }
 
+// Option types arrive as either the numeric CabtOptionType code or its
+// PascalCase string name depending on the source; normalize both to the name
+// so callers compare one form.
+const optionTypeNames: Record<number, string> = {
+  [CabtOptionType.ABILITY]: 'Ability',
+  [CabtOptionType.RETREAT]: 'Retreat',
+  [CabtOptionType.YES]: 'Yes',
+};
+
 function normalizedOptionType(type: unknown): string {
-  if (type === CabtOptionType.ABILITY) {
-    return 'Ability';
+  if (typeof type === 'number' && type in optionTypeNames) {
+    return optionTypeNames[type];
   }
   return String(type ?? '');
 }

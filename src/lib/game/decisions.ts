@@ -50,17 +50,6 @@ export function handOptionForSlot(
     .find((option) => option.boardTarget && sameBoardRef(option.boardTarget, slot));
 }
 
-// The option that plays the selected hand card without a board destination
-// (trainers, and basics — the engine places those itself).
-export function untargetedHandOption(
-  decision: DecisionView | undefined,
-  playerIndex: number,
-  handIndex: number,
-): DecisionOptionView | undefined {
-  const options = optionsForHandCard(decision, playerIndex, handIndex);
-  return options.find((option) => !option.boardTarget);
-}
-
 export function endTurnOption(decision: DecisionView | undefined): DecisionOptionView | undefined {
   if (!isMainDecision(decision)) {
     return undefined;

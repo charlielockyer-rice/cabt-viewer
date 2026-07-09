@@ -236,7 +236,6 @@ export type CabtObservation = {
   select: CabtSelectData | null;
   logs: Array<Record<string, unknown>>;
   current: CabtState | null;
-  search_begin_input?: string | null;
 };
 
 export type CabtCardData = {
