@@ -147,15 +147,37 @@ describe('classifyAnimationCoverage', () => {
   });
 
   it('flags uncommon zone movements as static state changes', () => {
+    // DISCARD->HAND recovery moves are now animated by design (the discard-
+    // recovery flight); attached-energy-to-hand remains a genuinely static,
+    // un-animated move, so it replaces it as the "uncommon static" example.
     const coverage = classifyAnimationCoverage(event('MoveCard', {
-      fromArea: CabtAreaType.DISCARD,
+      fromArea: CabtAreaType.ENERGY,
       toArea: CabtAreaType.HAND,
       cardId: 3,
       serial: 10,
     }));
 
     expect(coverage.level).toBe('static');
-    expect(coverage.key).toBe('MoveCard:discard->hand');
+    expect(coverage.key).toBe('MoveCard:energy->hand');
+  });
+
+  it('animates a discard recovery to hand, gated on the card identity', () => {
+    const withId = classifyAnimationCoverage(event('MoveCard', {
+      fromArea: CabtAreaType.DISCARD,
+      toArea: CabtAreaType.HAND,
+      cardId: 3,
+      serial: 10,
+    }));
+    expect(withId.level).toBe('polished');
+    expect(withId.key).toBe('MoveCard:discard->hand');
+
+    const withoutId = classifyAnimationCoverage(event('MoveCard', {
+      fromArea: CabtAreaType.DISCARD,
+      toArea: CabtAreaType.HAND,
+      serial: 10,
+    }));
+    expect(withoutId.level).toBe('conditional');
+    expect(withoutId.key).toBe('MoveCard:discard->hand');
   });
 
   // TOTALITY GUARD (promoted from example-based): enumerate every timeline kind

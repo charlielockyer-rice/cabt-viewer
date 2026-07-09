@@ -522,6 +522,35 @@ function moveCardChoreography(
     }], effects: [] };
   }
 
+  // Discard recovery (Night Stretcher, Super Rod, etc.): a known card lifts out
+  // of the discard pile and flies to the hand, landing at the settled hand-card
+  // rect. Reuses the hand-play flight (startHandPlay resolves the discard pile as
+  // the source), so keying on the DISCARD->HAND move gives every recover the same
+  // motion for free.
+  if (fromArea === CabtAreaType.DISCARD && toArea === CabtAreaType.HAND) {
+    if (cardId === undefined) {
+      return none;
+    }
+    return { motions: [{
+      id: `${event.id}-${serial ?? cardId}`,
+      style: 'hand-play',
+      space: 'viewport',
+      player,
+      sprite: { kind: 'card', card: cabtCardToView(cardId) },
+      from: { kind: 'discard', player },
+      to: { kind: 'hand-slot', player, serial },
+      toFallbacks: [],
+      startMs: actionAnimationStartMs(batch, event),
+      durationMs: actionAnimationTiming.handMoveMs,
+      toDeck: false,
+      fromDeck: false,
+      waitForDestinationCard: false,
+      hide: [],
+      hideResolvedTarget: true,
+      evolve: false,
+    }], effects: [] };
+  }
+
   if (fromArea === CabtAreaType.DECK && toArea === CabtAreaType.DISCARD) {
     if (cardId === undefined) {
       return none;

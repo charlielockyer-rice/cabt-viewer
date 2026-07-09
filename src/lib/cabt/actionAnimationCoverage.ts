@@ -21,6 +21,7 @@ const polishedMoveAreas = new Set([
   moveKey(CabtAreaType.LOOKING, CabtAreaType.DECK),
   moveKey(CabtAreaType.LOOKING, CabtAreaType.DECK_BOTTOM),
   moveKey(CabtAreaType.LOOKING, CabtAreaType.HAND),
+  moveKey(CabtAreaType.DISCARD, CabtAreaType.HAND),
   moveKey(CabtAreaType.HAND, CabtAreaType.DECK),
   moveKey(CabtAreaType.HAND, CabtAreaType.DISCARD),
   moveKey(CabtAreaType.HAND, CabtAreaType.ACTIVE),
@@ -112,6 +113,14 @@ export function classifyAnimationCoverage(
     if (fromArea === CabtAreaType.LOOKING && toArea === CabtAreaType.HAND) {
       notes.push('Depends on the reveal sprite still being held from an earlier deck reveal phase.');
       return { key, level: 'conditional', label: 'Revealed card take to hand', notes };
+    }
+
+    if (fromArea === CabtAreaType.DISCARD && toArea === CabtAreaType.HAND) {
+      if (!hasFiniteNumber(params?.cardId)) {
+        notes.push('Discard recovery needs the card identity to lift the exact card from the pile.');
+        return { key, level: 'conditional', label: 'Discard recovery to hand', notes };
+      }
+      return { key, level: 'polished', label: 'Discard recovery to hand', notes };
     }
 
     if (fromArea === CabtAreaType.DECK && (toArea === CabtAreaType.ACTIVE || toArea === CabtAreaType.BENCH)) {

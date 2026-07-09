@@ -404,7 +404,11 @@
       return;
     }
     const serial = motion.from.kind === 'hand-slot' ? motion.from.serial : undefined;
-    const sourceRect = handSourceRect(player, serial, snapshot);
+    // A discard recovery (Night Stretcher) reuses this flight but lifts from the
+    // discard pile instead of a hand card — resolve the pile as its source rect.
+    const sourceRect = motion.from.kind === 'discard'
+      ? (resolveAnchor(motion.from)?.element.getBoundingClientRect() ?? null)
+      : handSourceRect(player, serial, snapshot);
     const visualTarget = cardVisual(target.resolved.element);
     const targetRect = visualTarget.getBoundingClientRect();
     if (!sourceRect || sourceRect.width <= 0 || targetRect.width <= 0 || targetRect.height <= 0) {
