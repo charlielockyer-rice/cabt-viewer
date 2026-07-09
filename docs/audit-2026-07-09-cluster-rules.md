@@ -169,6 +169,11 @@ SHIPPED (green, pushed, real-data-backed tests):
   separate runtime piece, pending Charlie's visual check.)
 - Task 3 — reveal→hand lands at the settled sibling hand-card width (`0e42fe3`).
 - Task 6 — prize take lifts + hides the real source prize slots (`9971f8c`).
+- Task 10 (Charlie follow-on) — an on-attach-effect energy (Telepath/Enriching)
+  announces its name at the attach beat (`40cd916`). Keyed on printed "When you
+  attach this card" text (exactly 2 cards; a naive has-skills rule would have
+  announced 37 passive Tools/energies as noise). One approved oracle reshape: two
+  attach-announce fixtures that asserted a basic energy announcing an ability.
 
 NOT LANDED:
 - Task 8 — no Ability/Punk Up event in episode 84924975; needs a different
