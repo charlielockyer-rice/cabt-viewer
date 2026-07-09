@@ -395,7 +395,16 @@
       }
     }
 
-    if (settle && (releases.length || spriteIds.size)) {
+    // The settleMs defer exists to avoid a GAP: hold a still-relevant claim (its
+    // settled card may not have painted) until settleMs, then remove the sprite.
+    // But when NO claim is held — a switch/retreat/promotion, where every claim
+    // released immediately because its slot already shows the new occupant — the
+    // destination is already authoritative, so deferring the sprite only OVERLAPS
+    // it with the settled card for settleMs, doubling the card and its drop-shadow
+    // (the "shadow flickers under both cards" at the settle). Tear those sprites
+    // down on the next prepaint instead, so the sprite leaves the same beat the
+    // settled cards un-hid. Release on the destination landing, not a fixed clock.
+    if (settle && releases.length) {
       const timer = setTimeout(() => {
         for (const release of releases) {
           release();
@@ -413,6 +422,10 @@
     for (const release of releases) {
       release();
     }
+    // No held claim: the settled cards' elements already exist and just un-hid
+    // this same tick, so drop the sprites synchronously in the same reactive
+    // update — Svelte paints the un-hide and the sprite removal together, so
+    // there is neither an overlap (double shadow) nor a gap.
     sprites = [];
   }
 
