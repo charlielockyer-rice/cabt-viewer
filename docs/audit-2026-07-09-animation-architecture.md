@@ -10,6 +10,11 @@ The document has two halves. The **top half is for Charlie** — plain language,
 explained through what you actually see on screen. The **bottom half is for the implementing
 agent** — the event×pipeline matrix and file:line specifics.
 
+**Companion:** [`audit-2026-07-09-viewer-holistic.md`](./audit-2026-07-09-viewer-holistic.md)
+covers play-path-vs-replay-path divergence, the module relationship & boundary map, and the
+tech-debt census. Read alongside this doc — the "two clocks" divergence there is the structural
+root of the M3/M4 handoff seam described below.
+
 ---
 
 # PART 1 — For Charlie
