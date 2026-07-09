@@ -64,6 +64,11 @@
   const handPlayMoveMs = 360;
   const evolveMoveMs = 430;
   const evolveVisibleMs = actionAnimationTiming.evolveMs + replayAnimationPhaseGapMs + 40;
+  // The evolve sprite + its destination claim hand off when the evolved card has
+  // actually rendered and decoded, not on a fixed clock — poll interval + a
+  // bounded safety release so the sprite never strands if the art never loads.
+  const evolveReadyPollMs = 40;
+  const maxEvolveHoldMs = 1400;
   const drawMoveMs = actionAnimationTiming.deckDrawMs;
   const drawHandoffMs = Math.round(drawMoveMs * 0.88);
   const resetMoveMs = 360;
@@ -90,6 +95,10 @@
   let reduceMotion = $state(false);
   let generation = 0;
   let handSnapshots = new Map<number, HandSnapshot>();
+  // Evolve handoffs that outlive the scope boundary: sprite id -> finish(). These
+  // sprites and their claims are NOT torn down by endScope; they release only on
+  // the destination-ready poll (or its safety timeout).
+  const evolveHolds = new Map<string, () => void>();
 
   onMount(() => {
     if (typeof window.matchMedia !== 'function') {
@@ -106,6 +115,9 @@
 
   onDestroy(() => {
     endScope();
+    for (const finish of [...evolveHolds.values()]) {
+      finish();
+    }
   });
 
   // Hand sources vanish from the DOM the moment the view moves a card out of
@@ -414,13 +426,25 @@
       }
     }
     if (motion.evolve) {
+      // Hide the destination slot's card contents while the sprite (which wears
+      // the evolved face) covers it, so the not-yet-decoded evolved card art
+      // can't render see-through to its pre-evolution — released together on the
+      // destination-ready handoff, never on a fixed clock.
+      const evolveMode = hideModeForTarget(target.resolved.element, target.anchor);
+      if (evolveMode) {
+        motionReleases.push(animVisibility.claim(target.resolved.element, evolveMode));
+      }
       motionReleases.push(applyTargetEffect(target.resolved.element, 'data-hand-evolve-animation-active', {
         '--hand-evolve-delay': `${motion.startMs}ms`,
         '--hand-evolve-move-ms': `${evolveMoveMs}ms`,
         '--hand-evolve-visible-ms': `${evolveVisibleMs}ms`,
       }));
     }
-    releases.push(...motionReleases);
+    // Evolve claims are owned by the hold (they must survive the scope boundary);
+    // everything else releases on the normal per-scope schedule via endScope.
+    if (!motion.evolve) {
+      releases.push(...motionReleases);
+    }
 
     const moveMs = motion.evolve ? evolveMoveMs : handPlayMoveMs;
     const visibleMs = motion.evolve ? evolveVisibleMs : moveMs;
@@ -452,6 +476,10 @@
     if (holdUntilScopeEnd) {
       return;
     }
+    if (motion.evolve) {
+      startEvolveHold(motion, target.resolved.element, motionReleases);
+      return;
+    }
     const timer = setTimeout(() => {
       if (startedGeneration !== generation) {
         return;
@@ -462,6 +490,68 @@
       sprites = sprites.filter((sprite) => sprite.id !== motion.id);
     }, motion.startMs + visibleMs + 24);
     timers.push(timer);
+  }
+
+  // Hold the evolve sprite + its destination claim past the scope boundary and
+  // release them only once the evolved card element has rendered AND its art has
+  // decoded (or a bounded safety fires). Fixes the base-card blink: endScope used
+  // to clear the sprite the instant the next view landed, exposing the
+  // not-yet-painted evolved card (see-through to its pre-evolution).
+  function startEvolveHold(motion: CardMotion, slotElement: HTMLElement, motionReleases: ReleaseClaim[]) {
+    const card = motion.sprite.kind === 'card' ? motion.sprite.card : undefined;
+    const serial = card?.serial;
+    const cardId = card?.id;
+    let done = false;
+    let poll: ReturnType<typeof setInterval> | undefined;
+    let pollStart: ReturnType<typeof setTimeout>;
+    let safety: ReturnType<typeof setTimeout>;
+    const finish = () => {
+      if (done) {
+        return;
+      }
+      done = true;
+      clearTimeout(pollStart);
+      clearTimeout(safety);
+      if (poll !== undefined) {
+        clearInterval(poll);
+      }
+      for (const release of motionReleases) {
+        release();
+      }
+      sprites = sprites.filter((sprite) => sprite.id !== motion.id);
+      evolveHolds.delete(motion.id);
+    };
+    evolveHolds.set(motion.id, finish);
+    const destinationReady = (): boolean => {
+      for (const tile of slotElement.querySelectorAll('.card-tile')) {
+        const matches = serial !== undefined
+          ? tile.getAttribute('data-card-serial') === String(serial)
+          : tile.getAttribute('data-card-id') === String(cardId);
+        if (!matches) {
+          continue;
+        }
+        const img = tile.querySelector('img');
+        // A text-only card (no <img>) is ready as soon as its tile exists.
+        return !img || (img.complete && img.naturalWidth > 0);
+      }
+      return false;
+    };
+    // Let the full evolve animation (flight + settle flair, evolveVisibleMs) play
+    // before polling, so a cache-warm evolved card releases on the same beat it
+    // used to — the hold only EXTENDS past that when the art hasn't painted yet,
+    // never shortens the flourish.
+    pollStart = setTimeout(() => {
+      if (destinationReady()) {
+        finish();
+        return;
+      }
+      poll = setInterval(() => {
+        if (destinationReady()) {
+          finish();
+        }
+      }, evolveReadyPollMs);
+    }, motion.startMs + evolveVisibleMs);
+    safety = setTimeout(finish, motion.startMs + evolveVisibleMs + maxEvolveHoldMs);
   }
 
   function startAttachUnder(effect: TargetEffect, startedGeneration: number) {
@@ -797,7 +887,10 @@
       release();
     }
     releases.length = 0;
-    sprites = [];
+    // Keep evolve-hold sprites alive across the boundary; they own their own
+    // claims and timers and release on the destination-ready handoff, so the
+    // evolved card's not-yet-decoded art never flashes its pre-evolution.
+    sprites = sprites.filter((sprite) => evolveHolds.has(sprite.id));
   }
 
   function resolveFirst(anchors: Anchor[]): { anchor: Anchor; resolved: ResolvedAnchor } | null {
