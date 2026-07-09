@@ -130,22 +130,9 @@ describe.skipIf(!hasLog)('whole-game swap inertness (happy-dom, real game log)',
     // the projection/hand-tracking dedupes serials.
     const dupFrames = duplicateHandSerialFrames(views);
 
-    // happy-dom has no Web Animations API; the Hand's FLIP animate() call is
-    // irrelevant to keying, so stub it to a no-op animation.
-    const proto = HTMLElement.prototype as unknown as { animate?: unknown; getAnimations?: unknown };
-    if (typeof proto.animate !== 'function') {
-      proto.animate = () => ({
-        cancel() {},
-        finish() {},
-        finished: Promise.resolve(),
-        onfinish: null,
-        addEventListener() {},
-        removeEventListener() {},
-      });
-    }
-    if (typeof proto.getAnimations !== 'function') {
-      proto.getAnimations = () => [];
-    }
+    // happy-dom has no Web Animations API; the Hand's FLIP animate()/getAnimations()
+    // calls are stubbed globally by the shared setup (src/test-setup/dom-web-animations.ts)
+    // and are irrelevant to the keying under test.
 
     // Render animations OFF-path: 0-size rects make the layers no-op, so this
     // isolates reactive-DOM keying (the class under test).

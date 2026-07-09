@@ -12,6 +12,10 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts'],
+    // Polyfills the Web Animations API for happy-dom component tests; no-op in
+    // the node environment. Keeps uncaught FLIP-animation errors from poisoning
+    // the run's exit code.
+    setupFiles: ['src/test-setup/dom-web-animations.ts'],
     testTimeout: 30_000,
   },
 });
