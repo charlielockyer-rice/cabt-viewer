@@ -451,3 +451,58 @@ Still open: R9 (Pokemon Checkup animation, design note). #28 (bench resize) and
 #29 (KO 4-step partition — held for Charlie's UX call; the flicker justification
 was falsified: the KO motions already play sequentially, so the partition is a
 pure step-clarity decision, not a flicker fix).
+
+---
+
+# #26 REOPENED — the switch shadow flicker is NOT fixed (ca01cd8 addressed a different seam)
+
+Charlie hard-refreshed on a fresh 5173/8095 stack at 1151f0e (UNTHROTTLED) and
+still sees the shadow flicker at the end of retreat/switch animations. So the
+round-4 note above marking #26 "FIXED (ca01cd8)" is WRONG — corrected here.
+
+What ca01cd8 actually fixed: a REAL but different seam — a ~65ms double-render
+OVERLAP at the board-move settle (sprite + settled card both present). Measured
+overlap 65ms→0. But that asserted element PRESENCE, never shadow CONTINUITY —
+which is the thing Charlie perceives. The fix may even have turned the 65ms
+double into a hard swap. A/B ca01cd8 (in vs reverted) as part of the redo.
+
+LEADING HYPOTHESIS (geometry JUMP, not a presence gap): the board-move sprite
+flies via a CSS transform — `--board-move-start-scale` = fromRect.width /
+toRect.width, plus translate (BoardAnimationLayer ~460-465). A `box-shadow` on a
+scaled/translated element renders SCALED and OFFSET with the transform, so the
+flying card's shadow is a different size/blur/offset than the settled card's.
+At the handoff the shadow JUMPS from the sprite's transformed shadow to the
+settled card's normal shadow — present the whole time, but DISCONTINUOUS. It's
+structural (shows unthrottled) and scales with the source↔dest size delta
+(bench and active slots are different sizes), which explains "idk when it can
+occur." This is failure shape (b) from the brief; rule it in/out with a geometry
+trace before coding.
+
+THE MISSING INVARIANT (Charlie's Q1 — "when are shadows supposed to show?"):
+today the codebase states NO shadow-ownership invariant. A card's ambient shadow
+(`CardTile` box-shadow) is carried by whichever element renders that card — the
+settled slot tile OR the flying board-move sprite's tile — with no guarantee
+that (1) exactly one is visible at any instant, or (2) their shadow GEOMETRY is
+continuous across the handoff. The absence of that invariant is the bug. Target
+invariant to implement and then guard: **a moving card's shadow is owned by
+exactly one element at every instant from motion start to settle, and its
+rendered shadow geometry (size/offset/blur) is continuous across every handoff —
+in both live and replay.**
+
+FIX DIRECTIONS to weigh (pick after the geometry trace):
+- Keep the shadow off the scaled transform — put the ambient shadow on a
+  non-scaled wrapper around the sprite's card, or counter-scale the shadow so its
+  rendered geometry matches the settled card.
+- Or the sprite carries NO shadow, and the settled card's shadow stays visible
+  under the flying face the whole flight (claim the face, not the shadow).
+- Or match the sprite's shadow to the settled geometry at the landing frame.
+
+INVESTIGATION REQUIREMENTS (must, per lead): (i) BOTH live-play AND replay
+retreats — the prior round only ever rigged REPLAY, which may be why the fix
+missed; (ii) UNTHROTTLED as well as throttled (his Mac isn't janky — full-speed
+repro ⇒ structural); (iii) record computed box-shadow + transform +
+getBoundingClientRect PER FRAME through the handoff (geometry, not
+presence/absence) to distinguish gap(a) / jump(b) / third-participant(c, e.g. the
+vacated slot's shadow or a FLIP-animated bench neighbor); (iv) screencap the
+exact flicker frame as eyeball evidence. Rig recipe: `viewer-real-browser-probe`
+memory; episode 84924975 via `?view=replay&replay=<file>`.
