@@ -342,6 +342,46 @@ describe('LiveObservationNormalizer', () => {
 
       expect(normalizer.push(empty)).toEqual({ observation: empty, newLogs: [] });
     });
+
+    // Invariant guard (M1, live side): a tracked hand must never carry two cards
+    // with the same defined serial — that collides Hand.svelte's keyed
+    // each-block. Placeholders use negative synthetic serials and are exempt.
+    it('never emits a hand with duplicate defined serials across a concealed sequence', () => {
+      const normalizer = new LiveObservationNormalizer(new Set([1]));
+      const assertUniqueSerials = (result: ReturnType<LiveObservationNormalizer['push']>) => {
+        for (const player of result.observation.current!.players) {
+          const defined = (player.hand ?? [])
+            .map((card) => card.serial)
+            .filter((serial): serial is number => typeof serial === 'number' && serial >= 0);
+          expect(new Set(defined).size).toBe(defined.length);
+        }
+      };
+
+      // Seat 1 (concealed) acts with a concrete hand, then a run of hidden
+      // draws, a known discard, and a hidden move grows/reorders the tracker.
+      assertUniqueSerials(normalizer.push(observation(1, [], {
+        seat1Hand: [
+          { id: 20, serial: 11, playerIndex: 1 },
+          { id: 21, serial: 12, playerIndex: 1 },
+        ],
+      })));
+      assertUniqueSerials(normalizer.push(observation(0, [
+        { type: CabtLogType.DRAW_REVERSE, playerIndex: 1 },
+        { type: CabtLogType.DRAW_REVERSE, playerIndex: 1 },
+      ], { seat1HandCount: 4 })));
+      assertUniqueSerials(normalizer.push(observation(0, [
+        { type: CabtLogType.MOVE_CARD, playerIndex: 1, cardId: 20, serial: 11, fromArea: CabtAreaType.HAND, toArea: CabtAreaType.DISCARD },
+        { type: CabtLogType.MOVE_CARD_REVERSE, playerIndex: 1, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.HAND },
+      ], { seat1HandCount: 4 })));
+      assertUniqueSerials(normalizer.push(observation(1, [], {
+        seat1Hand: [
+          { id: 21, serial: 12, playerIndex: 1 },
+          { id: 22, serial: 13, playerIndex: 1 },
+          { id: 23, serial: 14, playerIndex: 1 },
+          { id: 24, serial: 15, playerIndex: 1 },
+        ],
+      })));
+    });
   });
 });
 
