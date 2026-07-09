@@ -2228,11 +2228,16 @@ function syncAttachmentBadgesFromCurrent(player: PlayerView, currentPlayer: Play
 function removeBySerialOrCardId(cards: CardView[], event: ActionTimelineEvent | undefined): CardView[] | undefined {
   const params = event?.params as Record<string, unknown> | undefined;
   const serial = Number(params?.serial);
+  // A serial names exactly one physical card. When the event carries a finite
+  // serial, resolve by serial ONLY — a serial not present means the moved card
+  // is not this hand's tracked copy (a deck-sourced Punk Up energy names its own
+  // serial, absent from hand), so falling through to cardId would evict an
+  // unrelated same-id copy (the hand's other Dark Energy) until the next raw
+  // step rebuilds. Mirror removeMovedCardFromZone's serial-strict discipline;
+  // the caller's fallback handles a genuinely untracked (face-down) move.
   if (Number.isFinite(serial)) {
     const index = cards.findIndex((card) => card.serial === serial);
-    if (index >= 0) {
-      return removeAt(cards, index);
-    }
+    return index >= 0 ? removeAt(cards, index) : undefined;
   }
 
   const cardId = Number(params?.cardId);

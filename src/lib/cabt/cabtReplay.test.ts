@@ -3865,6 +3865,115 @@ describe('cabtReplayToSnapshot', () => {
     ]);
   });
 
+  it('keeps a same-id hand energy when a deck-sourced attach names its own serial (Punk Up)', () => {
+    // Punk Up attaches a Dark Energy from the DECK; the Attach event carries the
+    // deck card's serial (71), which is absent from the hand. The hand holds a
+    // different Dark Energy (same cardId 7, serial 72) that must NOT be evicted
+    // by a cardId fall-through while the deck card is revealed/attached.
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 6,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 648, serial: 91, hp: 340, maxHp: 340 }],
+            bench: [],
+            benchMax: 5,
+            hand: [{ id: 7, serial: 72 }, { id: 1182, serial: 110 }],
+            deckCount: 40,
+            prize: [],
+          }, {
+            active: [{ id: 600, serial: 50, hp: 120, maxHp: 120 }],
+            bench: [],
+            benchMax: 5,
+            handCount: 4,
+            deckCount: 42,
+            prize: [],
+          }],
+        },
+      }, {
+        select: { type: 'Main', option: [{ type: 'End' }] },
+        current: {
+          turn: 6,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 648, serial: 91, hp: 340, maxHp: 340 }],
+            bench: [],
+            benchMax: 5,
+            hand: [{ id: 7, serial: 72 }, { id: 1182, serial: 110 }],
+            deckCount: 40,
+            prize: [],
+          }, {
+            active: [{ id: 600, serial: 50, hp: 120, maxHp: 120 }],
+            bench: [],
+            benchMax: 5,
+            handCount: 4,
+            deckCount: 42,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'Ability', playerIndex: 0, cardId: 648, serial: 91 },
+          { type: 'Attach', playerIndex: 0, cardId: 7, serial: 71, serialTarget: 91 },
+        ],
+        current: {
+          turn: 6,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 648, serial: 91, hp: 340, maxHp: 340 }],
+            bench: [],
+            benchMax: 5,
+            hand: [{ id: 7, serial: 72 }, { id: 1182, serial: 110 }],
+            deckCount: 39,
+            prize: [],
+          }, {
+            active: [{ id: 600, serial: 50, hp: 120, maxHp: 120 }],
+            bench: [],
+            benchMax: 5,
+            handCount: 4,
+            deckCount: 42,
+            prize: [],
+          }],
+        },
+      }, {
+        select: { type: 'Main', option: [{ type: 'End' }] },
+        current: {
+          turn: 6,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 648, serial: 91, hp: 340, maxHp: 340 }],
+            bench: [],
+            benchMax: 5,
+            hand: [{ id: 7, serial: 72 }, { id: 1182, serial: 110 }],
+            deckCount: 39,
+            prize: [],
+          }, {
+            active: [{ id: 600, serial: 50, hp: 120, maxHp: 120 }],
+            bench: [],
+            benchMax: 5,
+            handCount: 4,
+            deckCount: 42,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    const attachStep = snapshot.steps.find((step) =>
+      step.actionTimeline?.some((event) => event.kind === 'Attach'));
+    expect(attachStep).toBeDefined();
+    const attachPhase = attachStep?.animationPhases?.find((phase) => phase.key.startsWith('Attach'));
+    const phaseHand = attachPhase?.view.players[0].hand ?? attachStep?.displayView?.players[0].hand;
+    // The hand's own Dark Energy (serial 72) survives the deck-sourced attach.
+    expect(phaseHand?.some((card) => card.serial === 72)).toBe(true);
+    expect(phaseHand?.some((card) => card.serial === 71)).toBe(false);
+  });
+
   it('does not let knockout discard presentation rewrite later discard piles', () => {
     const snapshot = cabtReplayToSnapshot({
       visualize: [{
