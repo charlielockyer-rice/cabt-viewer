@@ -155,12 +155,31 @@ Machinery: `revealLayout.ts`, `RevealSessionLayer.takeRevealedCard` /
   Task 4 fix deliberately left the PRE_EVOLUTION area-delta on the whole-board
   resync (unchanged) so KO discard handling is untouched.
 
-## Status
+## Status (end of 2026-07-09 night)
 
-- Tasks 1, 2 shipped (commits a394469, b830849). Task 2 pre-state fix
-  (`gameViewWithDeferredBoardArrivals`) awaiting real-data validation against
-  Kaggle episode 84924975.
-- Cluster A/B/C root causes above are code-verified except where marked NEEDS
-  real data. Fixes to fragile flagship animation land against these rules with
-  the shapes from the real episode, and geometry/claim/partition assertions are
-  unit-tested; visual confirmation stays with Charlie.
+SHIPPED (green, pushed, real-data-backed tests):
+- Task 1 — classifier unification (`a394469`).
+- Task 2 — pre-state leak fix (`b830849`), validated on real episode 84924975
+  (`bb004b2`): the real attach/placement frames coalesce into one step, so the
+  same-step deferral covers Charlie's actual bug.
+- Task 4 — retreat reversal (`c3e1c38`): energy/tool moves no longer resync
+  whole board positions, so the swap phase renders pre-swap.
+- Tasks 5 + 7 — live TurnStart split (`e8dda91`): the new turn's draw/promotion
+  are their own beats in the correct perspective. (Seat-flip double-render is a
+  separate runtime piece, pending Charlie's visual check.)
+- Task 3 — reveal→hand lands at the settled sibling hand-card width (`0e42fe3`).
+- Task 6 — prize take lifts + hides the real source prize slots (`9971f8c`).
+
+NOT LANDED:
+- Task 8 — no Ability/Punk Up event in episode 84924975; needs a different
+  decoded day or a synthesized triggered-attach fixture. Correctness bug, so
+  worth the real repro before fixing.
+- Task 9 — plan above; needs a discard-sourced reveal motion. The reveal session
+  hardcodes the deck as the source in `RevealSessionLayer.spritesForPlayer`, so
+  it needs a per-motion source (deck vs discard) gated on a new `discard-reveal`
+  style, plus the coverage reclassify + a motions.test assertion. Additive but
+  DOM-runtime; deferred rather than risk the working deck-search reveal headless.
+  Reuses the Task 3 landing geometry once built.
+
+Dev-log: `agent-lab/journal/2026-07-09-viewer-cluster-fixes.md` (with the
+eyeball checklist for Charlie's morning game).
