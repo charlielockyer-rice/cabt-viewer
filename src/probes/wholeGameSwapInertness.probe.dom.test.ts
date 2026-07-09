@@ -30,6 +30,7 @@ import { dirname, resolve } from 'node:path';
 import { flushSync, mount, unmount } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cabtReplayToSnapshot } from '../lib/cabt/cabtReplay';
+import { cardIdentityKey } from '../lib/game/cardIdentity';
 import type { GameView, PlayerView } from '../lib/game/types';
 import { gameStore } from '../state/game.svelte';
 import { viewSettingsStore } from '../state/viewSettings.svelte';
@@ -43,13 +44,6 @@ import App from '../App.svelte';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const logPath = resolve(here, '../../public/game-logs/pasted-507c3b0f.json');
-
-function cardKey(card: { serial?: number; id?: number; name?: string } | undefined): string {
-  if (!card) {
-    return '';
-  }
-  return `${card.serial ?? ''}-${card.id ?? ''}-${card.name ?? ''}`;
-}
 
 // Data-level scan: any view whose hand has two cards sharing a serial collides
 // Hand.svelte's keyed each-block (key = card.serial). This is the pure-data
@@ -179,8 +173,10 @@ describe.skipIf(!hasLog)('whole-game swap inertness (happy-dom, real game log)',
         const prevPlayer = prev.players?.[p] as PlayerView | undefined;
         const curPlayer = view.players?.[p] as PlayerView | undefined;
         // (A) discard-top identity
-        const prevTopKey = cardKey(prevPlayer?.discard?.at(-1));
-        const curTopKey = cardKey(curPlayer?.discard?.at(-1));
+        const prevTop = prevPlayer?.discard?.at(-1);
+        const curTop = curPlayer?.discard?.at(-1);
+        const prevTopKey = prevTop ? cardIdentityKey(prevTop) : "";
+        const curTopKey = curTop ? cardIdentityKey(curTop) : "";
         const curTopEl = discardTopEl(p);
         if (prevTopKey && curTopKey && prevTopKey === curTopKey) {
           discardTopComparable += 1;
@@ -332,8 +328,10 @@ describe.skipIf(!hasLog)('whole-game swap inertness (happy-dom, real game log)',
         prevHand[p] = curHand;
 
         // (B) discard-top node identity across the flip (the piles half of M2)
-        const prevTopKey = cardKey(prevPlayer?.discard?.at(-1));
-        const curTopKey = cardKey(curPlayer?.discard?.at(-1));
+        const prevTop = prevPlayer?.discard?.at(-1);
+        const curTop = curPlayer?.discard?.at(-1);
+        const prevTopKey = prevTop ? cardIdentityKey(prevTop) : "";
+        const curTopKey = curTop ? cardIdentityKey(curTop) : "";
         const curTopEl = discardTopEl(p);
         if (prevTopKey && curTopKey && prevTopKey === curTopKey) {
           const beforeTop = prevDiscardTop[p];

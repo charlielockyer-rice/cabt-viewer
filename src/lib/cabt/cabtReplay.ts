@@ -2292,6 +2292,35 @@ function applyReplayAreaDelta(
   }
 }
 
+// Remove the first card the event names by serial, else the first it names by
+// cardId; returns undefined when it names neither a present serial nor a
+// present cardId, so each caller applies its own fallback. Hand serials are
+// unique (the M1 invariant), so first-match removal equals filter-by-serial.
+function removeBySerialOrCardId(cards: CardView[], event: ActionTimelineEvent | undefined): CardView[] | undefined {
+  const params = event?.params as Record<string, unknown> | undefined;
+  const serial = Number(params?.serial);
+  if (Number.isFinite(serial)) {
+    const index = cards.findIndex((card) => card.serial === serial);
+    if (index >= 0) {
+      return removeAt(cards, index);
+    }
+  }
+
+  const cardId = Number(params?.cardId);
+  if (Number.isFinite(cardId)) {
+    const index = cards.findIndex((card) => card.id === cardId);
+    if (index >= 0) {
+      return removeAt(cards, index);
+    }
+  }
+
+  return undefined;
+}
+
+// Zone removal keeps its own shape: a finite serial removes by serial and
+// returns without falling through to cardId (a zone can legitimately hold cards
+// whose id matches but whose serial does not), and the empty-event fallback
+// drops the last card rather than resizing.
 function removeMovedCardFromZone(cards: CardView[], event: ActionTimelineEvent | undefined): CardView[] {
   const params = event?.params as Record<string, unknown> | undefined;
   const serial = Number(params?.serial);
@@ -2309,42 +2338,11 @@ function removeMovedCardFromZone(cards: CardView[], event: ActionTimelineEvent |
 }
 
 function removeMovedCardFromHand(hand: CardView[], event: ActionTimelineEvent | undefined): CardView[] {
-  const params = event?.params as Record<string, unknown> | undefined;
-  const serial = Number(params?.serial);
-  if (Number.isFinite(serial)) {
-    const index = hand.findIndex((card) => card.serial === serial);
-    if (index >= 0) {
-      return removeAt(hand, index);
-    }
-  }
-
-  const cardId = Number(params?.cardId);
-  if (Number.isFinite(cardId)) {
-    const index = hand.findIndex((card) => card.id === cardId);
-    if (index >= 0) {
-      return removeAt(hand, index);
-    }
-  }
-
-  return resizedHand(hand, hand.length - 1);
+  return removeBySerialOrCardId(hand, event) ?? resizedHand(hand, hand.length - 1);
 }
 
 function removeCardFromHandIfPresent(hand: CardView[], event: ActionTimelineEvent | undefined): CardView[] {
-  const params = event?.params as Record<string, unknown> | undefined;
-  const serial = Number(params?.serial);
-  if (Number.isFinite(serial) && hand.some((card) => card.serial === serial)) {
-    return hand.filter((card) => card.serial !== serial);
-  }
-
-  const cardId = Number(params?.cardId);
-  if (Number.isFinite(cardId)) {
-    const index = hand.findIndex((card) => card.id === cardId);
-    if (index >= 0) {
-      return removeAt(hand, index);
-    }
-  }
-
-  return hand;
+  return removeBySerialOrCardId(hand, event) ?? hand;
 }
 
 function removeAt<T>(items: T[], index: number): T[] {

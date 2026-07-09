@@ -2,9 +2,6 @@ import type { VisualAssetManifest } from '../lib/game/visualAssets';
 
 class VisualAssetsStore {
   manifest = $state<VisualAssetManifest | undefined>();
-  manifestUrl = $state('');
-  loading = $state(false);
-  error = $state('');
   private loadedUrl = '';
 
   async loadConfiguredManifest() {
@@ -13,20 +10,14 @@ class VisualAssetsStore {
       return;
     }
     this.loadedUrl = url;
-    this.manifestUrl = url;
-    this.loading = true;
-    this.error = '';
     try {
       const response = await fetch(url);
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
       this.manifest = await response.json() as VisualAssetManifest;
-    } catch (error) {
+    } catch {
       this.manifest = undefined;
-      this.error = error instanceof Error ? error.message : String(error);
-    } finally {
-      this.loading = false;
     }
   }
 }

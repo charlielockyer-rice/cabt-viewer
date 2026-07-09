@@ -2,6 +2,7 @@
   import { onDestroy, tick } from 'svelte';
   import CardTile from './CardTile.svelte';
   import { cardBackCssVar } from '../game/cardAssets';
+  import { cardIdentityKey } from '../game/cardIdentity';
   import type { CardView, PlayerView } from '../game/types';
 
   type Props = {
@@ -109,7 +110,7 @@
   function visibleDiscardCards(discard: CardView[]) {
     return discard.slice(-2).map((card, index, cards) => ({
       card,
-      key: cardKey(card),
+      key: cardIdentityKey(card),
       layer: index === cards.length - 1 ? 'top' : 'under',
     }));
   }
@@ -123,14 +124,10 @@
     const discardTop = player.discard.at(-1);
     return [
       player.index,
-      cardKey(card),
-      cardKey(discardTop),
+      cardIdentityKey(card),
+      cardIdentityKey(discardTop),
       player.discard.length,
     ].join(':');
-  }
-
-  function cardKey(card: CardView | undefined): string {
-    return `${card?.serial ?? ''}-${card?.id ?? ''}-${card?.name ?? ''}`;
   }
 
   function syncOrSnapshotResolvingCard(playerForSnapshot: () => PlayerView, opponent: boolean) {
