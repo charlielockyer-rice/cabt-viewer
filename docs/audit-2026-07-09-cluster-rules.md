@@ -387,3 +387,67 @@ Still open: R9 (Pokemon Checkup animation) — design note only, not built.
 The rig recipe (private vite 5174, no engine needed for replay, Playwright rAF
 frame recorder, CDP CPU/network throttle to force paint-timing seams) is the tool
 for the remaining paint-class work; see the `viewer-real-browser-probe` memory.
+
+---
+
+# Round 4 (2026-07-09, later) — the settle-seam rule + KO-seam fixes
+
+Charlie's round-3 eyeball pass surfaced a cluster of settle/handoff seams
+(residual prize flicker, retreat/Teleport shadow flicker, an evolve regression)
+that all turned out to be ONE rule, verified with the real-browser rig.
+
+## THE ROUND-4 RULE (the real deliverable)
+
+**A visibility claim or animation sprite must release on the DESTINATION VIEW
+LANDING — the view event that makes its hidden state redundant — never on a
+fixed animation-duration clock.** A timer is only ever a *proxy* for "the view
+has caught up"; every proxy that guesses wrong is a flicker. The failure comes
+in two shapes:
+- **GAP** — the claim/sprite releases BEFORE the destination renders → the thing
+  it was covering shows blank for a beat (R5 evolve blink; the board-move
+  gap-avoidance the settleMs defer protects).
+- **OVERLAP** — the claim/sprite releases AFTER the destination is already
+  authoritative → the destination and the sprite both render → a double (the #26
+  switch double-shadow; the residual prize re-show is the same family from the
+  other side).
+The durable fix is always to gate release on the actual view event: an element
+rendered+decoded, a count decremented, a scope/settle where the new occupant is
+authoritative — not `setTimeout(prizeTakeMs)` / `settleMs`.
+
+Fixes that now embody it: R4 (HandToDeck view drops the card so the reset claim
+releases on a departed element), R5 (`c23a073` evolve sprite holds on a
+destination-ready poll until the `<img>` decodes), the residual prize fix
+(`d760688` — source-slot claim releases via endScope = the `prizesLeft`
+decrement, not the sprite timer), #26 (`ca01cd8` — a switch's board-move sprites
+drop synchronously with the settled un-hide, since their destination is already
+authoritative).
+
+## Timer-vs-view release-site inventory (audit these against the rule)
+
+VIEW-GATED (correct):
+- Evolve handoff — `ViewportAnimationLayer.startEvolveHold` destination-ready
+  poll (evolved `<img>` decoded) + bounded safety.
+- Prize SOURCE-slot claims — released via `endScope` (the `prizesLeft` decrement).
+- Board-move switch settle — `BoardAnimationLayer.endScope`, no-held-claim path
+  drops sprites synchronously with the un-hide.
+- Hand-reset (Lillie) — the HandToDeck phase view drops the departing cards at
+  display time, so the source claim releases on already-departed elements.
+
+TIMER-GATED (still on a fixed clock — NOT bugs today, but audit before trusting;
+each conversion needs its own rig evidence, do not batch-refactor):
+- `startHandPlay` non-evolve (hand→board play): `motionReleases` at
+  `startMs + visibleMs + 24`. Safe because the board slot is authoritative at the
+  play, but clock-gated.
+- `startPrizeTakes` TARGET hand-slot claim + sprite: `prizeTakeMs` timer (the
+  taken card is in hand by then).
+- `startResets` sprite + (now) source claim release: bounded `resetMoveMs + 120`.
+- `BoardAnimationLayer` settle HELD-claim path: `settleMs` (40ms) — deliberate
+  gap-avoidance for board-moves whose destination card may not have painted.
+- Decorative sprite cleanups (damage-float, coin-flip, knock-out, deck-discard
+  flip, attach-under, reveal-session leftovers): timers that remove NON-claim
+  sprites — low risk (nothing hidden to leak), left as-is.
+
+Still open: R9 (Pokemon Checkup animation, design note). #28 (bench resize) and
+#29 (KO 4-step partition — held for Charlie's UX call; the flicker justification
+was falsified: the KO motions already play sequentially, so the partition is a
+pure step-clarity decision, not a flicker fix).
