@@ -774,10 +774,14 @@
       // Hide the taken prize slots the moment their sprites depart, so the
       // face-down card doesn't stay painted in place while the sprite flies —
       // the count decrements as part of the motion, not as a cleanup snap after.
+      // These SOURCE-slot claims release ONLY via endScope (releases[]), NOT the
+      // sprite-cleanup timer (targetReleases[]): the timer fires at prizeTakeMs,
+      // but the settled view's prizesLeft decrement (which removes the slot from
+      // the DOM) lands a phase-gap later at scope end. Releasing on the timer
+      // un-hides the taken slot while it's still present — the residual re-show
+      // flicker. Gate on the destination view landing, not the animation clock.
       for (const slot of prizeSourceSlots(player, count)) {
-        const release = animVisibility.claim(slot, 'element');
-        releases.push(release);
-        targetReleases.push(release);
+        releases.push(animVisibility.claim(slot, 'element'));
       }
       let maxEndMs = 0;
 
