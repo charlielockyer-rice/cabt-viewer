@@ -9,3 +9,7 @@ sample_submission
 data
 public/local-card-images
 public/local-replays
+.gstack/
+__pycache__/
+public/game-logs/pasted-*.json
+public/game-logs/pi-vs-hydrapple-policy.json
