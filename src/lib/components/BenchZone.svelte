@@ -66,7 +66,19 @@
   }
 
   function benchSlotKey(slot: PokemonSlotView) {
-    return `slot:${slot.ownerIndex}:${slot.slot}:${slot.index}`;
+    // Key by the Pokemon's IDENTITY, not the slot position. The engine
+    // re-indexes the bench when it compacts (a Pokemon vacates via KO, retreat,
+    // promotion, Run Away Draw, etc.), so a position key (slot.index) stays
+    // fixed while its occupant changes — Svelte then reuses the same elements
+    // and shifts content into them, and the `animate:flip` has no element that
+    // MOVED to animate, so the bench snaps instead of reflowing. An identity key
+    // makes the surviving frames persist and slide to their new positions, so
+    // the one shared FLIP reflows smoothly for every effect. Empty slots (no
+    // Pokemon) fall back to position.
+    const serial = slot.pokemon?.serial ?? slot.cards[0]?.serial;
+    return serial !== undefined
+      ? `bench-card:${slot.ownerIndex}:${serial}`
+      : `slot:${slot.ownerIndex}:${slot.slot}:${slot.index}`;
   }
 </script>
 
