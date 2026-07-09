@@ -16,6 +16,25 @@ export function handCardVisualRect(element: HTMLElement | undefined): DOMRect | 
   return rect.width > 0 && rect.height > 0 ? rect : undefined;
 }
 
+// The hand lays cards out at a fixed width with horizontal scroll — a card
+// entering the hand lands at the same width as its already-settled siblings,
+// not a width divided by count, and NOT the incoming slot's transient
+// mid-layout width (which reads narrow before the card-tile gets its size, so
+// a reveal sprite scaled to it lands too small and then snaps to full size).
+// Prefer a settled sibling's width; fall back to the measured width, then the
+// computed geometry.
+export function settledLandingWidth(
+  siblingWidth: number | undefined,
+  measuredWidth: number | undefined,
+  fallbackWidth: number,
+): number {
+  return siblingWidth && siblingWidth > 0
+    ? siblingWidth
+    : measuredWidth && measuredWidth > 0
+      ? measuredWidth
+      : fallbackWidth;
+}
+
 export function fallbackHandTarget(handRect: DOMRect, index: number, count: number): DOMRect {
   const width = Math.min(handRect.height / cardRatio, handRect.width / Math.max(1, count));
   const height = width * cardRatio;
