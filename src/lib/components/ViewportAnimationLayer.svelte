@@ -700,8 +700,13 @@
         const targetCenter = centerOf(targetRect);
         const card = motion.sprite.kind === 'card' ? motion.sprite.card : undefined;
         const reveal = !concealed && card?.id !== undefined;
-        const durationMs = reveal ? actionAnimationTiming.prizeTakeMs : prizeTakeDirectMs;
-        maxEndMs = Math.max(maxEndMs, motion.startMs + durationMs);
+        // The source-slot claim + sprite must hold until the phase's settled
+        // post-take view lands (the prize-count decrement), which the stepper
+        // paces to the canonical prizeTakeMs. A concealed take's 520ms
+        // (prizeTakeDirectMs) is only the visual motion speed (the .direct CSS
+        // class); scheduling the claim release on it would repaint the taken
+        // prize back into its face-down slot for the rest of the phase.
+        maxEndMs = Math.max(maxEndMs, motion.startMs + actionAnimationTiming.prizeTakeMs);
         if (targetElement) {
           const release = animVisibility.claim(targetElement, 'element');
           releases.push(release);
