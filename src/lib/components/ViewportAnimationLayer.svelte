@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import CardTile from './CardTile.svelte';
   import { AnimationEventGate, scopeEnded } from '../anim/gate';
   import { animationActivity, scheduledEndMs } from '../anim/activity';
@@ -176,7 +176,12 @@
     if (scrubbing) {
       // gate.update already consumed this view's events (no stale batch on exit);
       // drop all choreography and hard-purge so nothing lingers as an artifact.
-      purgeForScrub();
+      // untrack: purgeForScrub reads AND writes `sprites` (endScope's filter + the
+      // length guard); without untrack the read subscribes this effect to
+      // `sprites` and the write re-triggers it — an infinite loop
+      // (effect_update_depth_exceeded) while scrubbing stays true, hard-freezing
+      // the UI under a real drag.
+      untrack(() => purgeForScrub());
       return;
     }
     if (scopeEnded(replayMode, { scopeChanged, applyChanged })) {

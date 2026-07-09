@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount, tick } from 'svelte';
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
   import BoardSlot from './BoardSlot.svelte';
   import CardTile from './CardTile.svelte';
   import { localRectIn, localRectCenter, type LocalRect } from '../dom/planeGeometry';
@@ -133,8 +133,11 @@
     if (scrubbing) {
       // gate.update already consumed this view's events (so no stale batch fires
       // when scrub ends); now drop all choreography and let the settled view show
-      // bare. Purge anything outstanding so nothing lingers as an artifact.
-      purgeForScrub();
+      // bare. untrack: purgeForScrub reads AND writes `sprites`; without untrack
+      // that read subscribes this effect to `sprites`, and the write re-triggers
+      // it — an infinite loop (effect_update_depth_exceeded) while scrubbing stays
+      // true, which hard-freezes the UI under a real drag.
+      untrack(() => purgeForScrub());
       return;
     }
     if (scopeEnded(replayMode, { scopeChanged, applyChanged })) {

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import CardTile from './CardTile.svelte';
   import { actionAnimationTiming } from '../anim/timing';
   import { AnimationEventGate } from '../anim/gate';
@@ -91,7 +91,10 @@
     if (scrubbing) {
       // gate.update already consumed this view's events; drop the reveal session
       // entirely (clearSession is already a full purge) so nothing lingers.
-      clearSession();
+      // untrack: clearSession mutates `reveals`/claims; without untrack a reactive
+      // read there could subscribe this effect and re-trigger it into an infinite
+      // loop while scrubbing stays true (the ViewportAnimationLayer freeze class).
+      untrack(() => clearSession());
       return;
     }
     const { motions, effects } = choreograph(batch, players, stepEvents.length ? stepEvents : batch);
