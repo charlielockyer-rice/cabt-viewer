@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { cabtObservationToGameView, projectDecision, type CabtDataMaps } from '../lib/cabt/cabtProjection';
 import { stepAnimationPhases } from '../lib/cabt/cabtReplay';
 import { cabtLogsToTimeline } from '../lib/cabt/logFormat';
-import { LiveObservationNormalizer, synthesizedAnnounceLog } from './liveSteps';
+import { LiveObservationNormalizer, logsWithSynthesizedAnnounce } from './liveSteps';
 import { workspaceAgentPath } from './workspaceAgents';
 import {
   type CabtAttack,
@@ -285,10 +285,10 @@ export class LocalEngineController {
     for (let index = 0; index < observations.length; index += 1) {
       const { observation, newLogs } = this.normalizer.push(observations[index]);
       const previousObservation = previous;
-      // The engine never logs ability usage; announce it from the selection
-      // that produced this observation (same synthesis as replay).
-      const announce = synthesizedAnnounceLog(previousObservation, actions[index] ?? null, this.lastNewLogs, newLogs, this.dataMaps);
-      const stepLogs = announce ? [announce, ...newLogs] : newLogs;
+      // The engine never logs ability usage; synthesize it from the selection
+      // that produced this observation (and from a triggered attach), same as
+      // replay's logsWithSynthesizedAbility.
+      const stepLogs = logsWithSynthesizedAnnounce(previousObservation, actions[index] ?? null, this.lastNewLogs, newLogs, this.dataMaps);
       previous = observation;
       this.lastNewLogs = newLogs;
       this.observation = observation;

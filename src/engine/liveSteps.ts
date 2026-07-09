@@ -1,4 +1,5 @@
 import { cardForOption, type CabtDataMaps } from '../lib/cabt/cabtProjection';
+import { displayName } from '../lib/cabt/cardView';
 import {
   CabtAreaType,
   CabtCardType,
@@ -210,6 +211,30 @@ export function synthesizedAnnounceLog(
     ?? abilityLogForTriggeredEvolution(previousNewLogs, newLogs, dataMaps);
 }
 
+// Fold the synthesized ability announce into a step's log stream, mirroring
+// cabtReplay.ts's logsWithSynthesizedAbility: the four selection-driven cases
+// prepend a single announce; a triggered attach (attaching a hand card whose
+// effect then resolves as further logs in the same step) instead INSERTS the
+// announce right after the attach, so the badge shows over the attach, not
+// before it. Live had only the prepend cases — this closes the attach gap.
+export function logsWithSynthesizedAnnounce(
+  previous: CabtObservation | null,
+  action: number[] | null,
+  previousNewLogs: BridgeLog[],
+  newLogs: BridgeLog[],
+  dataMaps: CabtDataMaps,
+): BridgeLog[] {
+  if (newLogs.some((log) => log.type === 'Ability')) {
+    return newLogs;
+  }
+  const announce = synthesizedAnnounceLog(previous, action, previousNewLogs, newLogs, dataMaps);
+  if (announce) {
+    return [announce, ...newLogs];
+  }
+  const attach = abilityLogForTriggeredAttach(previous, newLogs, dataMaps);
+  return attach ? logsWithInsertedLog(newLogs, attach.afterIndex, attach.log) : newLogs;
+}
+
 function selectedOption(previous: CabtObservation | null, action: number[] | null) {
   const select = previous?.select;
   const index = action?.[0];
@@ -354,4 +379,65 @@ function evolutionTriggeredDrawSkill(
     }
   }
   return null;
+}
+
+// A hand card attached this step whose effect then resolves (there are further,
+// non-Attach logs after it in the same batch) is a triggered ability — announce
+// it over the attaching card. Ported from cabtReplay.ts's abilityLogForTriggeredAttach.
+function abilityLogForTriggeredAttach(
+  previous: CabtObservation | null,
+  newLogs: BridgeLog[],
+  dataMaps: CabtDataMaps,
+): { afterIndex: number; log: BridgeLog } | null {
+  const attachIndex = newLogs.findIndex((log, index) =>
+    log.type === CabtLogType.ATTACH
+    && newLogs.slice(index + 1).some((candidate) => candidate.type !== CabtLogType.ATTACH)
+    && attachedCardWasInHand(previous, log));
+  if (attachIndex < 0) {
+    return null;
+  }
+  const attach = newLogs[attachIndex];
+  const cardId = numberField(attach.cardId);
+  const playerIndex = numberField(attach.playerIndex);
+  if (cardId === undefined || playerIndex === undefined) {
+    return null;
+  }
+  return {
+    afterIndex: attachIndex,
+    log: {
+      type: 'Ability',
+      playerIndex,
+      cardId,
+      serial: numberField(attach.serial),
+      cardIdTarget: numberField(attach.cardIdTarget),
+      serialTarget: numberField(attach.serialTarget),
+      abilityName: cardName(cardId, dataMaps),
+      trigger: 'Attach',
+    },
+  };
+}
+
+function attachedCardWasInHand(previous: CabtObservation | null, log: BridgeLog): boolean {
+  const playerIndex = numberField(log.playerIndex);
+  const player = playerIndex === undefined ? undefined : previous?.current?.players[playerIndex];
+  if (!player) {
+    return false;
+  }
+  const serial = numberField(log.serial);
+  const cardId = numberField(log.cardId);
+  return (player.hand ?? []).some((card) =>
+    serial !== undefined ? card.serial === serial : cardId !== undefined && card.id === cardId);
+}
+
+function logsWithInsertedLog(logs: BridgeLog[], afterIndex: number, log: BridgeLog): BridgeLog[] {
+  return [...logs.slice(0, afterIndex + 1), log, ...logs.slice(afterIndex + 1)];
+}
+
+function numberField(value: unknown): number | undefined {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : undefined;
+}
+
+function cardName(id: number, dataMaps: CabtDataMaps): string {
+  return displayName(dataMaps.cardData[id]?.name ?? (Number.isFinite(id) ? `Card ${id}` : 'a card'));
 }

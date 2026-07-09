@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LiveObservationNormalizer, synthesizedAnnounceLog } from './liveSteps';
+import { LiveObservationNormalizer, synthesizedAnnounceLog, logsWithSynthesizedAnnounce } from './liveSteps';
 import { CabtAreaType, CabtLogType, CabtOptionType, CabtSelectType, type CabtObservation, type CabtPlayerState } from '../lib/cabt/types';
 
 describe('LiveObservationNormalizer', () => {
@@ -267,6 +267,48 @@ describe('LiveObservationNormalizer', () => {
       }));
       // A different draw count is not the trigger.
       expect(synthesizedAnnounceLog(null, null, previousNewLogs, draws.slice(0, 2), dataMaps)).toBeNull();
+    });
+
+    it('inserts a triggered-attach announce after the attach (replay-shape oracle)', () => {
+      // Acting seat attaches a hand card (Hariyama, serial 50) whose effect then
+      // resolves as a further log in the same step. Oracle: cabtReplay.ts's
+      // abilityLogForTriggeredAttach produces the same Ability log, INSERTED
+      // right after the attach (not prepended).
+      const previous = observation(0, [], { seat0Hand: [{ id: 700, serial: 50, playerIndex: 0 }] });
+      const attach = { type: CabtLogType.ATTACH, playerIndex: 0, cardId: 700, serial: 50, cardIdTarget: 99, serialTarget: 5 };
+      const effect = { type: CabtLogType.DRAW, playerIndex: 0, cardId: 5, serial: 30 };
+
+      const result = logsWithSynthesizedAnnounce(previous, null, [], [attach, effect], dataMaps);
+
+      expect(result).toEqual([
+        attach,
+        expect.objectContaining({
+          type: 'Ability',
+          playerIndex: 0,
+          cardId: 700,
+          serial: 50,
+          cardIdTarget: 99,
+          serialTarget: 5,
+          abilityName: 'Hariyama',
+          trigger: 'Attach',
+        }),
+        effect,
+      ]);
+    });
+
+    it('does not announce a plain attach with no follow-up effect', () => {
+      const previous = observation(0, [], { seat0Hand: [{ id: 700, serial: 50, playerIndex: 0 }] });
+      const attach = { type: CabtLogType.ATTACH, playerIndex: 0, cardId: 700, serial: 50 };
+
+      expect(logsWithSynthesizedAnnounce(previous, null, [], [attach], dataMaps)).toEqual([attach]);
+    });
+
+    it('does not announce an attach of a card that was not in hand', () => {
+      const previous = observation(0, [], { seat0Hand: [{ id: 701, serial: 51, playerIndex: 0 }] });
+      const attach = { type: CabtLogType.ATTACH, playerIndex: 0, cardId: 700, serial: 50 };
+      const effect = { type: CabtLogType.DRAW, playerIndex: 0, cardId: 5, serial: 30 };
+
+      expect(logsWithSynthesizedAnnounce(previous, null, [], [attach, effect], dataMaps)).toEqual([attach, effect]);
     });
 
     it('announces nothing for ordinary selections', () => {
