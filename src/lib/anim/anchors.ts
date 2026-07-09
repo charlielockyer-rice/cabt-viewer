@@ -1,3 +1,5 @@
+import { AnimAttr, attr, cardAnchorValue } from './domContract';
+
 export type Anchor =
   | { kind: 'slot'; player: number; slot: 'active' | 'bench'; index: number }
   | { kind: 'pokemon'; player?: number; serial?: number; cardId?: number }
@@ -28,7 +30,7 @@ export type ResolvedAnchor = {
 export function resolveAnchor(anchor: Anchor): ResolvedAnchor | null {
   switch (anchor.kind) {
     case 'slot': {
-      const element = query(`[data-card-anchor="player:${anchor.player}:${anchor.slot}:${anchor.index}"]`);
+      const element = query(attr(AnimAttr.cardAnchor, cardAnchorValue.slot(anchor.player, anchor.slot, anchor.index)));
       return element ? { element, geometry: element } : null;
     }
     case 'pokemon': {
@@ -36,7 +38,7 @@ export function resolveAnchor(anchor: Anchor): ResolvedAnchor | null {
       return element ? { element, geometry: element } : null;
     }
     case 'deck': {
-      const pile = query(`[data-card-anchor="player:${anchor.player}:deck"]`)?.closest('.deck-pile');
+      const pile = query(attr(AnimAttr.cardAnchor, cardAnchorValue.deck(anchor.player)))?.closest('.deck-pile');
       if (!(pile instanceof HTMLElement)) {
         return null;
       }
@@ -44,7 +46,7 @@ export function resolveAnchor(anchor: Anchor): ResolvedAnchor | null {
       return { element: pile, geometry: face instanceof HTMLElement ? face : pile };
     }
     case 'discard': {
-      const pile = query(`[data-card-anchor="player:${anchor.player}:discard"]`);
+      const pile = query(attr(AnimAttr.cardAnchor, cardAnchorValue.discard(anchor.player)));
       if (!pile) {
         return null;
       }
@@ -65,15 +67,15 @@ export function resolveAnchor(anchor: Anchor): ResolvedAnchor | null {
       // Either player may use the stadium in play, so fall back from the
       // player-scoped anchor to whichever stadium is on the board.
       const element = (anchor.serial !== undefined
-        ? query(`[data-card-anchor$=":stadium"][data-card-serial="${anchor.serial}"]`)
+        ? query(`[${AnimAttr.cardAnchor}$=":stadium"]${attr(AnimAttr.cardSerial, anchor.serial)}`)
         : null)
-        ?? query(`[data-card-anchor="player:${anchor.player}:stadium"]`)
-        ?? query('[data-card-anchor$=":stadium"]');
+        ?? query(attr(AnimAttr.cardAnchor, cardAnchorValue.stadium(anchor.player)))
+        ?? query(`[${AnimAttr.cardAnchor}$=":stadium"]`);
       return element ? { element, geometry: element } : null;
     }
     case 'attached': {
-      const attribute = anchor.attached === 'energy' ? 'data-energy-serial' : 'data-tool-serial';
-      const element = query(`[${attribute}="${anchor.serial}"]`);
+      const attribute = anchor.attached === 'energy' ? AnimAttr.energySerial : AnimAttr.toolSerial;
+      const element = query(attr(attribute, anchor.serial));
       if (!element) {
         return null;
       }
@@ -81,7 +83,7 @@ export function resolveAnchor(anchor: Anchor): ResolvedAnchor | null {
       return { element, geometry: ownerCard instanceof HTMLElement ? ownerCard : element };
     }
     case 'hand': {
-      const element = query(`[data-card-anchor="player:${anchor.player}:hand"]`);
+      const element = query(attr(AnimAttr.cardAnchor, cardAnchorValue.hand(anchor.player)));
       return element ? { element, geometry: element } : null;
     }
     case 'hand-slot': {
@@ -99,16 +101,16 @@ export function resolveAnchor(anchor: Anchor): ResolvedAnchor | null {
       return element ? { element, geometry: element } : null;
     }
     case 'prize': {
-      const element = query(`[data-card-anchor="player:${anchor.player}:prize:${anchor.index}"]`);
+      const element = query(attr(AnimAttr.cardAnchor, cardAnchorValue.prize(anchor.player, anchor.index)));
       return element ? { element, geometry: element } : null;
     }
     case 'playZone': {
-      const zone = query(`[data-card-anchor="player:${anchor.player}:playZone"]`);
+      const zone = query(attr(AnimAttr.cardAnchor, cardAnchorValue.playZone(anchor.player)));
       if (!zone) {
         return null;
       }
       const card = anchor.serial !== undefined
-        ? childElement(zone, `[data-card-serial="${anchor.serial}"]`)
+        ? childElement(zone, attr(AnimAttr.cardSerial, anchor.serial))
         : null;
       const element = card ?? zone;
       return { element, geometry: element };
@@ -117,11 +119,11 @@ export function resolveAnchor(anchor: Anchor): ResolvedAnchor | null {
 }
 
 export function handSlots(player: number): HTMLElement[] {
-  const hand = query(`[data-card-anchor="player:${player}:hand"]`);
+  const hand = query(attr(AnimAttr.cardAnchor, cardAnchorValue.hand(player)));
   if (!hand) {
     return [];
   }
-  return [...hand.querySelectorAll(`[data-hand-card-slot^="player:${player}:hand:"]`)]
+  return [...hand.querySelectorAll(`[${AnimAttr.handCardSlot}^="${cardAnchorValue.handSlotPrefix(player)}"]`)]
     .filter((element): element is HTMLElement => element instanceof HTMLElement);
 }
 
@@ -131,20 +133,20 @@ function pokemonElement(anchor: { player?: number; serial?: number; cardId?: num
     // lookup: it would match a same-name copy elsewhere on the board, and a
     // wrong-instance animation is worse than none (a KO'd active must not
     // borrow its benched twin).
-    return query(`[data-pokemon-serial="${anchor.serial}"]`);
+    return query(attr(AnimAttr.pokemonSerial, anchor.serial));
   }
   if (anchor.cardId !== undefined && anchor.player !== undefined) {
-    return query(`[data-owner-index="${anchor.player}"][data-pokemon-card-id="${anchor.cardId}"]`);
+    return query(attr(AnimAttr.ownerIndex, anchor.player) + attr(AnimAttr.pokemonCardId, anchor.cardId));
   }
   return null;
 }
 
 function discardCardElement(pile: HTMLElement, serial?: number, cardId?: number): HTMLElement | null {
   if (serial !== undefined) {
-    return childElement(pile, `.card-tile[data-card-serial="${serial}"]`);
+    return childElement(pile, `.card-tile${attr(AnimAttr.cardSerial, serial)}`);
   }
   if (cardId !== undefined) {
-    return childElement(pile, `.card-tile[data-card-id="${cardId}"]`);
+    return childElement(pile, `.card-tile${attr(AnimAttr.cardId, cardId)}`);
   }
   return null;
 }
@@ -158,7 +160,7 @@ function childElement(root: HTMLElement, selector: string): HTMLElement | null {
 // elements inside an animation layer.
 function query(selector: string): HTMLElement | null {
   for (const element of document.querySelectorAll(selector)) {
-    if (element instanceof HTMLElement && !element.closest('[data-anim-layer]')) {
+    if (element instanceof HTMLElement && !element.closest(`[${AnimAttr.animLayer}]`)) {
       return element;
     }
   }
