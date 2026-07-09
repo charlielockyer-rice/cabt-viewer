@@ -2322,7 +2322,7 @@ describe('cabtReplayToSnapshot', () => {
       'Player 1 drew 4 cards.',
     ]);
     expect(step.animationPhases?.[0].view.players[0].hand.map((card) => card.serial)).toEqual([120, 101, 81, 109, 100]);
-    expect(step.animationPhases?.[1].view.players[0].hand.map((card) => card.serial)).toEqual([120, 101, 81, 109, 100]);
+    expect(step.animationPhases?.[1].view.players[0].hand.map((card) => card.serial)).toEqual([]);
     expect(step.animationPhases?.[2].view.players[0].hand).toHaveLength(0);
     expect(step.animationPhases?.[3].view.players[0].hand.map((card) => card.serial)).toEqual([94, 102, 80, 100]);
     expect(step.animationPhases?.map((phase) => phase.view.players[0].playZone.map((card) => card.serial))).toEqual([

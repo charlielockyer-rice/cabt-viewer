@@ -646,12 +646,14 @@
       if (startedGeneration !== generation) {
         return;
       }
-      // In replay the reset sources stay hidden until the phase scope ends;
-      // in live play the view has already removed them, so release now.
-      if (!replayMode) {
-        for (const release of sourceReleases) {
-          release();
-        }
+      // Release the source frame claims now the sprites have landed. Both modes
+      // now remove the reset cards from the phase view at display time (replay
+      // via the HandToDeck source-view branch), so this releases claims on
+      // already-departed elements — it never unhides a still-mounted old hand at
+      // the next phase boundary, which was the replay-only shuffle flicker (the
+      // top of the pre-shuffle hand flashing back before the draws).
+      for (const release of sourceReleases) {
+        release();
       }
       sprites = sprites.filter((sprite) => !spriteIds.has(sprite.id));
     }, Math.max(...started.map((motion) => motion.startMs)) + resetMoveMs + 120);

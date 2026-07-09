@@ -1392,6 +1392,18 @@ function animationSourceViewForPhase(
   if (phase.key.startsWith('KnockOut:')) {
     return projectedViewForEvents(phaseStartView, currentView, phase.events, { deferMoveCardEvents: true });
   }
+  if (phase.key.startsWith('HandToDeck:')) {
+    // animationPhaseUsesSourceView lists HandToDeck, but without a branch here it
+    // fell through to phaseStartView — leaving the departing cards in the hand
+    // for the whole phase. Unlike a board departure, a hand-reset sprite flies
+    // from a pre-phase hand SNAPSHOT (ViewportAnimationLayer captures the rects),
+    // not the live slot, so the view can drop the cards at display time. Apply
+    // the HAND->DECK moves immediately: the static hand cards leave when the
+    // sprites launch, instead of staying hidden until the next phase boundary
+    // and flashing back when their claim releases in the same tick they're
+    // finally removed. Mirrors the live path, which has already removed them.
+    return projectedViewForEvents(phaseStartView, currentView, phase.events);
+  }
   if (phase.key.startsWith('BoardToDeck:')) {
     return projectedViewForEvents(phaseStartView, currentView, phase.events, { deferMoveCardEvents: true });
   }
