@@ -2,6 +2,11 @@ import type { GameView } from '../lib/game/types';
 import { replayAnimationPhaseGapMs, replayStepPlaybackDelayMs, type ReplaySnapshot, type ReplayStep } from '../lib/game/replay';
 import { cabtReplayToSnapshot } from '../lib/cabt/cabtReplay';
 
+// The raw per-state observation ({current, select}) the value head needs, kept
+// alongside the projected snapshot (which drops it). Frame index === stateIndex
+// because the snapshot's stateCount is exactly visualize.length.
+export type ReplayObservationFrame = { current: unknown; select: unknown; stateIndex: number };
+
 class ReplayStore {
   replay = $state<ReplaySnapshot | null>(null);
   stepIndex = $state(0);
@@ -10,10 +15,30 @@ class ReplayStore {
   error = $state('');
   copiedForkPoint = $state(false);
   isPlaying = $state(false);
+  // Raw observation frames + both seats' decks, for the eval graph. Empty when
+  // the replay JSON predates deck persistence (legacy/Kaggle) — the graph then
+  // degrades rather than lying (see evalStore).
+  observationFrames = $state<ReplayObservationFrame[]>([]);
+  decks = $state<number[][]>([]);
+  // True while the timeline is being navigated faster than animations can play
+  // (scrub-bar drag, key-repeat stepping). The animation layers suppress all
+  // choreography and render settled views directly while this is set; otherwise
+  // dozens of orphaned viewport sprites pile up (Svelte coalesces the intermediate
+  // scopes so their teardown never runs, and each sprite then drains only on its
+  // own fixed cleanup timer). See docs/audit-2026-07-09-cluster-rules.md.
+  scrubbing = $state(false);
 
   private playbackTimer: ReturnType<typeof setTimeout> | null = null;
   private animationPhaseTimer: ReturnType<typeof setTimeout> | null = null;
+  private scrubTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastNavAt = 0;
   private readonly playbackDelayMs = 850;
+  // Steps arriving closer together than this are a scrub, not a deliberate single
+  // step. Paced playback advances one step per phase duration (>> this), so it
+  // never trips scrub mode and stays fully animated.
+  private static readonly SCRUB_DETECT_MS = 120;
+  // Resume normal choreography this long after the last navigation settles.
+  private static readonly SCRUB_DEBOUNCE_MS = 150;
 
   get currentStep(): ReplayStep | null {
     return this.replay?.steps[this.stepIndex] ?? null;
@@ -75,13 +100,18 @@ class ReplayStore {
     this.error = '';
     this.copiedForkPoint = false;
     try {
-      this.replay = await loadCabtReplay(candidates);
+      const loaded = await loadCabtReplay(candidates);
+      this.replay = loaded.snapshot;
+      this.observationFrames = loaded.frames;
+      this.decks = loaded.decks;
       this.stepIndex = 0;
       this.animationPhaseIndex = 0;
       this.scheduleAnimationPhase();
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error);
       this.replay = null;
+      this.observationFrames = [];
+      this.decks = [];
       this.stepIndex = 0;
       this.animationPhaseIndex = 0;
     } finally {
@@ -92,7 +122,11 @@ class ReplayStore {
   clear(): void {
     this.pause();
     this.clearAnimationPhaseTimer();
+    this.clearScrubTimer();
+    this.scrubbing = false;
     this.replay = null;
+    this.observationFrames = [];
+    this.decks = [];
     this.stepIndex = 0;
     this.animationPhaseIndex = 0;
     this.loading = false;
@@ -100,7 +134,33 @@ class ReplayStore {
     this.copiedForkPoint = false;
   }
 
+  // Arm scrub mode when navigation outpaces animation. Called on every setStep —
+  // which every navigation path (range inputs, next/prev/first/last, setStateIndex,
+  // and paced playback) funnels through. Playback's inter-step delay is far larger
+  // than SCRUB_DETECT_MS, so it never arms scrub; only a rapid manual sweep does.
+  private markNavigation(): void {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const delta = now - this.lastNavAt;
+    this.lastNavAt = now;
+    if (delta < ReplayStore.SCRUB_DETECT_MS) {
+      this.scrubbing = true;
+    }
+    this.clearScrubTimer();
+    this.scrubTimer = setTimeout(() => {
+      this.scrubbing = false;
+      this.scrubTimer = null;
+    }, ReplayStore.SCRUB_DEBOUNCE_MS);
+  }
+
+  private clearScrubTimer(): void {
+    if (this.scrubTimer) {
+      clearTimeout(this.scrubTimer);
+      this.scrubTimer = null;
+    }
+  }
+
   setStep(index: number): void {
+    this.markNavigation();
     this.stepIndex = clampIndex(index, this.maxStepIndex);
     this.animationPhaseIndex = 0;
     this.copiedForkPoint = false;
@@ -245,7 +305,13 @@ class ReplayStore {
   }
 }
 
-async function loadCabtReplay(candidates: string[]): Promise<ReplaySnapshot> {
+type LoadedReplay = {
+  snapshot: ReplaySnapshot;
+  frames: ReplayObservationFrame[];
+  decks: number[][];
+};
+
+async function loadCabtReplay(candidates: string[]): Promise<LoadedReplay> {
   const failures: string[] = [];
   for (const url of candidates) {
     try {
@@ -254,12 +320,29 @@ async function loadCabtReplay(candidates: string[]): Promise<ReplaySnapshot> {
         failures.push(`${url}: ${response.status}`);
         continue;
       }
-      return cabtReplayToSnapshot(await response.json());
+      const json = await response.json();
+      return {
+        snapshot: cabtReplayToSnapshot(json),
+        frames: observationFramesFrom(json),
+        decks: Array.isArray(json?.decks) ? json.decks : [],
+      };
     } catch (error) {
       failures.push(`${url}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
   throw new Error(`Unable to load CABT replay. Tried ${failures.join('; ')}`);
+}
+
+function observationFramesFrom(json: unknown): ReplayObservationFrame[] {
+  const visualize = (json as { visualize?: unknown })?.visualize;
+  if (!Array.isArray(visualize)) {
+    return [];
+  }
+  return visualize.map((frame, stateIndex) => ({
+    current: (frame as { current?: unknown })?.current ?? null,
+    select: (frame as { select?: unknown })?.select ?? null,
+    stateIndex,
+  }));
 }
 
 function replayCandidates(id: string): string[] {

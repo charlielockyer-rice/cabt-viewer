@@ -3,6 +3,7 @@
   import BenchZone from './BenchZone.svelte';
   import BoardAnimationLayer from './BoardAnimationLayer.svelte';
   import CenterPiles from './CenterPiles.svelte';
+  import EvalBar from './EvalBar.svelte';
   import type { ActionTimelineEvent, PlayerView, PokemonSlotView } from '../game/types';
 
   type ZoneName = 'discard' | 'lostZone' | 'stadium' | 'playZone';
@@ -41,6 +42,10 @@
     animationApplySignal?: number;
     evolutionChromeEvents?: ActionTimelineEvent[];
     replayMode?: boolean;
+    showEvalBar?: boolean;
+    evalPWin?: number | null;
+    evalMyName?: string;
+    evalOpponentName?: string;
   };
 
   let {
@@ -77,6 +82,10 @@
     animationApplySignal = 0,
     evolutionChromeEvents = [],
     replayMode = false,
+    showEvalBar = false,
+    evalPWin = null,
+    evalMyName = 'You',
+    evalOpponentName = 'Opponent',
   }: Props = $props();
 
   let topLostPileElement = $state<HTMLButtonElement>();
@@ -196,6 +205,16 @@
     ondragover={allowBoardPlayDrop}
     ondrop={dropToBoardPlay}
   >
+    {#if showEvalBar}
+      <!-- A child of the board plane, so the rail inherits the plane's
+           rotateX tilt and hugs the tilted left edge as part of the table.
+           The plane is transform-style: flat, so this adds no preserve-3d
+           context and cannot reintroduce the Chromium hit-test breakage. -->
+      <div class="board-eval-rail">
+        <EvalBar pWin={evalPWin} myName={evalMyName} opponentName={evalOpponentName} />
+      </div>
+    {/if}
+
     {#each orderedPlayers as benchPlayer (benchPlayer.index)}
       <BenchZone
         player={benchPlayer}
@@ -339,6 +358,26 @@
     outline: 2px solid rgba(14, 165, 233, 0.9);
     outline-offset: -4px;
     background: var(--board-plane-debug-bg);
+  }
+
+  /* Win-probability rail hugging the board's tilted LEFT edge. Pinned to the
+     same insets the board outline (::before) uses, so it runs exactly along
+     that edge; being a plane child, it foreshortens with the board tilt. It
+     sits in the edge margin left of the side-field content, so it never covers
+     a clickable slot. */
+  .board-eval-rail {
+    position: absolute;
+    top: var(--board-outline-pad-y);
+    bottom: var(--board-outline-pad-y);
+    /* Hug just inside the outline's left edge. Caps extend to the board-interior
+       side (never off the left screen edge, where the forward-tilted bottom
+       corner would clip them) but stay within the empty edge padding, clear of
+       the side-field content. */
+    left: var(--board-edge-pad-x);
+    width: 26px;
+    z-index: 2;
+    display: flex;
+    justify-content: center;
   }
 
   .game-board-plane::before {

@@ -70,6 +70,33 @@ for (const row of CARD_ROWS) {
 
 const BRIDGE_TIMEOUT_MS = Math.max(1000, Number(process.env.CABT_BRIDGE_TIMEOUT_MS ?? 120_000));
 
+// The value-head eval sidecar (agent-lab/viewer/eval_server.py). A separate
+// process from the game bridge on purpose: value queries must never share the
+// bridge's stdin/stdout gameplay protocol. Missing/unreachable sidecar degrades
+// to pWin=null (the bar hides itself) — it can never break gameplay.
+const EVAL_BASE_URL = process.env.CABT_EVAL_URL
+  ?? `http://127.0.0.1:${process.env.CABT_EVAL_PORT ?? 8097}`;
+const EVAL_TIMEOUT_MS = Math.max(500, Number(process.env.CABT_EVAL_TIMEOUT_MS ?? 5000));
+
+export type EvalResult = { ok: true; pWin: number | null; seat: number; ready: boolean };
+
+async function evalSidecar<T>(path: string, body: unknown): Promise<T | null> {
+  try {
+    const response = await fetch(`${EVAL_BASE_URL}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(EVAL_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      return null;
+    }
+    return (await response.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FRONTEND_ROOT = path.resolve(__dirname, '..', '..');
 const WORKSPACE_ROOT = path.resolve(FRONTEND_ROOT, '..');
@@ -94,6 +121,9 @@ export class LocalEngineController {
   private replayPlayerLabels: [string, string] = ['Player 1', 'Player 2'];
   private replayModeLabel = 'Self vs Agent';
   private playerControls: [PlayerControl, PlayerControl] = ['self', 'agent'];
+  // The resolved 60-card decks by seat, kept so the eval sidecar can rebuild
+  // the acting seat's deck-conditioned observation encoding.
+  private decks: [number[], number[]] = [[], []];
 
   constructor() {
     this.bridge = new CabtBridgeClient(() => this.invalidateSession('CABT bridge exited.'));
@@ -136,6 +166,10 @@ export class LocalEngineController {
     const name = `Local ${this.replayModeLabel} ${created.toLocaleString()}`;
     const replay = {
       visualize: this.replayFrames,
+      // Persist both seats' decks so the replay eval graph can rebuild the
+      // deck-conditioned observation encoding losslessly (a single observation
+      // can't recover the full deck — prizes/deck stay hidden).
+      decks: this.decks,
       environment: {
         id,
         title: name,
@@ -158,6 +192,54 @@ export class LocalEngineController {
     return { ok: true, id, file };
   }
 
+  // Value-head win probability for `seat` at the CURRENT interactive position,
+  // via the eval sidecar. The value head is asymmetric (it reads one player's
+  // own hidden-info observation), so we only answer when `seat` is the acting
+  // player of the settled observation — otherwise pWin is null and the caller
+  // holds the last value. The raw observation and deck never leave this process.
+  async evaluate(seat: number): Promise<EvalResult> {
+    const current = this.observation?.current;
+    const deck = this.decks[seat];
+    if (!this.observation || !current || current.yourIndex !== seat || !this.observation.select || !deck?.length) {
+      return { ok: true, pWin: null, seat, ready: false };
+    }
+    const result = await evalSidecar<{ ok: boolean; pWin: number | null }>('/evaluate', {
+      observation: { current, select: this.observation.select },
+      deck,
+    });
+    return { ok: true, pWin: result?.pWin ?? null, seat, ready: !!result };
+  }
+
+  // Batch value curve over a whole episode for the replay eval graph. Each frame
+  // is an observation ({current, select}); we score only those whose acting seat
+  // is `seat` (a consistent fixed perspective), returning {stateIndex, pWin} so
+  // the caller can plot points at real decision states and interpolate between.
+  async evaluateReplay(
+    frames: Array<{ current: CabtObservation['current']; select: CabtObservation['select']; stateIndex: number }>,
+    seat: number,
+    deck: number[],
+  ): Promise<{ ok: true; points: Array<{ stateIndex: number; pWin: number }>; ready: boolean }> {
+    const scored = frames.filter(
+      (frame) => frame.current && frame.select && frame.current.yourIndex === seat && (frame.current.result ?? -1) < 0,
+    );
+    if (!scored.length || !deck.length) {
+      return { ok: true, points: [], ready: false };
+    }
+    const result = await evalSidecar<{ ok: boolean; pWins: Array<number | null> }>('/evaluate-batch', {
+      items: scored.map((frame) => ({ observation: { current: frame.current, select: frame.select }, deck })),
+    });
+    if (!result?.pWins) {
+      return { ok: true, points: [], ready: false };
+    }
+    const points: Array<{ stateIndex: number; pWin: number }> = [];
+    result.pWins.forEach((pWin, index) => {
+      if (typeof pWin === 'number') {
+        points.push({ stateIndex: scored[index].stateIndex, pWin });
+      }
+    });
+    return { ok: true, points, ready: true };
+  }
+
   close(): void {
     this.bridge.close();
     this.invalidateSession('CABT bridge closed.');
@@ -167,6 +249,7 @@ export class LocalEngineController {
     const playerControls = normalizePlayerControls(payload);
     const player1Deck = resolveDeck(payload?.player1?.deck ?? [], 'Your deck');
     const player2Deck = resolveDeck(payload?.player2?.deck ?? [], 'Player 2 deck');
+    this.decks = [player1Deck, player2Deck];
     const agentPaths = [
       playerControls[0] === 'agent' ? agentPathForId(payload?.player1?.agentId) : undefined,
       playerControls[1] === 'agent' ? agentPathForId(payload?.player2?.agentId) : undefined,
@@ -362,6 +445,7 @@ export class LocalEngineController {
     this.lastNewLogs = [];
     this.pendingSequence = [];
     this.replayFrames = [];
+    this.decks = [[], []];
     this.logs = [...this.logs, { id: this.logId++, message }];
   }
 }

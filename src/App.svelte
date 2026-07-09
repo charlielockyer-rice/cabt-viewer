@@ -5,6 +5,7 @@
   import BoardLayer from './lib/components/BoardLayer.svelte';
   import EffectSelectorBanner from './lib/components/EffectSelectorBanner.svelte';
   import EndGamePrompt from './lib/components/EndGamePrompt.svelte';
+  import EvalGraph from './lib/components/EvalGraph.svelte';
   import ViewportAnimationLayer from './lib/components/ViewportAnimationLayer.svelte';
   import RevealSessionLayer from './lib/components/RevealSessionLayer.svelte';
   import GameBoard from './lib/components/GameBoard.svelte';
@@ -44,6 +45,7 @@
   import { kaggleEpisodeReplayUrl, type KaggleEpisodeDay, type KaggleEpisodeSummary } from './lib/kaggle/episodes';
   import type { ActionTimelineEvent, BoardSlotRef, DecisionOptionView, PokemonSlotView, PlayerView } from './lib/game/types';
   import { deckImportStore } from './state/deckImport.svelte';
+  import { evalStore } from './state/eval.svelte';
   import { gameStore } from './state/game.svelte';
   import { gameSessionStore } from './state/gameSession.svelte';
   import { replayStore } from './state/replay.svelte';
@@ -290,6 +292,34 @@
       viewSettingsStore.followPlayer(playerIndex);
     }
   });
+  // Live eval bar: re-score MY seat's win probability each time a new
+  // interactive decision settles (never mid-animation). copycat-v1-20m reads
+  // the bottom seat's own observation; the engine server holds it and proxies
+  // to the eval sidecar. Read-only — a missing sidecar just leaves the bar off.
+  $effect(() => {
+    const seq = gameStore.decision?.seq;
+    const settling = gameStore.playingSequence;
+    const seat = viewIndex;
+    if (replayMode || !gameStore.game || settling || seq === undefined) {
+      return;
+    }
+    void evalStore.refreshLive(seat);
+  });
+  // Replay eval graph: batch-score the whole episode from the tracked seat's
+  // view once a replay loads (or when the viewer switches sides). The frames +
+  // decks come from the loaded replay JSON; the value curve drives both the
+  // graph and the scrub-time bar.
+  $effect(() => {
+    if (!replayMode || !replayStore.replay) {
+      return;
+    }
+    const frames = replayStore.observationFrames;
+    const seat = viewIndex;
+    void evalStore.loadReplayCurve(frames, seat, replayStore.decks[seat] ?? []);
+  });
+  let replayStateIndex = $derived(replayStore.currentStep?.stateIndex ?? 0);
+  let showEvalBar = $derived(replayMode ? evalStore.replayCurve.length > 0 : evalStore.live);
+  let evalBarPWin = $derived(replayMode ? evalStore.pWinAtState(replayStateIndex) : evalStore.pWin);
   let gameFinished = $derived(game?.phase === 7);
   let winnerName = $derived(
     game?.winner === 0 || game?.winner === 1
@@ -708,6 +738,7 @@
   function resetGame() {
     if (replayMode) {
       replayStore.clear();
+      evalStore.clearReplay();
       resetSaveReplayStatus();
       zoneViewerStore.close();
       viewSettingsStore.resetView();
@@ -718,6 +749,7 @@
       return;
     }
     gameSessionStore.reset();
+    evalStore.reset();
     resetSaveReplayStatus();
     zoneViewerStore.close();
     viewSettingsStore.resetView();
@@ -891,6 +923,16 @@
           backToReplayHome={resetGame}
           copyForkPoint={() => void replayStore.copyForkPoint()}
         />
+        <div class="eval-graph-dock">
+          <EvalGraph
+            points={evalStore.replayCurve}
+            stateCount={replayStore.replay.stateCount}
+            currentStateIndex={replayStateIndex}
+            seek={(index) => replayStore.setStateIndex(index)}
+            myName={bottomPlayer?.name ?? 'You'}
+            loading={evalStore.replayLoading}
+          />
+        </div>
       {/if}
 
       {#if gameFinished && !replayMode}
@@ -983,6 +1025,10 @@
           animationApplySignal={animationApplySignal}
           evolutionChromeEvents={finalEvolutionEvents}
           {replayMode}
+          {showEvalBar}
+          evalPWin={evalBarPWin}
+          evalMyName={bottomPlayer?.name ?? 'You'}
+          evalOpponentName={topPlayer?.name ?? 'Opponent'}
         />
 
         <RevealSessionLayer
@@ -1079,6 +1125,20 @@
   .replay-loading-panel span {
     color: #566272;
     font-size: 13px;
+  }
+
+  /* Eval curve strip, seated in the reserved band just above the replay
+     scrubber dock (TableShell's --replay-eval-h keeps the board clear of it). */
+  .eval-graph-dock {
+    position: absolute;
+    left: 0;
+    right: var(--board-right-rail);
+    bottom: var(--replay-dock-h, 48px);
+    height: var(--replay-eval-h, 64px);
+    z-index: 11;
+    padding: 2px 16px;
+    background: var(--surface-toolbar-bg);
+    border-top: 1px solid var(--surface-toolbar-border);
   }
 
 </style>

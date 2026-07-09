@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LocalEngineController } from './localEngine';
 import { CabtAreaType, CabtLogType, CabtOptionType, CabtSelectContext, CabtSelectType } from '../lib/cabt/types';
 
@@ -826,6 +826,83 @@ function currentState(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+describe('LocalEngineController.evaluate (eval bar)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function evalEngine(observation: unknown, decks: [number[], number[]]) {
+    const engine = new LocalEngineController() as any;
+    engine.observation = observation;
+    engine.decks = decks;
+    return engine;
+  }
+
+  it('proxies to the sidecar and returns pWin when the seat is the acting player', async () => {
+    let sidecarBody: any;
+    const fetchMock = vi.fn(async (_url: string, init: any) => {
+      sidecarBody = JSON.parse(init.body);
+      return { ok: true, json: async () => ({ ok: true, pWin: 0.73 }) } as Response;
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const engine = evalEngine(
+      { select: yesNoSelect(), logs: [], current: currentState({ yourIndex: 0 }) },
+      [Array(60).fill(3), Array(60).fill(4)],
+    );
+    const result = await engine.evaluate(0);
+
+    expect(result).toEqual({ ok: true, pWin: 0.73, seat: 0, ready: true });
+    // The acting seat's own deck is sent, and only current+select (never logs).
+    expect(sidecarBody.deck).toEqual(Array(60).fill(3));
+    expect(Object.keys(sidecarBody.observation).sort()).toEqual(['current', 'select']);
+  });
+
+  it('returns null without calling the sidecar when the seat is not the acting player', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    // Observation is seat 1's decision; asking for seat 0 must not flip 1-p
+    // (the value head is asymmetric), so it declines rather than lie.
+    const engine = evalEngine(
+      { select: yesNoSelect(), logs: [], current: currentState({ yourIndex: 1 }) },
+      [Array(60).fill(3), Array(60).fill(4)],
+    );
+    const result = await engine.evaluate(0);
+
+    expect(result).toEqual({ ok: true, pWin: null, seat: 0, ready: false });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('returns null without calling the sidecar when the seat has no deck', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const engine = evalEngine(
+      { select: yesNoSelect(), logs: [], current: currentState({ yourIndex: 0 }) },
+      [[], []],
+    );
+    const result = await engine.evaluate(0);
+
+    expect(result.pWin).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('degrades to pWin null (never throws) when the sidecar is unreachable', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new Error('ECONNREFUSED');
+    }));
+
+    const engine = evalEngine(
+      { select: yesNoSelect(), logs: [], current: currentState({ yourIndex: 0 }) },
+      [Array(60).fill(3), Array(60).fill(4)],
+    );
+    const result = await engine.evaluate(0);
+
+    expect(result).toEqual({ ok: true, pWin: null, seat: 0, ready: false });
+  });
+});
 
 function playerState(overrides: Record<string, unknown> = {}) {
   return {
