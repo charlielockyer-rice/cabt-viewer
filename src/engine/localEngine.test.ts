@@ -201,6 +201,140 @@ describe('LocalEngineController', () => {
     ]);
   });
 
+  it('splits an attack-ends-turn batch so the opponent start-of-turn draw is its own beat (Task 5)', () => {
+    // Real shape from Kaggle ep84924975 frame 26 (Itchy Pollen): one observation
+    // carries [Attack, HPChange, TurnEnd, TurnStart, Draw]. The new turn's draw
+    // must NOT animate inside the attacker's step — it belongs to a beat after
+    // the turn transition, with the pre-draw hand.
+    const engine = new LocalEngineController() as any;
+    const preState = currentState({
+      turn: 3,
+      yourIndex: 1,
+      players: [
+        playerState({ hand: [{ id: 50, serial: 100 }], handCount: 1, deckCount: 40, active: [{ id: 10, serial: 5, hp: 100, maxHp: 100 }] }),
+        playerState({ hand: null, handCount: 4, active: [{ id: 20, serial: 6, hp: 70, maxHp: 70 }] }),
+      ],
+    });
+    const endState = currentState({
+      turn: 4,
+      yourIndex: 0,
+      players: [
+        playerState({ hand: [{ id: 50, serial: 100 }, { id: 60, serial: 200 }], handCount: 2, deckCount: 39, active: [{ id: 10, serial: 5, hp: 80, maxHp: 100 }] }),
+        playerState({ hand: null, handCount: 4, active: [{ id: 20, serial: 6, hp: 70, maxHp: 70 }] }),
+      ],
+    });
+    engine.observation = { select: null, logs: [], current: preState };
+    engine.dataMaps = { cardData: {}, attacks: {} };
+
+    engine.applyBridgeResponse({
+      ok: true,
+      id: 1,
+      observation: {
+        select: null,
+        logs: [
+          { type: CabtLogType.ATTACK, playerIndex: 1, cardId: 20, serial: 6, attackId: 323 },
+          { type: CabtLogType.HP_CHANGE, playerIndex: 0, cardId: 10, serial: 5, value: -20 },
+          { type: CabtLogType.TURN_END, playerIndex: 1 },
+          { type: CabtLogType.TURN_START, playerIndex: 0 },
+          { type: CabtLogType.DRAW, playerIndex: 0, cardId: 60, serial: 200 },
+        ],
+        current: endState,
+      },
+    });
+
+    const response = engine.viewResponse();
+    expect(response.ok).toBe(true);
+    if (!response.ok || !response.sequence) return;
+
+    const handSerials = (view: any) => (view.players[0].hand ?? []).map((card: any) => card.serial);
+    const isDrawBeat = (view: any) => (view.actionTimeline ?? []).some((event: any) => event.kind === 'Draw');
+    const drawBeatIndex = response.sequence.findIndex(isDrawBeat);
+
+    // The draw animates in its own beat, and that beat's hand holds the drawn card.
+    expect(drawBeatIndex).toBeGreaterThan(0);
+    expect(handSerials(response.sequence[drawBeatIndex])).toContain(200);
+    // No earlier beat (the attack/damage) may carry the draw event or the drawn card.
+    for (let index = 0; index < drawBeatIndex; index += 1) {
+      const view = response.sequence[index];
+      expect(isDrawBeat(view)).toBe(false);
+      expect(handSerials(view)).not.toContain(200);
+    }
+
+    // The substantive fix: the pre-transition beats keep the ATTACKER's
+    // perspective (player 2's turn), and the seat only flips to the drawing
+    // player on the new turn's draw beat — the draw never renders in the
+    // already-switched perspective inside the attacker's step.
+    const attackBeatIndex = response.sequence.findIndex((view: any) =>
+      (view.actionTimeline ?? []).some((event: any) => event.kind === 'Attack'));
+    expect(attackBeatIndex).toBeGreaterThanOrEqual(0);
+    expect(attackBeatIndex).toBeLessThan(drawBeatIndex);
+    expect(response.sequence[attackBeatIndex].activePlayerIndex).toBe(1);
+    expect(response.sequence[attackBeatIndex].turn).toBe(3);
+    expect(response.sequence[drawBeatIndex].activePlayerIndex).toBe(0);
+    expect(response.sequence[drawBeatIndex].turn).toBe(4);
+  });
+
+  it('splits a KO-promotion-plus-turn-boundary batch so promotion and draw are distinct beats (Task 7)', () => {
+    // Real shape from ep84924975 frame 95: after a KO and prize take (earlier
+    // frames), one observation carries [MoveCard BENCH->ACTIVE (promotion),
+    // TurnEnd, TurnStart, Draw]. The promotion is its own beat in the acting
+    // turn; the new turn's draw is a separate beat after the transition.
+    const engine = new LocalEngineController() as any;
+    const preState = currentState({
+      turn: 3,
+      yourIndex: 1,
+      players: [
+        playerState({ hand: [{ id: 50, serial: 100 }], handCount: 1, deckCount: 40, active: [null], bench: [{ id: 30, serial: 30, hp: 90, maxHp: 90 }] }),
+        playerState({ hand: null, handCount: 4, active: [{ id: 20, serial: 6, hp: 70, maxHp: 70 }] }),
+      ],
+    });
+    const endState = currentState({
+      turn: 4,
+      yourIndex: 0,
+      players: [
+        playerState({ hand: [{ id: 50, serial: 100 }, { id: 60, serial: 200 }], handCount: 2, deckCount: 39, active: [{ id: 30, serial: 30, hp: 90, maxHp: 90 }], bench: [] }),
+        playerState({ hand: null, handCount: 4, active: [{ id: 20, serial: 6, hp: 70, maxHp: 70 }] }),
+      ],
+    });
+    engine.observation = { select: null, logs: [], current: preState };
+    engine.dataMaps = { cardData: {}, attacks: {} };
+
+    engine.applyBridgeResponse({
+      ok: true,
+      id: 1,
+      observation: {
+        select: null,
+        logs: [
+          { type: CabtLogType.MOVE_CARD, playerIndex: 0, cardId: 30, serial: 30, fromArea: CabtAreaType.BENCH, toArea: CabtAreaType.ACTIVE },
+          { type: CabtLogType.TURN_END, playerIndex: 1 },
+          { type: CabtLogType.TURN_START, playerIndex: 0 },
+          { type: CabtLogType.DRAW, playerIndex: 0, cardId: 60, serial: 200 },
+        ],
+        current: endState,
+      },
+    });
+
+    const response = engine.viewResponse();
+    expect(response.ok).toBe(true);
+    if (!response.ok || !response.sequence) return;
+
+    const drawBeatIndex = response.sequence.findIndex((view: any) =>
+      (view.actionTimeline ?? []).some((event: any) => event.kind === 'Draw'));
+    const promoBeatIndex = response.sequence.findIndex((view: any) =>
+      (view.actionTimeline ?? []).some((event: any) =>
+        event.kind === 'MoveCard' && Number((event.params ?? {}).toArea) === CabtAreaType.ACTIVE));
+
+    expect(promoBeatIndex).toBeGreaterThanOrEqual(0);
+    expect(drawBeatIndex).toBeGreaterThan(promoBeatIndex);
+    // Promotion animates in the acting turn's perspective; the draw is the new turn.
+    expect(response.sequence[promoBeatIndex].activePlayerIndex).toBe(1);
+    expect(response.sequence[promoBeatIndex].turn).toBe(3);
+    expect(response.sequence[drawBeatIndex].activePlayerIndex).toBe(0);
+    expect(response.sequence[drawBeatIndex].turn).toBe(4);
+    // The promotion beat does not carry the new turn's drawn card.
+    expect((response.sequence[promoBeatIndex].players[0].hand ?? []).map((card: any) => card.serial)).not.toContain(200);
+  });
+
   it('drives a complete Phantom Dive damage placement through select indexes', async () => {
     // Select shapes captured verbatim from the engine: six sequential
     // single-pick CARD selects over the opponent bench, remainDamageCounter

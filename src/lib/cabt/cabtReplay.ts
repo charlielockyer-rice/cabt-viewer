@@ -140,8 +140,79 @@ export function stepAnimationPhases(
   currentView: GameView,
   events: ActionTimelineEvent[],
 ): ReplayAnimationPhase[] | undefined {
-  const group: ReplayActionGroup = { label: '', type: 'live', events, turn: 0 };
-  return groupedStepAnimationPhases(previousView, currentView, [group], 0);
+  // A turn transition is a hard boundary: events after a TurnStart belong to
+  // the NEW turn and animate as their own beat(s) against the post-transition
+  // pre-state — never folded into the previous player's action step. (Replay's
+  // frame builder already splits here; this brings the live per-observation
+  // path in line, so an attack-ends-turn or KO-promotion batch that arrives
+  // with the opponent's start-of-turn draw doesn't animate the draw inside the
+  // attacker's step.) Only TurnStart splits — every other batch stays whole so
+  // the coalesced attach/placement and retreat sequences are unaffected.
+  const segments = splitAtTurnStart(events);
+  if (segments.length <= 1) {
+    const group: ReplayActionGroup = { label: '', type: 'live', events, turn: 0 };
+    return groupedStepAnimationPhases(previousView, currentView, [group], 0);
+  }
+  const phases: ReplayAnimationPhase[] = [];
+  let base = previousView;
+  let afterTurnStart = false;
+  for (const segment of segments) {
+    if (segment[0]?.kind === 'TurnStart') {
+      afterTurnStart = true;
+    }
+    // A pre-transition beat keeps the ACTING turn's perspective (whose turn,
+    // turn number, board orientation) — projecting toward the observation's
+    // end state would flip the seat before the turn actually ends, which is the
+    // bug: the attack (and the opponent's draw) render in the new turn's
+    // perspective. The board/hand still come from the projection; only the
+    // turn-owner metadata is pinned to the acting side.
+    const perspective = afterTurnStart ? currentView : previousView;
+    const segmentView: GameView = {
+      ...projectedViewForEvents(base, currentView, segment),
+      turn: perspective.turn,
+      activePlayerIndex: perspective.activePlayerIndex,
+      activePlayerId: perspective.activePlayerId,
+      turnSeat: perspective.turnSeat,
+    };
+    const group: ReplayActionGroup = { label: '', type: 'live', events: segment, turn: 0 };
+    const segmentPhases = groupedStepAnimationPhases(base, segmentView, [group], 0);
+    if (segmentPhases?.length) {
+      phases.push(...segmentPhases);
+    } else if (segment.some((event) => animationPhaseKey(event))) {
+      // A single-phase segment (e.g. the new turn's lone draw) that the grouped
+      // builder collapses to nothing — emit it as its own beat/view.
+      const keyEvent = segment.find((event) => animationPhaseKey(event));
+      const key = keyEvent ? animationPhaseKey(keyEvent) ?? 'LiveSegment:0' : 'LiveSegment:0';
+      phases.push({
+        key,
+        label: keyEvent?.message,
+        view: { ...segmentView, actionTimeline: segment },
+        actionTimeline: segment,
+        durationMs: animationPhaseDurationMs(key, segment.filter((event) => animationPhaseKey(event) === key).length),
+      });
+    }
+    base = segmentView;
+  }
+  return phases.length ? phases : undefined;
+}
+
+// Split an event batch so each TurnStart begins a new segment. A TurnStart with
+// no preceding events in the current segment does not split (a pure new-turn
+// observation stays one segment).
+function splitAtTurnStart(events: ActionTimelineEvent[]): ActionTimelineEvent[][] {
+  const segments: ActionTimelineEvent[][] = [];
+  let current: ActionTimelineEvent[] = [];
+  for (const event of events) {
+    if (event.kind === 'TurnStart' && current.length) {
+      segments.push(current);
+      current = [];
+    }
+    current.push(event);
+  }
+  if (current.length) {
+    segments.push(current);
+  }
+  return segments;
 }
 
 export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
