@@ -277,16 +277,22 @@ describe.skipIf(!hasLog)('whole-game swap inertness (happy-dom, real game log)',
       }
       return map;
     };
+    const discardTopEl = (playerIndex: number): HTMLElement | null => {
+      const pile = document.querySelector(`[data-card-anchor="player:${playerIndex}:discard"]`);
+      const top = pile?.querySelector('.discard-card-top .card-tile');
+      return top instanceof HTMLElement ? top : null;
+    };
 
     const findings: Array<{ swap: number; detail: string }> = [];
     let prev = views[0];
     let prevBottom = viewSettingsStore.viewIndex;
     let prevHand: Record<number, Map<number, HTMLElement>> = { 0: handCardEls(0), 1: handCardEls(1) };
+    let prevDiscardTop: Record<number, HTMLElement | null> = { 0: discardTopEl(0), 1: discardTopEl(1) };
     let flips = 0;
-    let acrossFlipChecks = 0;
     // Node comparisons where both the before and after DOM frames were actually
     // found — guards against a vacuous pass from an anchor-selector mismatch.
     let acrossFlipNodeComparisons = 0;
+    let acrossFlipDiscardComparisons = 0;
 
     for (let i = 1; i < views.length; i += 1) {
       const view = views[i];
@@ -301,6 +307,8 @@ describe.skipIf(!hasLog)('whole-game swap inertness (happy-dom, real game log)',
       for (const p of [0, 1] as const) {
         const prevPlayer = prev.players?.[p] as PlayerView | undefined;
         const curPlayer = view.players?.[p] as PlayerView | undefined;
+
+        // (A) hand-card node identity across the flip
         const curHand = handCardEls(p);
         const prevHandMap = prevHand[p];
         const prevSerials = new Set((prevPlayer?.hand ?? []).map((c) => c.serial).filter((s): s is number => s !== undefined));
@@ -308,9 +316,6 @@ describe.skipIf(!hasLog)('whole-game swap inertness (happy-dom, real game log)',
         for (const serial of prevSerials) {
           if (!curSerials.has(serial)) {
             continue;
-          }
-          if (flipped) {
-            acrossFlipChecks += 1;
           }
           const before = prevHandMap.get(serial);
           const after = curHand.get(serial);
@@ -325,6 +330,24 @@ describe.skipIf(!hasLog)('whole-game swap inertness (happy-dom, real game log)',
           }
         }
         prevHand[p] = curHand;
+
+        // (B) discard-top node identity across the flip (the piles half of M2)
+        const prevTopKey = cardKey(prevPlayer?.discard?.at(-1));
+        const curTopKey = cardKey(curPlayer?.discard?.at(-1));
+        const curTopEl = discardTopEl(p);
+        if (prevTopKey && curTopKey && prevTopKey === curTopKey) {
+          const beforeTop = prevDiscardTop[p];
+          if (flipped && beforeTop && curTopEl) {
+            acrossFlipDiscardComparisons += 1;
+          }
+          if (beforeTop && curTopEl && beforeTop !== curTopEl) {
+            findings.push({
+              swap: i,
+              detail: `player ${p} discard top ${curTopKey} persisted across ${flipped ? 'a seat flip' : 'a swap'} but its DOM node was recreated`,
+            });
+          }
+        }
+        prevDiscardTop[p] = curTopEl;
       }
 
       prev = view;
@@ -332,11 +355,13 @@ describe.skipIf(!hasLog)('whole-game swap inertness (happy-dom, real game log)',
     }
 
     // eslint-disable-next-line no-console
-    console.log('[swap-inertness probe / follow-active]', JSON.stringify({ flips, acrossFlipChecks, acrossFlipNodeComparisons, findings: findings.slice(0, 20) }, null, 2));
+    console.log('[swap-inertness probe / follow-active]', JSON.stringify({ flips, acrossFlipNodeComparisons, acrossFlipDiscardComparisons, findings: findings.slice(0, 20) }, null, 2));
     expect(findings, JSON.stringify(findings.slice(0, 20), null, 2)).toEqual([]);
-    // The game must actually flip seats, and real hand-card DOM nodes must have
-    // been compared across those flips, or the guard proves nothing.
+    // The game must actually flip seats, and real hand-card AND discard-top DOM
+    // nodes must have been compared across those flips, or the guard proves
+    // nothing.
     expect(flips).toBeGreaterThan(2);
     expect(acrossFlipNodeComparisons).toBeGreaterThan(0);
+    expect(acrossFlipDiscardComparisons).toBeGreaterThan(0);
   });
 });

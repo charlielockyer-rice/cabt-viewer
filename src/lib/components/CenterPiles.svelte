@@ -30,6 +30,25 @@
     showDiscard,
   }: Props = $props();
 
+  // Pile blocks are keyed by player.index and rendered in a stable order, so
+  // the follow-active seat flip only flips each block's top/bottom class (a CSS
+  // reposition) instead of swapping which player each block renders — the pile
+  // cards keep their DOM nodes through the flip (M2). The animation anchors are
+  // already player-index based, so nothing downstream changes.
+  let orderedPlayers = $derived([topPlayer, bottomPlayer].slice().sort((a, b) => a.index - b.index));
+
+  // The pile elements GameBoard hit-tests for the projected-pile hover are held
+  // by player.index here and mapped back onto its top/bottom bindables, so the
+  // stable DOM blocks stay decoupled from their current screen position.
+  let lostPileElements = $state<Record<number, HTMLButtonElement | undefined>>({});
+  let discardPileElements = $state<Record<number, HTMLButtonElement | undefined>>({});
+  $effect(() => {
+    topLostPileElement = lostPileElements[topPlayer.index];
+    topDiscardPileElement = discardPileElements[topPlayer.index];
+    bottomLostPileElement = lostPileElements[bottomPlayer.index];
+    bottomDiscardPileElement = discardPileElements[bottomPlayer.index];
+  });
+
   let resolvingDiscardAnimations = $state<ResolvingDiscardAnimation[]>([]);
   let previousResolvingCards = new Map<number, ResolvingCardSnapshot>();
   let nextResolvingDiscardAnimationId = 0;
@@ -255,159 +274,95 @@
 </script>
 
 <div class="center-stack">
-  <div class="field-piles top-piles">
-    <div class="left-piles">
-      <button
-        type="button"
-        class="stack-pile lost-pile"
-        class:projected-hover={projectedHoverPile === 'top-lost'}
-        title={`${topPlayer.name} lost zone`}
-        bind:this={topLostPileElement}
-        onclick={() => showLostZone(topPlayer)}
-      >
-        {#if topPlayer.lostZone.length}
-          <CardTile card={topPlayer.lostZone[topPlayer.lostZone.length - 1]} compact />
-        {/if}
-        <span class="pile-count">{topPlayer.lostZone.length}</span>
-      </button>
-      <div class="prize-grid" title={`${topPlayer.name} prizes`} aria-label={`${topPlayer.name} prizes`}>
-        {#each visiblePrizeCards(topPlayer.prizesLeft) as index}
-          <span
-            data-card-anchor={`player:${topPlayer.index}:prize:${index}`}
-            style={`--row: ${Math.floor(index / 2)}; --col: ${index % 2}; ${cardBackCssVar()}`}
-          ></span>
-        {/each}
-      </div>
-    </div>
-    <div class="right-field">
-      <div class="right-piles">
-        <span
-          class="stack-pile deck-pile"
-          style={`${deckPileStyle(topPlayer.deckCount, -1)}; ${cardBackCssVar()}`}
-          title={`${topPlayer.name} deck`}
-        >
-          <span class="card-anchor" data-card-anchor={`player:${topPlayer.index}:deck`}></span>
-          {#each visibleDeckLayers(topPlayer.deckCount) as layer, layerIndex}
-            <span class="deck-card-layer" style={`--deck-layer: ${layerIndex};`}></span>
-          {/each}
-          {#if topPlayer.deckCount > 0}
-            <span class="deck-card-face"></span>
-          {/if}
-          <span class="pile-count">{topPlayer.deckCount}</span>
-        </span>
+  {#each orderedPlayers as player (player.index)}
+    {@const isTop = player.index !== bottomPlayer.index}
+    {@const position = isTop ? 'top' : 'bottom'}
+    <div class="field-piles" class:top-piles={isTop} class:bottom-piles={!isTop}>
+      <div class="left-piles">
         <button
           type="button"
-          class="stack-pile discard-pile"
-          class:projected-hover={projectedHoverPile === 'top-discard'}
-          data-card-anchor={`player:${topPlayer.index}:discard`}
-          title={`${topPlayer.name} discard`}
-          bind:this={topDiscardPileElement}
-          onclick={() => showDiscard(topPlayer)}
+          class="stack-pile lost-pile"
+          class:projected-hover={projectedHoverPile === `${position}-lost`}
+          title={`${player.name} lost zone`}
+          bind:this={lostPileElements[player.index]}
+          onclick={() => showLostZone(player)}
         >
-          {#if topPlayer.discard.length}
-            <span class="discard-card-stack">
-              {#each visibleDiscardCards(topPlayer.discard) as entry (entry.key)}
-                <span
-                  class:discard-card-under={entry.layer === 'under'}
-                  class:discard-card-top={entry.layer === 'top'}
-                  class:resolving-discard-target={entry.layer === 'top' && isResolvingDiscardTarget(topPlayer.index, entry.card)}
-                >
-                  <CardTile card={entry.card} compact />
-                </span>
-              {/each}
-            </span>
+          {#if player.lostZone.length}
+            <CardTile card={player.lostZone[player.lostZone.length - 1]} compact />
           {/if}
-          <span class="pile-count">{topPlayer.discard.length}</span>
+          <span class="pile-count">{player.lostZone.length}</span>
         </button>
-      </div>
-      {#if resolvingCard(topPlayer)}
-        <span
-          class="resolving-zone"
-          data-card-anchor={`player:${topPlayer.index}:playZone`}
-          title={`${topPlayer.name} played card`}
-        >
-          <CardTile card={resolvingCard(topPlayer)} compact />
-        </span>
-      {/if}
-    </div>
-  </div>
-
-  <div class="field-piles bottom-piles">
-    <div class="left-piles">
-      <button
-        type="button"
-        class="stack-pile lost-pile"
-        class:projected-hover={projectedHoverPile === 'bottom-lost'}
-        title={`${bottomPlayer.name} lost zone`}
-        bind:this={bottomLostPileElement}
-        onclick={() => showLostZone(bottomPlayer)}
-      >
-        {#if bottomPlayer.lostZone.length}
-          <CardTile card={bottomPlayer.lostZone[bottomPlayer.lostZone.length - 1]} compact />
-        {/if}
-        <span class="pile-count">{bottomPlayer.lostZone.length}</span>
-      </button>
-      <div class="prize-grid" title={`${bottomPlayer.name} prizes`} aria-label={`${bottomPlayer.name} prizes`}>
-        {#each visiblePrizeCards(bottomPlayer.prizesLeft) as index}
-          <span
-            data-card-anchor={`player:${bottomPlayer.index}:prize:${index}`}
-            style={`--row: ${Math.floor(index / 2)}; --col: ${index % 2}; ${cardBackCssVar()}`}
-          ></span>
-        {/each}
-      </div>
-    </div>
-    <div class="right-field">
-      {#if resolvingCard(bottomPlayer)}
-        <span
-          class="resolving-zone"
-          data-card-anchor={`player:${bottomPlayer.index}:playZone`}
-          title={`${bottomPlayer.name} played card`}
-        >
-          <CardTile card={resolvingCard(bottomPlayer)} compact />
-        </span>
-      {/if}
-      <div class="right-piles">
-        <span
-          class="stack-pile deck-pile"
-          style={`${deckPileStyle(bottomPlayer.deckCount, 1)}; ${cardBackCssVar()}`}
-          title={`${bottomPlayer.name} deck`}
-        >
-          <span class="card-anchor" data-card-anchor={`player:${bottomPlayer.index}:deck`}></span>
-          {#each visibleDeckLayers(bottomPlayer.deckCount) as layer, layerIndex}
-            <span class="deck-card-layer" style={`--deck-layer: ${layerIndex};`}></span>
+        <div class="prize-grid" title={`${player.name} prizes`} aria-label={`${player.name} prizes`}>
+          {#each visiblePrizeCards(player.prizesLeft) as index}
+            <span
+              data-card-anchor={`player:${player.index}:prize:${index}`}
+              style={`--row: ${Math.floor(index / 2)}; --col: ${index % 2}; ${cardBackCssVar()}`}
+            ></span>
           {/each}
-          {#if bottomPlayer.deckCount > 0}
-            <span class="deck-card-face"></span>
-          {/if}
-          <span class="pile-count">{bottomPlayer.deckCount}</span>
-        </span>
-        <button
-          type="button"
-          class="stack-pile discard-pile"
-          class:projected-hover={projectedHoverPile === 'bottom-discard'}
-          data-card-anchor={`player:${bottomPlayer.index}:discard`}
-          title={`${bottomPlayer.name} discard`}
-          bind:this={bottomDiscardPileElement}
-          onclick={() => showDiscard(bottomPlayer)}
-        >
-          {#if bottomPlayer.discard.length}
-            <span class="discard-card-stack">
-              {#each visibleDiscardCards(bottomPlayer.discard) as entry (entry.key)}
-                <span
-                  class:discard-card-under={entry.layer === 'under'}
-                  class:discard-card-top={entry.layer === 'top'}
-                  class:resolving-discard-target={entry.layer === 'top' && isResolvingDiscardTarget(bottomPlayer.index, entry.card)}
-                >
-                  <CardTile card={entry.card} compact />
-                </span>
-              {/each}
-            </span>
-          {/if}
-          <span class="pile-count">{bottomPlayer.discard.length}</span>
-        </button>
+        </div>
+      </div>
+      <div class="right-field">
+        {#if !isTop && resolvingCard(player)}
+          <span
+            class="resolving-zone"
+            data-card-anchor={`player:${player.index}:playZone`}
+            title={`${player.name} played card`}
+          >
+            <CardTile card={resolvingCard(player)} compact />
+          </span>
+        {/if}
+        <div class="right-piles">
+          <span
+            class="stack-pile deck-pile"
+            style={`${deckPileStyle(player.deckCount, isTop ? -1 : 1)}; ${cardBackCssVar()}`}
+            title={`${player.name} deck`}
+          >
+            <span class="card-anchor" data-card-anchor={`player:${player.index}:deck`}></span>
+            {#each visibleDeckLayers(player.deckCount) as layer, layerIndex}
+              <span class="deck-card-layer" style={`--deck-layer: ${layerIndex};`}></span>
+            {/each}
+            {#if player.deckCount > 0}
+              <span class="deck-card-face"></span>
+            {/if}
+            <span class="pile-count">{player.deckCount}</span>
+          </span>
+          <button
+            type="button"
+            class="stack-pile discard-pile"
+            class:projected-hover={projectedHoverPile === `${position}-discard`}
+            data-card-anchor={`player:${player.index}:discard`}
+            title={`${player.name} discard`}
+            bind:this={discardPileElements[player.index]}
+            onclick={() => showDiscard(player)}
+          >
+            {#if player.discard.length}
+              <span class="discard-card-stack">
+                {#each visibleDiscardCards(player.discard) as entry (entry.key)}
+                  <span
+                    class:discard-card-under={entry.layer === 'under'}
+                    class:discard-card-top={entry.layer === 'top'}
+                    class:resolving-discard-target={entry.layer === 'top' && isResolvingDiscardTarget(player.index, entry.card)}
+                  >
+                    <CardTile card={entry.card} compact />
+                  </span>
+                {/each}
+              </span>
+            {/if}
+            <span class="pile-count">{player.discard.length}</span>
+          </button>
+        </div>
+        {#if isTop && resolvingCard(player)}
+          <span
+            class="resolving-zone"
+            data-card-anchor={`player:${player.index}:playZone`}
+            title={`${player.name} played card`}
+          >
+            <CardTile card={resolvingCard(player)} compact />
+          </span>
+        {/if}
       </div>
     </div>
-  </div>
+  {/each}
 
   {#if resolvingDiscardAnimations.length}
     <span class="resolving-discard-layer" aria-hidden="true">
