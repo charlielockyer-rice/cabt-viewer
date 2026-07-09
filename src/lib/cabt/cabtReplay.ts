@@ -2060,10 +2060,41 @@ function applyReplayAreaDelta(
     player.stadium = delta > 0 ? currentPlayer.stadium : removeMovedCardFromZone(player.stadium, event);
     return;
   }
-  if (area === CabtAreaType.ENERGY || area === CabtAreaType.TOOL || area === CabtAreaType.PRE_EVOLUTION) {
+  if (area === CabtAreaType.ENERGY || area === CabtAreaType.TOOL) {
+    // An energy/tool move changes only the attachment badges of the Pokemon
+    // that holds the card — it never moves a Pokemon between active and bench.
+    // Copying currentPlayer's whole active/bench would import board-position
+    // changes from LATER phases of this step (a retreat discards energy from
+    // the old active BEFORE the swap; importing the post-swap positions here
+    // would make the following swap phase animate against a post-swap board,
+    // reversing the crossing). Update the badges on the existing slots instead.
+    syncAttachmentBadgesFromCurrent(player, currentPlayer);
+    return;
+  }
+  if (area === CabtAreaType.PRE_EVOLUTION) {
     player.active = currentPlayer.active;
     player.bench = currentPlayer.bench;
   }
+}
+
+// Copy energy/tool badges from currentPlayer onto player's slots, matching by
+// Pokemon serial so a Pokemon keeps its current board position even when it
+// sits at a different slot in the end state.
+function syncAttachmentBadgesFromCurrent(player: PlayerView, currentPlayer: PlayerView): void {
+  const currentSlots = [currentPlayer.active, ...currentPlayer.bench];
+  const withCurrentBadges = (slot: PokemonSlotView): PokemonSlotView => {
+    const serial = slot.pokemon?.serial;
+    if (serial === undefined) {
+      return slot;
+    }
+    const match = currentSlots.find((candidate) => candidate.pokemon?.serial === serial);
+    if (!match) {
+      return slot;
+    }
+    return { ...slot, energy: match.energy, tools: match.tools };
+  };
+  player.active = withCurrentBadges(player.active);
+  player.bench = player.bench.map(withCurrentBadges);
 }
 
 // Remove the first card the event names by serial, else the first it names by

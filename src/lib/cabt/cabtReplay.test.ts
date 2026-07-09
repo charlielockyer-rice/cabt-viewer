@@ -4013,4 +4013,79 @@ describe('cabtReplayToSnapshot', () => {
     expect(snapshot.views[step.stateIndex].players[0].active.pokemon?.serial).toBe(81);
     expect(snapshot.views[step.stateIndex].players[0].bench[0].pokemon?.serial).toBe(79);
   });
+
+  // Real retreat shape from Kaggle episode 84924975 (frames 22->23->24): a
+  // retreat discards the active's energy (ENERGY->DISCARD), THEN swaps the
+  // active with a bench Pokemon (Switch), coalesced into one step. The energy
+  // discard must not import the post-swap board positions, or the swap phase
+  // animates the crossing backwards (the incoming Pokemon appears to leave
+  // active). Regression for the retreat-specific reversal — Boss's Orders (no
+  // preceding energy discard) never hit it. Asserts the swap phase view is
+  // PRE-swap for the retreat event shape specifically.
+  it('holds the pre-swap board for a retreat swap that follows an energy discard', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 4,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 646, serial: 85, hp: 70, maxHp: 70, energyCards: [{ id: 7, serial: 68 }] }],
+            bench: [{ id: 235, serial: 80, hp: 60, maxHp: 60 }],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 40,
+            discard: [],
+            prize: [],
+          }, {
+            active: [{ id: 304, serial: 79, hp: 150, maxHp: 150 }],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 45,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'MoveCard', playerIndex: 0, cardId: 7, serial: 68, fromArea: CabtAreaType.ENERGY, toArea: CabtAreaType.DISCARD },
+          { type: 'Switch', playerIndex: 0, cardIdActive: 646, serialActive: 85, cardIdBench: 235, serialBench: 80 },
+        ],
+        current: {
+          turn: 4,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 235, serial: 80, hp: 60, maxHp: 60 }],
+            bench: [{ id: 646, serial: 85, hp: 70, maxHp: 70, energyCards: [] }],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 40,
+            discard: [{ id: 7, serial: 68 }],
+            prize: [],
+          }, {
+            active: [{ id: 304, serial: 79, hp: 150, maxHp: 150 }],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 45,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    const step = snapshot.steps[1];
+    const phaseKeys = step.animationPhases?.map((phase) => phase.key.replace(/:.*$/, ''));
+    // The energy discard animates in its own beat before the swap.
+    expect(phaseKeys).toContain('AttachedMove');
+    expect(phaseKeys).toContain('BoardMove');
+    const boardMove = step.animationPhases?.find((phase) => phase.key.startsWith('BoardMove:'));
+    // THE GUARD: the swap phase renders the PRE-swap board — outgoing active 85
+    // still active, incoming 80 still benched — so the crossing reads forward.
+    expect(boardMove?.view.players[0].active.pokemon?.serial).toBe(85);
+    expect(boardMove?.view.players[0].bench[0].pokemon?.serial).toBe(80);
+    // The settled board is the post-swap state.
+    expect(snapshot.views[step.stateIndex].players[0].active.pokemon?.serial).toBe(80);
+  });
 });
