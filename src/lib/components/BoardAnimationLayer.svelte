@@ -771,9 +771,11 @@
     height: 100%;
     overflow: hidden;
     border-radius: 5px;
-    /* No opaque fill: the inner card-tile supplies the card surface. A near-white
-       fill here flashed for a frame before the (remote) card art decoded — a
-       harsh white flash on top of the energy at the discard beat. */
+    /* No opaque fill here OR on the inner card-tile (below): the decoded card art
+       is the only surface. A near-white fill flashed before the (remote) art
+       decoded — a harsh white card flying at the discard beat. The sprite renders
+       BENEATH the owning Pokemon (attached-sublayer z-index 3 < board-slot 4), so
+       an undecoded-transparent tile shows the board underneath, not white. */
     background: transparent;
     box-shadow:
       0 12px 26px rgba(23, 30, 38, 0.24),
@@ -785,6 +787,11 @@
     width: 100%;
     height: 100%;
     pointer-events: none;
+    /* The CardTile's own #f7f8fa surface is the remaining white flash (the
+       container fill was already dropped): before a cold energy face image
+       decodes, that near-white base paints on the flying energy. Suppress it —
+       the decoded <img> covers the full tile, so nothing is lost once loaded. */
+    background: transparent;
   }
 
   @keyframes attached-card-move {

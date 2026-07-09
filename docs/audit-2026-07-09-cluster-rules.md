@@ -601,3 +601,42 @@ Rig evidence: prize-take landing **150.9 → 124.7px** = the settled hand-card w
 same `settledHandLandingWidth`, so they match by construction on the fixed-width
 hand). Suite 320 green (+4 `revealLayout.dom`), `tsc` clean; the reveal path is a
 pure extraction (unchanged behavior, covered by the existing reveal tests).
+
+## Attachment-sprite stacking INVARIANT (confirmed) + the energy-discard white flash (#35)
+
+**INVARIANT (now stated, was an unpinned lucky fact): an attached-move sprite (an
+energy/tool leaving its Pokemon) renders BENEATH the owning Pokemon card — it
+emerges from UNDER it, never on top.** Enforced by z-index: `.attached-sublayer`
+is z-index 3, `:global(.game-board-plane .board-slot)` is z-index 4. Rig-verified
+with `elementFromPoint` over the flight-start overlap region on a retreat
+energy-discard (state 24): the Pokemon card-tile is the top element every sample,
+the sprite never is. So Charlie's z-order question ("sliding out from under, not
+on top?") is answered YES; no z-order change was needed. Guard when touching the
+sublayer z-stack: attached < board-slot, always.
+
+**White flash (FIXED).** Charlie still saw a white flicker on the flying energy
+after round-3's `c1a4262` (which made the sprite CONTAINER `.attached-move-card`
+background transparent). Root cause one layer deeper: the `CardTile` INSIDE the
+sprite keeps its own `background: #f7f8fa` (`CardTile.svelte`), which paints on the
+flying energy until its (remote) face image decodes. Rig proof: warm cache → 0
+white frames (`imgComplete:true` from frame 1); cache DISABLED → 26/26 flight
+frames show `#f7f8fa` with `imgComplete:false`. Fix: `.attached-move-card
+:global(.card-tile) { background: transparent }` — the decoded `<img>` covers the
+full tile so nothing is lost once loaded, and because the sprite is beneath the
+Pokemon (invariant above) the undecoded-transparent tile shows the board, not
+white. Cold-cache rig, after fix: white-surface frames **26 → 0**. Isolated to the
+attached-move sprite; the global `CardTile` surface is untouched.
+
+## Switch-settle "compression" (#34) — handed to #29 (KO partition)
+
+Diagnosed, fix folded into #29. The post-settle "compression" is the #28 bench
+`animate:flip` (180ms) re-centering the bench as a TRAILING beat: on a
+bench-composition-changing switch (promotion/KO), the board-move sprite lands
+(card in active — rig-confirmed pixel-stable), THEN the surviving bench cards
+slide ~180ms to re-center. Retreat/Teleport are immune (the returning card
+reclaims the vacated slot in place; sprite lands EXACTLY on the settled card —
+active 111.87→111.88 same x/y, bench 104.28→104.28 — so candidates (a) hair-snap
+and (c) active-scale-to-slot are ruled out). Fix (owned by #29): collapse the
+vacated bench slot at flight LAUNCH (the R4 HandToDeck "leave at launch" pattern)
+so the FLIP runs DURING the flight and settles before the card lands — one settle
+beat, not two.
