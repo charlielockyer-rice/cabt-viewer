@@ -3247,6 +3247,191 @@ describe('cabtReplayToSnapshot', () => {
     expect(snapshot.steps[3].displayView?.players[0].deckCount).toBe(44);
   });
 
+  it('does not leak the next turn-start draw onto an attack step reached from the main menu (open-step path)', () => {
+    // Test 3173 covers this only when the attack step is built via
+    // stepsForFrameGroups. In real play the attack follows a main-menu decision,
+    // so it becomes an OPEN step closed via openStepToReplayStep — the path that
+    // used to fall back to the raw frame-end view (opponent already drawn).
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 2,
+          yourIndex: 1,
+          result: -1,
+          players: [{
+            active: [{ id: 722, serial: 10, hp: 70, maxHp: 70 }],
+            bench: [],
+            benchMax: 5,
+            handCount: 6,
+            deckCount: 45,
+            prize: [],
+          }, {
+            active: [{ id: 721, serial: 20, hp: 150, maxHp: 150 }],
+            bench: [],
+            benchMax: 5,
+            handCount: 6,
+            deckCount: 43,
+            prize: [],
+          }],
+        },
+      }, {
+        // A resolved play with the select back at the main menu: closes as its
+        // own step and makes the following attack frame a fresh decision, so the
+        // attack becomes an open step.
+        select: { type: 'Main', option: [{ type: 'End' }] },
+        logs: [{ type: 'Play', playerIndex: 1, cardId: 800, serial: 21 }],
+        current: {
+          turn: 2,
+          yourIndex: 1,
+          result: -1,
+          players: [{
+            active: [{ id: 722, serial: 10, hp: 70, maxHp: 70 }],
+            bench: [],
+            benchMax: 5,
+            handCount: 6,
+            deckCount: 45,
+            prize: [],
+          }, {
+            active: [{ id: 721, serial: 20, hp: 150, maxHp: 150 }],
+            bench: [],
+            benchMax: 5,
+            handCount: 5,
+            deckCount: 43,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'Attack', playerIndex: 1, cardId: 721, serial: 20, attackId: 1042 },
+          { type: 'HpChange', playerIndex: 0, cardId: 722, serial: 10, value: -30 },
+          { type: 'TurnEnd', playerIndex: 1 },
+          { type: 'TurnStart', playerIndex: 0 },
+          { type: 'Draw', playerIndex: 0, cardId: 723, serial: 30 },
+        ],
+        current: {
+          turn: 3,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 722, serial: 10, hp: 40, maxHp: 70 }],
+            bench: [],
+            benchMax: 5,
+            hand: [{ id: 1 }, { id: 1 }, { id: 1 }, { id: 1 }, { id: 1 }, { id: 1 }, { id: 723 }],
+            handCount: 7,
+            deckCount: 44,
+            prize: [],
+          }, {
+            active: [{ id: 721, serial: 20, hp: 150, maxHp: 150 }],
+            bench: [],
+            benchMax: 5,
+            handCount: 5,
+            deckCount: 43,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    const attackStep = snapshot.steps.find((step) => step.type === 'Attack');
+    expect(attackStep?.displayView).toBeDefined();
+    // The opponent's start-of-turn draw is absent from the pre-boundary view.
+    expect(attackStep?.displayView?.players[0].hand).toHaveLength(6);
+    expect(attackStep?.displayView?.players[0].deckCount).toBe(45);
+    // The draw appears only on the turn-start beat.
+    const turnStartStep = snapshot.steps.find((step) => step.type === 'TurnStart');
+    expect(turnStartStep?.displayView?.players[0].hand).toHaveLength(7);
+    expect(turnStartStep?.displayView?.players[0].deckCount).toBe(44);
+  });
+
+  it('carries an attack-caused switch forward onto the trailing turn-transition steps', () => {
+    // Teleportation-Attack shape: the attack (frame 1) opens a step; its Switch
+    // arrives with the turn transition (frame 2). The trailing TurnEnd/TurnStart
+    // steps must keep the switched-in active, not revert to the pre-switch one.
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 4,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 741, serial: 20, hp: 70, maxHp: 70 }],
+            bench: [{ id: 305, serial: 14, hp: 60, maxHp: 60 }],
+            benchMax: 5,
+            handCount: 6,
+            deckCount: 40,
+            prize: [],
+          }, {
+            active: [{ id: 600, serial: 50, hp: 120, maxHp: 120 }],
+            bench: [],
+            benchMax: 5,
+            handCount: 4,
+            deckCount: 42,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'Attack', playerIndex: 0, cardId: 741, serial: 20, attackId: 2000 },
+          { type: 'HpChange', playerIndex: 1, cardId: 600, serial: 50, value: -20 },
+        ],
+        current: {
+          turn: 4,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 741, serial: 20, hp: 70, maxHp: 70 }],
+            bench: [{ id: 305, serial: 14, hp: 60, maxHp: 60 }],
+            benchMax: 5,
+            handCount: 6,
+            deckCount: 40,
+            prize: [],
+          }, {
+            active: [{ id: 600, serial: 50, hp: 100, maxHp: 120 }],
+            bench: [],
+            benchMax: 5,
+            handCount: 4,
+            deckCount: 42,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'Switch', playerIndex: 0, cardIdActive: 741, serialActive: 20, cardIdBench: 305, serialBench: 14 },
+          { type: 'TurnEnd', playerIndex: 0 },
+          { type: 'TurnStart', playerIndex: 1 },
+          { type: 'Draw', playerIndex: 1, cardId: 610, serial: 60 },
+        ],
+        current: {
+          turn: 5,
+          yourIndex: 1,
+          result: -1,
+          players: [{
+            active: [{ id: 305, serial: 14, hp: 60, maxHp: 60 }],
+            bench: [{ id: 741, serial: 20, hp: 70, maxHp: 70 }],
+            benchMax: 5,
+            handCount: 6,
+            deckCount: 40,
+            prize: [],
+          }, {
+            active: [{ id: 600, serial: 50, hp: 100, maxHp: 120 }],
+            bench: [],
+            benchMax: 5,
+            handCount: 5,
+            deckCount: 41,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    const turnEndStep = snapshot.steps.find((step) => step.type === 'TurnEnd');
+    const turnStartStep = snapshot.steps.find((step) => step.type === 'TurnStart');
+    // The active-vacating switch persists on the transition beats (serial 14),
+    // instead of reverting to the pre-switch active (serial 20).
+    expect(turnEndStep?.displayView?.players[0].active.cards[0]?.serial).toBe(14);
+    expect(turnStartStep?.displayView?.players[0].active.cards[0]?.serial).toBe(14);
+  });
+
   it('labels opening-hand draw checks without counting basic checks as cards', () => {
     const openingHandLogs = [
       ...Array.from({ length: 7 }, (_unused, index) => ({ type: 'Draw', playerIndex: 0, cardId: index + 1 })),

@@ -466,8 +466,9 @@ function buildDecisionSteps(entries: ReplayFrameEntry[], views: GameView[]): Rep
     }
 
     if (open) {
+      const leadingThisFrame = groups.slice(0, leadingCount);
       if (leadingCount > 0) {
-        open.group.events.push(...groups.slice(0, leadingCount).flatMap((group) => group.events));
+        open.group.events.push(...leadingThisFrame.flatMap((group) => group.events));
         // The tail of an effect can share a frame with the next turn's events
         // (second damage hit + TurnEnd + draw). The merged step keeps the
         // previous frame as its state; the rest of the frame steps normally.
@@ -476,7 +477,16 @@ function buildDecisionSteps(entries: ReplayFrameEntry[], views: GameView[]): Rep
       }
       if (leadingCount < groups.length) {
         closeOpenStep();
-        steps.push(...stepsForFrameGroups(entry, views, index, groups.slice(leadingCount), 0));
+        // Carry this frame's consumed leading groups (e.g. an attack's Switch)
+        // forward as projection context so the trailing turn-transition steps
+        // don't rebuild their board from views[index-1], which predates them —
+        // otherwise an active-vacating attack reverts to the old active on the
+        // TurnEnd/TurnStart beats until the next raw frame lands. Only this
+        // frame's leading groups are prepended: the open step's earlier-frame
+        // events are already reflected in views[index-1]. Mirrors the rootFrame
+        // branch above.
+        const consumed = leadingThisFrame.length ? [mergedGroup(leadingThisFrame)] : [];
+        steps.push(...stepsForFrameGroups(entry, views, index, [...consumed, ...groups.slice(leadingCount)], consumed.length));
       }
       continue;
     }
@@ -561,6 +571,18 @@ function openStepToReplayStep(entries: ReplayFrameEntry[], views: GameView[], op
   // projection context see the same event order the step presents.
   const group = groupWithRevealResolutionOrdering(open.group);
   open.group = group;
+  // When the open step's own frame was split — forced turn-transition groups
+  // (TurnEnd/TurnStart/Checkup) follow the consumed action in the same frame —
+  // the raw frame-end view (entry.view) has already applied those later events:
+  // the next player's start-of-turn draw, a promotion. Rendering it leaks those
+  // cross-boundary events onto this pre-boundary step (the attack step showing
+  // the opponent already at 7 cards, then reverting). Pass the forced tail as
+  // deferred context so the settled view projects to the open group's end,
+  // rebuilding hand/board from the pre-open state. (A multi-frame open step
+  // already force-projects via consumedIndex !== endIndex.)
+  const forcedTail = open.consumedIndex === open.endIndex
+    ? consumedEntry.groups.filter(isForcedStepGroup)
+    : [];
   return replayStepForFrame({
     view: entry.view,
     stateIndex: open.endIndex,
@@ -570,7 +592,7 @@ function openStepToReplayStep(entries: ReplayFrameEntry[], views: GameView[], op
     displayView: groupedStepDisplayView(
       views[open.startIndex - 1],
       consumedEntry.view,
-      [group],
+      [group, ...forcedTail],
       0,
       open.consumedIndex !== open.endIndex,
     ),
