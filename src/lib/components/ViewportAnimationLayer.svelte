@@ -430,14 +430,12 @@
       }
     }
     if (motion.evolve) {
-      // Hide the destination slot's card contents while the sprite (which wears
-      // the evolved face) covers it, so the not-yet-decoded evolved card art
-      // can't render see-through to its pre-evolution — released together on the
-      // destination-ready handoff, never on a fixed clock.
-      const evolveMode = hideModeForTarget(target.resolved.element, target.anchor);
-      if (evolveMode) {
-        motionReleases.push(animVisibility.claim(target.resolved.element, evolveMode));
-      }
+      // NOTE: do NOT claim/hide the destination slot here. The evolved card flies
+      // ONTO its pre-evolution (a stack), so the base must stay visible under the
+      // descending sprite — hiding it from flight-start made the pre-evolution
+      // vanish at the evolve start. The end-of-flight seam (evolved card not yet
+      // decoded) is bridged by HOLDING the sprite over the slot until the card
+      // paints (startEvolveHold), which covers it without hiding the base.
       motionReleases.push(applyTargetEffect(target.resolved.element, 'data-hand-evolve-animation-active', {
         '--hand-evolve-delay': `${motion.startMs}ms`,
         '--hand-evolve-move-ms': `${evolveMoveMs}ms`,
