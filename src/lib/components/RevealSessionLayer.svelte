@@ -6,7 +6,7 @@
   import { animationActivity, scheduledEndMs } from '../anim/activity';
   import { handSlots, resolveAnchor } from '../anim/anchors';
   import { choreograph, type CardMotion, type TargetEffect } from '../anim/motions';
-  import { fallbackHandTarget, handCardVisualRect, revealLayout, settledLandingWidth } from '../anim/revealLayout';
+  import { fallbackHandTarget, handCardVisualRect, revealLayout, settledHandLandingWidth } from '../anim/revealLayout';
   import { animVisibility, type ReleaseClaim } from '../anim/visibility';
   import { cardBackCssVar } from '../game/cardAssets';
   import { centerOf } from '../dom/planeGeometry';
@@ -558,7 +558,7 @@
     // fixed hand-card width). Take the landing POSITION from that slot but the
     // landing WIDTH from a settled sibling hand card, so the sprite lands at the
     // card's real size instead of a transient one and then snapping.
-    const width = settledLandingWidth(settledSiblingWidth(motion.player, target?.element), measured?.width, fallback.width);
+    const width = settledHandLandingWidth(handSlots(motion.player), target?.element, fallback.width);
     const center = centerOf(measured ?? fallback);
     return {
       center,
@@ -566,21 +566,6 @@
       concealed: hand.element.classList.contains('concealed'),
       element: target?.element,
     };
-  }
-
-  // The rendered width of any settled hand card other than the one arriving —
-  // the fixed size the incoming card will also occupy once laid out.
-  function settledSiblingWidth(player: number, exclude: HTMLElement | undefined): number | undefined {
-    for (const slot of handSlots(player)) {
-      if (slot === exclude) {
-        continue;
-      }
-      const rect = handCardVisualRect(slot);
-      if (rect && rect.width > 0) {
-        return rect.width;
-      }
-    }
-    return undefined;
   }
 
   function claimTarget(element: HTMLElement): ReleaseClaim {

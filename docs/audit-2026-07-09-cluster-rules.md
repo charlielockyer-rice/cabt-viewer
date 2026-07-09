@@ -571,3 +571,33 @@ destination claim has already released):
   the "replay-only rig gap" is closed.
 
 Suite 309 green (+4 `settleClaim`), `tsc` clean. Commit: see git log for `#26`.
+
+## #31 — prize-take landing now SHARES the reveal→hand landing geometry
+
+Charlie accepted the prize-flicker fix and asked for one polish: the revealed
+prize card should "naturally shrink from the revealed state and smoothly land in
+the right slot/spot, like a searched card reveal — basically the exact same
+animation path (this is where sharing is useful)."
+
+Rig trace (episode 84924975 state 94, the step-68 prize take): the prize-take
+landed at width **150.9px while every settled hand card is 124.8px** (the hand's
+fixed card width, Task 3 / `0e42fe3`) — it landed ~21% too big, then snapped. Same
+CLASS as the Task 3 reveal-landing bug (`--prize-take-scale` derived from
+`handCardVisualRect(targetElement)` — the incoming slot's transient/fallback
+width — instead of a settled sibling), just never given Task 3's fix.
+
+Fix: extracted the reveal→hand landing-width rule into
+`revealLayout.settledHandLandingWidth(handSlots, targetElement, fallbackWidth)`
+(prefer a settled sibling's width, else the measured slot, else the computed
+fallback — wrapping the existing `settledLandingWidth`). Both the searched-card
+reveal (`RevealSessionLayer.handTargetForMotion`, whose private `settledSiblingWidth`
++ inline `settledLandingWidth` this REPLACES — a genuine share, not a copy) and
+the prize take (`ViewportAnimationLayer.startPrizeTakes`) now call it; the prize
+take takes its landing POSITION from the incoming slot and its landing WIDTH from
+the shared helper, exactly like the reveal.
+
+Rig evidence: prize-take landing **150.9 → 124.7px** = the settled hand-card width
+(124.8) = the width the searched-card reveal lands at (both derive it from the
+same `settledHandLandingWidth`, so they match by construction on the fixed-width
+hand). Suite 320 green (+4 `revealLayout.dom`), `tsc` clean; the reveal path is a
+pure extraction (unchanged behavior, covered by the existing reveal tests).

@@ -35,6 +35,31 @@ export function settledLandingWidth(
       : fallbackWidth;
 }
 
+// The width a card entering the hand should land at: the fixed size its
+// already-settled siblings occupy, never the incoming slot's transient
+// mid-layout width. Shared by every reveal-to-hand landing (searched-card
+// reveal AND prize take) so they shrink to the same real hand-card size and
+// don't snap. Pass the player's current hand slots; the arriving card's own
+// slot is excluded (it is the one still mid-layout).
+export function settledHandLandingWidth(
+  handSlots: HTMLElement[],
+  targetElement: HTMLElement | undefined,
+  fallbackWidth: number,
+): number {
+  let siblingWidth: number | undefined;
+  for (const slot of handSlots) {
+    if (slot === targetElement) {
+      continue;
+    }
+    const rect = handCardVisualRect(slot);
+    if (rect && rect.width > 0) {
+      siblingWidth = rect.width;
+      break;
+    }
+  }
+  return settledLandingWidth(siblingWidth, handCardVisualRect(targetElement)?.width, fallbackWidth);
+}
+
 export function fallbackHandTarget(handRect: DOMRect, index: number, count: number): DOMRect {
   const width = Math.min(handRect.height / cardRatio, handRect.width / Math.max(1, count));
   const height = width * cardRatio;

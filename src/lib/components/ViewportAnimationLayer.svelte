@@ -6,7 +6,7 @@
   import { applyTargetEffect } from '../anim/effects';
   import { handSlots, resolveAnchor, type Anchor, type ResolvedAnchor } from '../anim/anchors';
   import { choreograph, type CardMotion, type TargetEffect } from '../anim/motions';
-  import { cardVisual, fallbackHandTarget, handCardVisualRect, revealLayout } from '../anim/revealLayout';
+  import { cardVisual, fallbackHandTarget, handCardVisualRect, revealLayout, settledHandLandingWidth } from '../anim/revealLayout';
   import { animVisibility, type HideMode, type ReleaseClaim } from '../anim/visibility';
   import { cardBackCssVar, cardFaceImageUrl, cssAssetUrl } from '../game/cardAssets';
   import { replayAnimationPhaseGapMs } from '../game/replay';
@@ -794,8 +794,14 @@
         const sourceCenter = centerOf(sourceRect);
         const revealTarget = layout.target(index);
         const targetElement = resolveAnchor(motion.to)?.element;
-        const targetRect = handCardVisualRect(targetElement) ?? fallbackHandTarget(handRect, index, count);
-        const targetCenter = centerOf(targetRect);
+        const fallback = fallbackHandTarget(handRect, index, count);
+        // Land at the hand's SETTLED card width (a settled sibling), taking the
+        // POSITION from the incoming slot — the same reveal-to-hand landing the
+        // searched-card reveal uses (settledHandLandingWidth). Measuring the
+        // incoming slot's own width lands the sprite at a transient size that
+        // then snaps to the real hand-card width.
+        const targetCenter = centerOf(handCardVisualRect(targetElement) ?? fallback);
+        const landingWidth = settledHandLandingWidth(handSlots(player), targetElement, fallback.width);
         const card = motion.sprite.kind === 'card' ? motion.sprite.card : undefined;
         const reveal = !concealed && card?.id !== undefined;
         // The source-slot claim + sprite must hold until the phase's settled
@@ -829,7 +835,7 @@
             `--prize-reveal-y: ${(revealTarget.y - sourceCenter.y).toFixed(1)}px`,
             `--prize-take-x: ${(targetCenter.x - sourceCenter.x).toFixed(1)}px`,
             `--prize-take-y: ${(targetCenter.y - sourceCenter.y).toFixed(1)}px`,
-            `--prize-take-scale: ${clamp(targetRect.width / layout.cardWidth, 0.25, 1.15).toFixed(3)}`,
+            `--prize-take-scale: ${clamp(landingWidth / layout.cardWidth, 0.25, 1.15).toFixed(3)}`,
             `--prize-take-rotation: ${concealed ? 180 : 0}deg`,
             `--prize-take-flip: ${concealed ? 0 : 180}deg`,
             `--prize-reveal-rotation: ${revealTarget.rotation.toFixed(1)}deg`,
