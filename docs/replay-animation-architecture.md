@@ -177,9 +177,43 @@ sprite.
 ## Live Play
 
 Live play shares the entire pipeline — choreographer, anchors, visibility,
-renderers, and timing. The one live-specific piece is inside
-`AnimationEventGate`: live engine frames carry cumulative timelines against an
-already-updated board, so the gate animates only the unseen tail of each
-frame, while replay phases animate their whole event list against a projected
-phase view. Replay additionally holds board-space sprites until the phase
-scope ends; live releases per motion.
+renderers — **and the same phase / pre-state builder as replay**. A live engine
+response is a batch of newly settled logs; `LocalEngineController.appendSteps`
+event-sources both hands (`LiveObservationNormalizer`), synthesizes the ability
+announces the engine never logs (`logsWithSynthesizedAnnounce`, the twin of
+replay's `logsWithSynthesizedAbility`), and then builds each step through the
+**same** `stepAnimationPhases` / `projectedViewForEvents` machinery replay uses.
+So a live step animates its events against a per-phase *pre-state* view — the
+board as it was *before* that beat — exactly like a replay step. There is no
+longer any "animate the unseen tail against an already-updated board" path; that
+older model is gone.
+
+The gate is uniform (`AnimationEventGate`, see `gate.ts`): a scope is one
+animation step — a replay phase or a live step — and each carries exactly its
+own events, so a scope change animates the whole list and an unchanged scope
+(the settled interactive view, or the cumulative log-panel timeline) animates
+nothing. `App.svelte` sets `animationScopeKey = live-${lastTimelineEventId}` so
+the key changes every live step.
+
+What is still genuinely live-specific:
+
+- **Pacing signal.** Replay is paced by its own phase timeline. Live is paced by
+  the stepper in `game.svelte.ts`: show a step, wait the configured gap
+  (50–2500ms), then wait for the layers to report idle. The layers publish a
+  busy-until estimate through `animationActivity` (`activity.ts`) — this
+  `extendBy` reporting runs only in live (`if (!replayMode)` in all three
+  layers).
+- **Scope/session boundary key.** Reveal sessions and per-scope cleanup key off
+  the *turn* in live (`turnKey`) versus the per-step *scope key* in replay
+  (`scopeChanged`), because a live reveal must survive multiple steps within one
+  turn.
+- **Sprite → destination handoff.** Replay holds board-space sprites until the
+  phase scope ends (a 40ms settle plus two pre-paint frames, then release). Live
+  instead releases per motion and, when required, polls until the destination
+  card exists (`handOffWhenDestinationReady`, `handoffMaxWaitMs`). This is the
+  "two clocks" the 2026-07-09 holistic audit flags for unification onto replay's
+  deterministic hold-to-boundary model.
+
+Principled live-only behaviour (not divergence to remove): interactive
+decisions, concealed opponent hands and prize concealment, and the follow-active
+camera. Everything downstream of "here is the next view" is shared.

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { classifyAnimationCoverage } from './actionAnimationCoverage';
+import { classifyAnimationCoverage, type AnimationCoverageLevel } from './actionAnimationCoverage';
+import { cabtLogKindNames } from './logFormat';
 import { CabtAreaType } from './types';
 import type { ActionTimelineEvent } from '../game/types';
 
@@ -155,6 +156,66 @@ describe('classifyAnimationCoverage', () => {
 
     expect(coverage.level).toBe('static');
     expect(coverage.key).toBe('MoveCard:discard->hand');
+  });
+
+  // TOTALITY GUARD (promoted from example-based): enumerate every timeline kind
+  // the pipeline can emit and assert the classifier maps each to a real level,
+  // and that 'unsupported' appears ONLY for the documented set. Adding a new
+  // CabtLogType (which extends cabtLogKindNames) forces a coverage decision:
+  // if it falls through to the unsupported fallback, this fails until it is
+  // either given real coverage or added — deliberately — to the documented set.
+  describe('coverage totality over the classifier domain', () => {
+    // The domain: every mapped timeline kind, plus the synthesized 'Ability'
+    // (never a raw log type) and the alternate 'HpChange' casing the stream can
+    // carry alongside 'HPChange'.
+    const domain = [...new Set([...cabtLogKindNames, 'Ability', 'HpChange'])];
+
+    // Kinds with no dedicated motion today — a state change with no animation.
+    // Changing this set is a deliberate coverage decision, not an accident.
+    const documentedUnsupported = new Set(['Devolve', 'Change', 'MoveAttached']);
+
+    // Rich identity/area params so identity-gated kinds resolve to their best
+    // (non-unsupported) case; the point is which KINDS are unsupported, not the
+    // conditional/polished split, which the example tests above cover.
+    const richParams = {
+      cardId: 66,
+      serial: 14,
+      cardIdTarget: 99,
+      serialTarget: 5,
+      cardIdActive: 304,
+      cardIdBench: 878,
+      serialActive: 79,
+      serialBench: 81,
+      cardIdBefore: 1,
+      cardIdAfter: 2,
+      fromArea: CabtAreaType.DECK,
+      toArea: CabtAreaType.HAND,
+      attackId: 9,
+      abilityName: 'Test Ability',
+    };
+    const validLevels: AnimationCoverageLevel[] = ['polished', 'conditional', 'static', 'unsupported'];
+
+    it('enumerates a non-trivial domain', () => {
+      expect(domain.length).toBeGreaterThan(20);
+    });
+
+    it('classifies every kind to a valid level, unsupported only for the documented set', () => {
+      const unsupported = new Set<string>();
+      for (const kind of domain) {
+        const coverage = classifyAnimationCoverage(event(kind, richParams), [event('Attack', { cardId: 99 })]);
+        expect(validLevels, `kind ${kind} produced an unknown level`).toContain(coverage.level);
+        if (coverage.level === 'unsupported') {
+          unsupported.add(kind);
+        }
+      }
+      expect([...unsupported].sort()).toEqual([...documentedUnsupported].sort());
+    });
+
+    it('keeps the documented unsupported set accurate (each really is unsupported)', () => {
+      for (const kind of documentedUnsupported) {
+        expect(classifyAnimationCoverage(event(kind, richParams)).level, kind).toBe('unsupported');
+      }
+    });
   });
 });
 

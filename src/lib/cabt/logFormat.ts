@@ -44,6 +44,11 @@ const logTypeNames: Record<number, string> = {
   [CabtLogType.RESULT]: 'Result',
 };
 
+// The timeline kind names the pipeline can emit (one per mapped CabtLogType).
+// Single source of truth for the animation-coverage totality guard: adding a
+// CabtLogType here forces a coverage decision for it.
+export const cabtLogKindNames: string[] = Object.values(logTypeNames);
+
 export function formatCabtLog(log: Record<string, unknown>): string {
   const type = normalizedLogType(log.type);
   const playerIndex = typeof log.playerIndex === 'number' ? log.playerIndex : undefined;

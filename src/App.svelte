@@ -122,6 +122,9 @@
     if (initialSearchParam('debug') === 'clickability') {
       void import('./lib/debug/clickabilityProbe').then(({ startClickabilityProbe }) => startClickabilityProbe());
     }
+    if (initialSearchParam('debug') === 'hidden') {
+      void import('./lib/debug/hiddenCountReadout').then(({ startHiddenCountReadout }) => startHiddenCountReadout());
+    }
     void visualAssetsStore.loadConfiguredManifest();
     void refreshCatalog();
     if (initialReplayMode) {

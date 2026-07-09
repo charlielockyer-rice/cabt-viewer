@@ -37,6 +37,16 @@ class AnimVisibility {
     return this.claims.size;
   }
 
+  // Drop every claim and clear its attribute. This is a module-level singleton,
+  // so its claim map otherwise leaks across tests; call this between them (and
+  // it backstops a debug "force reveal").
+  reset(): void {
+    for (const element of this.claims.keys()) {
+      delete element.dataset.animHidden;
+    }
+    this.claims.clear();
+  }
+
   private sync(element: HTMLElement, counts: { contents: number; element: number }): void {
     if (counts.element > 0) {
       element.dataset.animHidden = 'element';
