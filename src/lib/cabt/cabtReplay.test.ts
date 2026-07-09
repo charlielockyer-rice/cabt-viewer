@@ -2011,7 +2011,7 @@ describe('cabtReplayToSnapshot', () => {
     // The effect tail shares its frame with the turn transition; the step keeps
     // the tail but leaves the turn boundary to step on its own.
     expect(abilityStep.stateIndex).toBe(1);
-    expect(abilityStep.actionTimeline?.map((event) => event.kind)).toEqual(['Ability', 'HpChange']);
+    expect(abilityStep.actionTimeline?.map((event) => event.kind)).toEqual(['Ability', 'HPChange']);
     expect(snapshot.steps[2].actionTimeline?.map((event) => event.kind)).toEqual(['TurnEnd']);
     expect(snapshot.steps[3].label).toBe('Player 2 turn started.');
     expect(snapshot.steps[3].actionTimeline?.map((event) => event.kind)).toEqual(['TurnStart', 'Draw']);
@@ -3249,7 +3249,7 @@ describe('cabtReplayToSnapshot', () => {
     });
 
     expect(snapshot.steps[0].label).toBe('Player 1 used Myriad Leaf Shower with Teal Mask Ogerpon ex.');
-    expect(snapshot.steps[0].actionTimeline?.map((event) => event.kind)).toEqual(['Attack', 'HpChange', 'MoveCard']);
+    expect(snapshot.steps[0].actionTimeline?.map((event) => event.kind)).toEqual(['Attack', 'HPChange', 'MoveCard']);
   });
 
   it('splits attacks into announce, discard, damage, and knockout animation phases', () => {
@@ -3316,7 +3316,7 @@ describe('cabtReplayToSnapshot', () => {
       'Attack',
       'MoveCard',
       'MoveCard',
-      'HpChange',
+      'HPChange',
       'MoveCard',
       'MoveCard',
     ]);
@@ -3469,8 +3469,8 @@ describe('cabtReplayToSnapshot', () => {
     expect(attackStep).toBeDefined();
     expect(attackStep?.actionTimeline?.map((event) => event.kind)).toEqual([
       'Attack',
-      'HpChange',
-      'HpChange',
+      'HPChange',
+      'HPChange',
       'MoveCard',
       'MoveCard',
       'MoveCard',

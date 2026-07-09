@@ -172,7 +172,7 @@ export function choreograph(
       effects.push(...announceEffects(event, events));
       continue;
     }
-    if (event.kind === 'HpChange' || event.kind === 'HPChange') {
+    if (event.kind === 'HPChange') {
       const result = damageChoreography(event, events, context);
       motions.push(...result.motions);
       effects.push(...result.effects);

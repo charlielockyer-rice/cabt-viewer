@@ -166,9 +166,9 @@ describe('classifyAnimationCoverage', () => {
   // either given real coverage or added — deliberately — to the documented set.
   describe('coverage totality over the classifier domain', () => {
     // The domain: every mapped timeline kind, plus the synthesized 'Ability'
-    // (never a raw log type) and the alternate 'HpChange' casing the stream can
-    // carry alongside 'HPChange'.
-    const domain = [...new Set([...cabtLogKindNames, 'Ability', 'HpChange'])];
+    // (never a raw log type). HP changes are canonicalized to 'HPChange' at
+    // ingestion, so the classifier only ever sees that spelling.
+    const domain = [...new Set([...cabtLogKindNames, 'Ability'])];
 
     // Kinds with no dedicated motion today — a state change with no animation.
     // Changing this set is a deliberate coverage decision, not an accident.

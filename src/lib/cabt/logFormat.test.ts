@@ -420,4 +420,26 @@ describe('formatCabtLog branch coverage', () => {
         .toBe('Game shuffled their deck.');
     });
   });
+
+  // Boundary canonicalization: the engine emits HP changes as either the numeric
+  // CabtLogType.HP_CHANGE or the string 'HpChange'; both must normalize to the
+  // single canonical timeline kind 'HPChange' at ingestion so downstream code
+  // handles one spelling.
+  describe('HpChange casing is canonicalized at ingestion', () => {
+    it('both the string and numeric encodings produce kind "HPChange"', () => {
+      const stringForm = cabtLogsToTimeline([{ type: 'HpChange', playerIndex: 0, cardId: 999999, value: -30 }]);
+      const numericForm = cabtLogsToTimeline([{ type: CabtLogType.HP_CHANGE, playerIndex: 0, cardId: 999999, value: -30 }]);
+
+      expect(stringForm.events[0].kind).toBe('HPChange');
+      expect(numericForm.events[0].kind).toBe('HPChange');
+    });
+
+    it('both encodings render the same damage message', () => {
+      const string = formatCabtLog({ type: 'HpChange', playerIndex: 0, cardId: 999999, value: -30 });
+      const numeric = formatCabtLog({ type: CabtLogType.HP_CHANGE, playerIndex: 0, cardId: 999999, value: -30 });
+
+      expect(string).toBe("Player 1's Card 999999 took 30 damage.");
+      expect(numeric).toBe(string);
+    });
+  });
 });

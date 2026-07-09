@@ -948,7 +948,6 @@ function isChoiceConsequenceGroup(type: string): boolean {
 function isCheckupKind(kind: string | undefined): boolean {
   return [
     'HPChange',
-    'HpChange',
     'Poisoned',
     'Burned',
     'Asleep',
@@ -1459,7 +1458,7 @@ function animationPhaseKey(event: ActionTimelineEvent): string | null {
   if (event.kind === 'Switch') {
     return `BoardMove:${playerKey}`;
   }
-  if (event.kind === 'HpChange' || event.kind === 'HPChange') {
+  if (event.kind === 'HPChange') {
     return `Damage:${playerKey}`;
   }
   if (event.kind === 'Coin') {
@@ -2048,7 +2047,6 @@ function isCardEffectContinuationStep(step: ReplayStep): boolean {
     'Draw',
     'DrawReverse',
     'Shuffle',
-    'HpChange',
     'HPChange',
   ].includes(event.kind ?? ''));
 }
@@ -2134,7 +2132,7 @@ function applyReplayEvent(
     return;
   }
 
-  if (event.kind === 'HpChange' || event.kind === 'HPChange') {
+  if (event.kind === 'HPChange') {
     if (options.deferBoardStateEvents) {
       return;
     }
@@ -2241,7 +2239,6 @@ function isBoardStateEvent(kind: string | undefined): boolean {
     'Evolve',
     'Devolve',
     'Switch',
-    'HpChange',
     'HPChange',
     'Poisoned',
     'Burned',
@@ -2674,7 +2671,6 @@ function formatLog(log: Record<string, unknown>): string {
         return `${actor} moved a card from hand to deck.`;
       }
       return `${actor} moved ${card} from ${areaName(log.fromArea)} to ${areaName(log.toArea)}.`;
-    case 'HpChange':
     case 'HPChange':
       return `${actor}'s ${card} HP changed.`;
     case 'Result':

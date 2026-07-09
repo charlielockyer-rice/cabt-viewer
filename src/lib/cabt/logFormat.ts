@@ -135,11 +135,20 @@ export function cabtLogsToTimeline(
   return { events, nextId };
 }
 
+// Some log types arrive as a PascalCase name string rather than the numeric
+// CabtLogType (e.g. the recorded-JSON encoding uses 'HpChange' where the enum
+// maps to 'HPChange'). Canonicalize known casing variants at ingestion so a
+// single kind flows downstream — the numeric enum mapping is authoritative.
+const logKindAliases: Record<string, string> = {
+  HpChange: 'HPChange',
+};
+
 function normalizedLogType(type: unknown): string {
   if (typeof type === 'number') {
     return logTypeNames[type] ?? `Log ${type}`;
   }
-  return String(type ?? 'Event');
+  const name = String(type ?? 'Event');
+  return logKindAliases[name] ?? name;
 }
 
 function moveCardMessage(actor: string, card: string, log: Record<string, unknown>) {

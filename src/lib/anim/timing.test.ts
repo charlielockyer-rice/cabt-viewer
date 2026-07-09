@@ -42,7 +42,7 @@ describe('actionAnimationStartMs', () => {
       event(1, 'Attack', { cardId: 721 }),
       event(2, 'MoveCard', { cardId: 3, serial: 101, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.DISCARD }),
       event(3, 'MoveCard', { cardId: 3, serial: 102, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.DISCARD }),
-      event(4, 'HpChange', { value: -200 }),
+      event(4, 'HPChange', { value: -200 }),
       event(5, 'MoveCard', { cardId: 721, serial: 64, fromArea: CabtAreaType.ACTIVE, toArea: CabtAreaType.DISCARD }),
     ];
 

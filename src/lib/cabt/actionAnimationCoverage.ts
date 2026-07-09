@@ -203,7 +203,7 @@ export function classifyAnimationCoverage(
     return { key: kind, level: 'polished', label: 'Active/bench switch', notes };
   }
 
-  if (kind === 'HPChange' || kind === 'HpChange') {
+  if (kind === 'HPChange') {
     if (!stepEvents.some((candidate) => candidate.kind === 'Attack')) {
       notes.push('Damage counters update, but non-attack HP changes have weaker motion context.');
       return { key: 'HPChange', level: 'conditional', label: 'HP change / damage badge', notes };
