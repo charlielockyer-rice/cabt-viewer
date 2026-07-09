@@ -4085,6 +4085,128 @@ describe('cabtReplayToSnapshot', () => {
     expect(snapshot.views[step.stateIndex].players[1].bench.some((slot) => slot.pokemon?.serial === 67)).toBe(false);
   });
 
+  it('animates the promotion beat when an ability vacates the active and promotes from the bench in one step', () => {
+    // Run Away Draw shape: the ability draws, shuffles the active (and its
+    // pre-evolution stack) into the deck, then a bench Pokemon is promoted — all
+    // coalesced into one decision step. The promotion must animate from an
+    // empty-active pre-state rather than the promoted Pokemon instantly spawning.
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 5,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 66, serial: 11, hp: 60, maxHp: 60 }],
+            bench: [{ id: 742, serial: 24, hp: 90, maxHp: 90 }],
+            benchMax: 5,
+            handCount: 6,
+            deckCount: 40,
+            prize: [],
+          }, {
+            active: [{ id: 600, serial: 50, hp: 120, maxHp: 120 }],
+            bench: [],
+            benchMax: 5,
+            handCount: 4,
+            deckCount: 42,
+            prize: [],
+          }],
+        },
+      }, {
+        // Main menu: makes the following ability frame a fresh decision so its
+        // whole batch coalesces into one open step (leadingCount === groups.length).
+        select: { type: 'Main', option: [{ type: 'End' }] },
+        current: {
+          turn: 5,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 66, serial: 11, hp: 60, maxHp: 60 }],
+            bench: [{ id: 742, serial: 24, hp: 90, maxHp: 90 }],
+            benchMax: 5,
+            handCount: 6,
+            deckCount: 40,
+            prize: [],
+          }, {
+            active: [{ id: 600, serial: 50, hp: 120, maxHp: 120 }],
+            bench: [],
+            benchMax: 5,
+            handCount: 4,
+            deckCount: 42,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'Ability', playerIndex: 0, cardId: 66, serial: 11 },
+          { type: 'Draw', playerIndex: 0, cardId: 5, serial: 5 },
+          { type: 'Draw', playerIndex: 0, cardId: 5, serial: 4 },
+          { type: 'Draw', playerIndex: 0, cardId: 1152, serial: 47 },
+          { type: 'MoveCard', playerIndex: 0, cardId: 66, serial: 11, fromArea: CabtAreaType.ACTIVE, toArea: CabtAreaType.DECK },
+          { type: 'MoveCard', playerIndex: 0, cardId: 305, serial: 14, fromArea: CabtAreaType.PRE_EVOLUTION, toArea: CabtAreaType.DECK },
+          { type: 'Shuffle', playerIndex: 0 },
+          { type: 'MoveCard', playerIndex: 0, cardId: 742, serial: 24, fromArea: CabtAreaType.BENCH, toArea: CabtAreaType.ACTIVE },
+        ],
+        current: {
+          turn: 5,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 742, serial: 24, hp: 90, maxHp: 90 }],
+            bench: [],
+            benchMax: 5,
+            handCount: 9,
+            deckCount: 39,
+            prize: [],
+          }, {
+            active: [{ id: 600, serial: 50, hp: 120, maxHp: 120 }],
+            bench: [],
+            benchMax: 5,
+            handCount: 4,
+            deckCount: 42,
+            prize: [],
+          }],
+        },
+      }, {
+        select: { type: 'Main', option: [{ type: 'End' }] },
+        current: {
+          turn: 5,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 742, serial: 24, hp: 90, maxHp: 90 }],
+            bench: [],
+            benchMax: 5,
+            handCount: 9,
+            deckCount: 39,
+            prize: [],
+          }, {
+            active: [{ id: 600, serial: 50, hp: 120, maxHp: 120 }],
+            bench: [],
+            benchMax: 5,
+            handCount: 4,
+            deckCount: 42,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    const abilityStep = snapshot.steps.find((step) =>
+      step.animationPhases?.some((phase) => phase.key.startsWith('BoardMove')));
+    expect(abilityStep).toBeDefined();
+    const promotionPhase = abilityStep?.animationPhases?.find((phase) => phase.key.startsWith('BoardMove'));
+    // The promotion animates bench(24)->active from an empty-active pre-state.
+    expect(promotionPhase?.view.players[0].active.empty).toBe(true);
+    expect(promotionPhase?.view.players[0].bench.some((slot) => slot.pokemon?.serial === 24)).toBe(true);
+    // Every phase up to and including the promotion keeps the active empty after
+    // the vacate — the promoted Pokemon never appears before its own beat.
+    const boardMoveIndex = abilityStep?.animationPhases?.findIndex((phase) => phase.key.startsWith('BoardMove')) ?? -1;
+    const shufflePhase = abilityStep?.animationPhases?.find((phase) => phase.key.startsWith('Shuffle'));
+    expect(shufflePhase?.view.players[0].active.empty).toBe(true);
+    expect(boardMoveIndex).toBeGreaterThan(0);
+  });
+
   it('holds the source board while active and benched Pokemon switch places', () => {
     const snapshot = cabtReplayToSnapshot({
       visualize: [{

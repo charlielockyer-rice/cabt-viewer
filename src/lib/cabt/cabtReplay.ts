@@ -2118,6 +2118,24 @@ function isBoardStateEvent(kind: string | undefined): boolean {
   ].includes(kind ?? '');
 }
 
+// An active slot emptied by a departure, keeping its slot identity (owner,
+// position, target) so the board renders an empty active rather than the
+// step-end occupant.
+function vacatedActiveSlot(slot: PokemonSlotView): PokemonSlotView {
+  return {
+    ...slot,
+    empty: true,
+    pokemon: undefined,
+    cards: [],
+    damage: 0,
+    hp: 0,
+    retreat: [],
+    energy: [],
+    tools: [],
+    specialConditions: [],
+  };
+}
+
 function applyReplayAreaDelta(
   player: PlayerView,
   currentPlayer: PlayerView,
@@ -2138,7 +2156,14 @@ function applyReplayAreaDelta(
     return;
   }
   if (area === CabtAreaType.ACTIVE) {
-    player.active = currentPlayer.active;
+    // A card ENTERING the active spot adopts the step's end-state occupant; a
+    // card LEAVING vacates the slot. Copying currentPlayer.active on a departure
+    // imports whatever ends up active by the step's end — so when an ability
+    // vacates the active and a bench Pokemon is promoted later in the same step,
+    // the vacate would pull the promoted Pokemon in and the promotion beat would
+    // have nothing to animate (it instantly spawns). Emptying on departure keeps
+    // the pre-promotion state so the BENCH->ACTIVE beat animates from the bench.
+    player.active = delta > 0 ? currentPlayer.active : vacatedActiveSlot(player.active);
     return;
   }
   if (area === CabtAreaType.BENCH) {
@@ -2165,8 +2190,14 @@ function applyReplayAreaDelta(
     return;
   }
   if (area === CabtAreaType.PRE_EVOLUTION) {
-    player.active = currentPlayer.active;
-    player.bench = currentPlayer.bench;
+    // A pre-evolution card leaves the stack of the Pokemon that holds it (its
+    // whole evolution line is being shuffled/discarded away); like an
+    // energy/tool move it never repositions a Pokemon between active and bench.
+    // Copying currentPlayer's whole active/bench would import board-position
+    // changes from LATER phases of this step — e.g. when Run Away Draw vacates
+    // the active and a bench Pokemon is promoted afterwards, this resync pulls
+    // the promoted Pokemon into active before its own promotion beat. The
+    // accompanying ACTIVE/BENCH delta already vacates the departing slot.
   }
 }
 
