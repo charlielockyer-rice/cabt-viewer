@@ -2294,7 +2294,9 @@ function buildPlayerView(
   };
 }
 
-function cardToView(cardRef: CabtCardRef): CardView {
+// Exported for the 5c card-view differential decision packet
+// (cardViewDifferential.test.ts) — the replay-side classifier under comparison.
+export function cardToView(cardRef: CabtCardRef): CardView {
   const data = cardDatabase.get(cardRef.id);
   const rawName = cardRef.name || data?.name || `Card ${cardRef.id}`;
   const name = displayName(rawName);
