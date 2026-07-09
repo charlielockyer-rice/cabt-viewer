@@ -677,6 +677,14 @@
       const concealed = hand.element.classList.contains('concealed');
       const layout = revealLayout(count);
       const targetReleases: ReleaseClaim[] = [];
+      // Hide the taken prize slots the moment their sprites depart, so the
+      // face-down card doesn't stay painted in place while the sprite flies —
+      // the count decrements as part of the motion, not as a cleanup snap after.
+      for (const slot of prizeSourceSlots(player, count)) {
+        const release = animVisibility.claim(slot, 'element');
+        releases.push(release);
+        targetReleases.push(release);
+      }
       let maxEndMs = 0;
 
       playerMotions.forEach((motion) => {
@@ -852,10 +860,29 @@
     };
   }
 
-  function prizeSourceRects(player: number, count: number): DOMRect[] {
-    const slots = [...document.querySelectorAll(`[data-card-anchor^="player:${player}:prize:"]`)]
+  function prizeSlotElements(player: number): HTMLElement[] {
+    return [...document.querySelectorAll(`[data-card-anchor^="player:${player}:prize:"]`)]
       .filter((element): element is HTMLElement => element instanceof HTMLElement && !element.closest('[data-anim-layer]'))
       .sort((a, b) => prizeIndex(a) - prizeIndex(b));
+  }
+
+  // The prize slots the taken prizes depart from. The pre-state view holds the
+  // prizes about to be taken, so they are present in the DOM — the taken ones
+  // are the last `count` slots (prizes are face-down and identical, so which is
+  // immaterial). Returned so the take can both originate the sprite at the real
+  // slot AND hide that slot while the sprite is in flight.
+  function prizeSourceSlots(player: number, count: number): HTMLElement[] {
+    const slots = prizeSlotElements(player);
+    return slots.length >= count ? slots.slice(slots.length - count) : slots;
+  }
+
+  function prizeSourceRects(player: number, count: number): DOMRect[] {
+    const sourceSlots = prizeSourceSlots(player, count);
+    if (sourceSlots.length === count) {
+      return sourceSlots.map((slot) => slot.getBoundingClientRect());
+    }
+    // Fallback: some taken prizes already left the DOM — extrapolate positions.
+    const slots = prizeSlotElements(player);
     const grid = prizeGridForPlayer(player);
     if (!slots.length && !grid) {
       return [];
