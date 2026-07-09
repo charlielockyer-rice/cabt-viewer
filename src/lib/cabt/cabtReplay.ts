@@ -998,7 +998,12 @@ function groupedStepDisplayView(
     }
   }
 
-  return view;
+  // A board-state event in this group (e.g. a Special Energy attach) syncs the
+  // whole board to the frame's end state, which includes Pokemon that a LATER
+  // group of this frame places from the deck. Hold those arrivals off this
+  // step's settled board so they don't flash in before their placement step.
+  const laterGroupEvents = groups.slice(groupIndex + 1).flatMap((later) => later.events);
+  return gameViewWithDeferredBoardArrivals(view, laterGroupEvents);
 }
 
 function groupedStepAnimationPhases(
@@ -1026,10 +1031,17 @@ function groupedStepAnimationPhases(
       ? animationSourceViewForPhase(phaseStartView, currentView, phase)
       : projectedViewForEvents(phaseStartView, currentView, phase.events, handToDiscardPhase ? { deferDiscardArrivals: true } : {});
     // Board-state events sync whole slots to the step's end state, which
-    // would show energy/tool badges before their attach phase plays. Strip
-    // attachments that arrive in later phases of this step.
+    // would show energy/tool badges — and Pokemon that later phases place onto
+    // the board — before their own phase plays. A Special Energy attach whose
+    // effect benches Pokemon from the deck is the canonical case: the Attach
+    // handler copies the end-state bench, flashing the incoming Pokemon during
+    // the attach phase before the deck-placement phase animates them in. Strip
+    // both the future attachments and the future board arrivals of this step.
     const futureEvents = eventPhases.slice(eventPhases.indexOf(phase) + 1).flatMap((later) => later.events);
-    const phaseView = gameViewWithDeferredAttachments(projectedView, futureEvents);
+    const phaseView = gameViewWithDeferredBoardArrivals(
+      gameViewWithDeferredAttachments(projectedView, futureEvents),
+      futureEvents,
+    );
     phases.push({
       key: phase.key,
       label: animationPhaseLabel(phase),
@@ -1358,6 +1370,44 @@ function gameViewWithDeferredAttachments(view: GameView, futureEvents: ActionTim
       ...player,
       active: stripSlot(player.active),
       bench: player.bench.map(stripSlot),
+    })),
+  };
+}
+
+// The Pokemon-placement counterpart of gameViewWithDeferredAttachments: empty
+// any board slot currently holding a Pokemon that ARRIVES onto the board in a
+// later phase of this step (a deck search, an on-attach effect, etc.), so the
+// slot stays in its pre-arrival state until that phase animates the Pokemon in.
+// Board-to-board repositions (Switch/retreat) animate in their own dedicated
+// view and are excluded — only off-board arrivals are held back.
+function gameViewWithDeferredBoardArrivals(view: GameView, futureEvents: ActionTimelineEvent[]): GameView {
+  const serials = new Set(futureEvents
+    .filter((event) => {
+      if (!isMoveCardKind(event.kind)) {
+        return false;
+      }
+      const params = event.params as Record<string, unknown> | undefined;
+      const fromArea = Number(params?.fromArea);
+      const toArea = Number(params?.toArea);
+      return (toArea === CabtAreaType.ACTIVE || toArea === CabtAreaType.BENCH)
+        && fromArea !== CabtAreaType.ACTIVE
+        && fromArea !== CabtAreaType.BENCH;
+    })
+    .map((event) => Number((event.params as Record<string, unknown> | undefined)?.serial))
+    .filter((serial) => Number.isFinite(serial)));
+  if (!serials.size) {
+    return view;
+  }
+  const holdSlot = (slot: PokemonSlotView): PokemonSlotView =>
+    slot.pokemon?.serial !== undefined && serials.has(slot.pokemon.serial)
+      ? { ...slot, empty: true, pokemon: undefined, cards: [], damage: 0, hp: 0, retreat: [], energy: [], tools: [] }
+      : slot;
+  return {
+    ...view,
+    players: view.players.map((player) => ({
+      ...player,
+      active: holdSlot(player.active),
+      bench: player.bench.map(holdSlot),
     })),
   };
 }
