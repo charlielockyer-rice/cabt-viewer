@@ -1,75 +1,66 @@
-// 5c DECISION PACKET (report-only, no production change to the classifiers).
+// UNIFICATION GUARD (formerly the 5c decision packet, now a permanent check).
 //
-// The live pipeline (cabtProjection.cabtCardToView) and the replay pipeline
-// (cabtReplay.cardToView) each turn a card id into a CardView, but classify
-// DIFFERENTLY: live from structured fields (cardType/energyType/basic), replay
-// from kind-string matching. The generated card DB carries BOTH kind strings
-// and cardType fields, so both classifiers can run side-by-side on the same
-// rows here (no live bridge dataMaps needed) to quantify the disagreement — the
-// number that decides whether unifying 5c is mechanical, per-card review, or a
-// sign something deeper is off.
+// Live play (cabtProjection.cabtCardToView), replay (cabtReplay.cardToView), and
+// the animation sprite builder (cardView.cabtCardToView) each turn a card id into
+// a CardView. They used to classify DIFFERENTLY — live from numeric fields, the
+// other two from kind-string matching — which disagreed on 51 superTypes (Special
+// Energy, plus Items/Tools the heuristics mistook for Pokemon) and every stage /
+// trainerType encoding. They now all route through classifyCard, so a card id
+// must yield ONE classification everywhere.
 //
-// Skipped by default (it is a report, not a guard, and prints a large table).
-// Run it with: CABT_CARD_DIFFERENTIAL=1 npx vitest run cardViewDifferential
-//
-// NOTE for the follow-up: this compares both classifiers on the GENERATED JSON.
-// Validating live specifically against real bridge-sourced dataMaps (whose
-// shape can differ from the generated rows) remains part of the 5c follow-up.
+// This runs over the full generated card DB (both cardType numbers and kind
+// strings present) and asserts ZERO disagreement on the classification fields.
+// It is fast (~12ms) and part of the default suite: if any builder's classifier
+// drifts, this fails.
 import { describe, expect, it } from 'vitest';
 import cardRows from './cardData.generated.json';
 import attackRows from './attackData.generated.json';
 import { cabtCardToView, type CabtDataMaps } from './cabtProjection';
 import { cardToView } from './cabtReplay';
+import { cabtCardToView as animCardToView } from './cardView';
 import type { CardView } from '../game/types';
 
-const enabled = !!process.env.CABT_CARD_DIFFERENTIAL;
+const CLASSIFICATION_FIELDS: Array<keyof CardView> = ['superType', 'cardType', 'trainerType', 'energyType', 'stage'];
 
-describe.skipIf(!enabled)('card-view builder differential (live vs replay)', () => {
-  it('reports per-field disagreements over the full generated card DB', () => {
-    const rows = cardRows as Array<Record<string, unknown>>;
-    const dataMaps: CabtDataMaps = {
-      cardData: Object.fromEntries(rows.map((row) => [Number(row.id), row])) as CabtDataMaps['cardData'],
-      attacks: Object.fromEntries((attackRows as Array<Record<string, unknown>>).map((a) => [Number(a.attackId), a])) as CabtDataMaps['attacks'],
-    };
+describe('card-view classifier unification (live vs replay vs animation)', () => {
+  const rows = cardRows as Array<Record<string, unknown>>;
+  const dataMaps: CabtDataMaps = {
+    cardData: Object.fromEntries(rows.map((row) => [Number(row.id), row])) as CabtDataMaps['cardData'],
+    attacks: Object.fromEntries((attackRows as Array<Record<string, unknown>>).map((a) => [Number(a.attackId), a])) as CabtDataMaps['attacks'],
+  };
 
-    const fields: Array<keyof CardView> = ['superType', 'cardType', 'trainerType', 'energyType', 'stage'];
-    const disagreeByField: Record<string, number> = Object.fromEntries(fields.map((f) => [f, 0]));
-    let retreatDisagree = 0;
-    const cardsWithAnyDisagreement: Array<Record<string, unknown>> = [];
-
+  it('every builder classifies every card in the DB identically', () => {
+    const disagreements: Array<Record<string, unknown>> = [];
     for (const row of rows) {
       const id = Number(row.id);
       const ref = { id, serial: 1, playerIndex: 0 };
       const live = cabtCardToView(ref, dataMaps);
       const replay = cardToView({ id, serial: 1, playerIndex: 0 } as never);
+      const anim = animCardToView(id);
 
       const diffs: Record<string, unknown> = {};
-      for (const field of fields) {
-        if (live[field] !== replay[field]) {
-          disagreeByField[field] += 1;
-          diffs[field] = { live: live[field], replay: replay[field] };
+      for (const field of CLASSIFICATION_FIELDS) {
+        if (live[field] !== replay[field] || live[field] !== anim[field]) {
+          diffs[field] = { live: live[field], replay: replay[field], anim: anim[field] };
         }
       }
-      const liveRetreat = live.retreat?.length ?? 0;
-      const replayRetreat = replay.retreat?.length ?? 0;
-      if (liveRetreat !== replayRetreat) {
-        retreatDisagree += 1;
-        diffs.retreat = { live: liveRetreat, replay: replayRetreat };
+      // Retreat length is structural, but shares the same live/replay divergence
+      // history — guard it here too (animation view omits retreat).
+      if ((live.retreat?.length ?? 0) !== (replay.retreat?.length ?? 0)) {
+        diffs.retreat = { live: live.retreat?.length ?? 0, replay: replay.retreat?.length ?? 0 };
       }
       if (Object.keys(diffs).length) {
-        cardsWithAnyDisagreement.push({ id, name: row.name, kind: row.kind, cardType: row.cardType, diffs });
+        disagreements.push({ id, name: row.name, kind: row.kind, cardType: row.cardType, diffs });
       }
     }
+    expect(disagreements).toEqual([]);
+  });
 
-    const report = {
-      totalCards: rows.length,
-      cardsWithAnyDisagreement: cardsWithAnyDisagreement.length,
-      disagreeByField: { ...disagreeByField, retreat: retreatDisagree },
-      sample: cardsWithAnyDisagreement.slice(0, 40),
-    };
-    // eslint-disable-next-line no-console
-    console.log('[5c card-view differential]', JSON.stringify(report, null, 2));
-
-    expect(rows.length).toBeGreaterThan(1000);
+  it('classifies Special Energy as Energy (the corrected live bug)', () => {
+    const specialEnergy = rows.filter((row) => Number(row.cardType) === 6);
+    expect(specialEnergy.length).toBeGreaterThan(0);
+    for (const row of specialEnergy) {
+      expect(cabtCardToView({ id: Number(row.id), serial: 1, playerIndex: 0 }, dataMaps).superType).toBe('Energy');
+    }
   });
 });

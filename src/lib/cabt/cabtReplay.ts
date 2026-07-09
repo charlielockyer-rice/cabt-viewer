@@ -10,7 +10,8 @@ import {
   stadiumForPlayer,
   type SlotResolvers,
 } from './cabtProjection';
-import { displayName, energySymbolToType } from './cardView';
+import { displayName } from './cardView';
+import { classifyCard } from './cardClassify';
 import { synthesizeAnnounceLogs, type AnnounceContext, type AnnounceLog } from './announceSynthesis';
 import { cabtLogsToTimeline } from './logFormat';
 import { CabtAreaType, CabtOptionType } from './types';
@@ -33,6 +34,11 @@ type CardRow = {
   attackCost: string;
   attackDamage: string;
   attackText: string;
+  cardType: number;
+  energyType?: number;
+  basic?: boolean;
+  stage1?: boolean;
+  stage2?: boolean;
   retreatCost?: number;
   skills?: Array<{ name: string; text?: string }>;
   attacks?: number[];
@@ -2300,10 +2306,6 @@ export function cardToView(cardRef: CabtCardRef): CardView {
   const data = cardDatabase.get(cardRef.id);
   const rawName = cardRef.name || data?.name || `Card ${cardRef.id}`;
   const name = displayName(rawName);
-  const kind = data?.kind ?? '';
-  const isPokemon = kind.includes('Pokémon') || !!data?.hp;
-  const isEnergy = kind.includes('Energy') || /Energy\b/.test(rawName);
-  const isTrainer = !isPokemon && !isEnergy;
   const view: CardView = {
     id: cardRef.id,
     serial: cardRef.serial,
@@ -2312,11 +2314,13 @@ export function cardToView(cardRef: CabtCardRef): CardView {
     fullName: name,
     set: data?.set || undefined,
     setNumber: data?.setNumber || undefined,
-    superType: isPokemon ? 'Pokemon' : isEnergy ? 'Energy' : 'Trainer',
-    cardType: isPokemon ? energySymbolToType(data?.type) : undefined,
-    trainerType: isTrainer ? kind : undefined,
-    energyType: isEnergy ? energySymbolToType(data?.type || rawName) : undefined,
-    stage: stageLabel(kind),
+    ...classifyCard({
+      cardType: data?.cardType ?? -1,
+      energyType: data?.energyType,
+      basic: data?.basic,
+      stage1: data?.stage1,
+      stage2: data?.stage2,
+    }),
     evolvesFrom: data?.evolvesFrom || undefined,
     hp: data?.hp ?? undefined,
     retreat: Array.from({ length: retreatCostFor(data) }, () => 'Colorless'),
@@ -2527,13 +2531,6 @@ function energyName(energy: number): string {
     'Rainbow',
     'Team Rocket',
   ][energy] ?? 'Colorless';
-}
-
-function stageLabel(kind: string): string | undefined {
-  if (kind.includes('Basic Pokémon')) return 'Basic';
-  if (kind.includes('Stage 1')) return 'Stage 1';
-  if (kind.includes('Stage 2')) return 'Stage 2';
-  return undefined;
 }
 
 function clampPlayerIndex(index: number): number {
