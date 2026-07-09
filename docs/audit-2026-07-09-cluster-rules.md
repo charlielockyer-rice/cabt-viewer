@@ -188,3 +188,98 @@ NOT LANDED:
 
 Dev-log: `agent-lab/journal/2026-07-09-viewer-cluster-fixes.md` (with the
 eyeball checklist for Charlie's morning game).
+
+---
+
+# Round 2 (2026-07-09 later) — replay-path boundary residue + cosmetics
+
+Charlie play-tested the REPLAY viewer against Kaggle episode 84924975 and found
+that several round-1 fixes did not hold on the replay path. Root-caused against
+the episode with a step/phase dumper (fork points he handed in). The unifying
+rule extends round 1's Cluster A to **both modes**:
+
+> A turn transition and any active-vacating event get their own beat, with a
+> pre-view that carries forward the running projected state — cross-boundary
+> events are absent from every pre-boundary view, and a board mutation shown in
+> one beat never reverts on the next.
+
+## Replay boundary/view-sync cluster (R1 / R2 / R3) — FIXED (`1e0e879`, `2fae9d8`)
+
+Round 1 fixed the LIVE per-observation path (`e8dda91`) and added a replay test
+(`cabtReplay.test.ts` "does not show a later turn-start draw…"), but that test
+only exercises the `stepsForFrameGroups` path. In real play the action follows a
+main-menu decision, so it is built as an **open step** (`openStepToReplayStep`)
+— the path all three symptoms slipped through.
+
+- **R1 — pre-boundary draw leak (frames 26/48, Itchy Pollen).** The open attack
+  step left `displayView` undefined when its own frame carried a forced tail
+  (`TurnEnd`/`TurnStart`), so `replay.svelte` fell back to `views[stateIndex]` —
+  the raw frame-END view with the opponent's start-of-turn draw already applied
+  (hand 7 on the attack step, revert to 6 on turn-end, then the draw animates).
+  Fix: pass the forced tail as deferred projection context so the settled view
+  projects to the open group's end, rebuilding hand/board from the pre-open state.
+- **R2 — attack-caused switch reverts (frame 38/39, Abra Teleportation).** The
+  engine puts the `Switch` in the transition frame; the builder attributes it to
+  the attack step, but the `open` branch of `buildDecisionSteps` (unlike the
+  `rootFrame` branch) dropped this frame's consumed leading groups from the
+  trailing steps' projection base, so `TurnEnd`/`TurnStart` rebuilt from
+  `views[index-1]` (pre-switch) and reverted the active until the next raw frame.
+  Fix: prepend this frame's consumed leading groups as projection context.
+- **R3 — ability-vacates-active promotion is instant (frames 50/51, Run Away
+  Draw).** Two `applyReplayAreaDelta` branches imported the step's END board
+  (promotion already done) on events that PRECEDE the promotion: the `ACTIVE`
+  delta copied `currentPlayer.active` for both directions (so the vacate pulled
+  the promoted Pokemon in), and the `PRE_EVOLUTION` delta whole-board resynced
+  active/bench (re-promoting right after the vacate). Fix: a departure from
+  `ACTIVE` vacates the slot (empty); a `PRE_EVOLUTION` move no longer touches the
+  board (it changes one Pokemon's stack, like the Task 4 energy/tool fix — this
+  **supersedes** the Notes bullet above that left PRE_EVOLUTION on whole-board
+  resync). The promotion now animates bench→active from an empty-active pre-state.
+
+Regression tests added (open-step path, not touching round-1 assertions): the
+draw-leak guard, the switch-carry-forward guard, and the coalesced-promotion
+guard (`active.empty` through the shuffle beat and on the BoardMove source view).
+
+**R3 side question — why fork stateIndices skip (49 → 51):** view 50 is the
+transient mid-ability observation (active vacated, promotion not yet applied).
+The replay builder coalesces the ability's frames (50 + 51) into one decision
+step, so 50 never becomes its own fork. Confirmed: it is the empty-active
+intermediate the promotion beat now animates from — a multi-observation state,
+exactly the "checkup/auto-resolution frames" hypothesis.
+
+## Cosmetic (R8) — DOCUMENTED for a verified polish pass
+
+Both are handoff-seam CSS/sprite issues; neither is verifiable headlessly (the
+flicker is a paint-timing artifact) so they are documented, not blind-fixed —
+verify any change with the real-browser rig (`viewer-real-browser-probe`).
+
+- **Retreat shadow flicker.** `BoardSlot.svelte:191-196` transitions
+  `box-shadow` and `filter` on `--transition-fast`. When a retreat swaps cards
+  between slots, the settling slot's shadow/filter re-computes at the sprite→
+  static handoff and the transition fires, reading as a shadow flicker under the
+  card. Candidate fix: suppress the `box-shadow`/`filter` transition on slots
+  that are receiving an animation handoff (a `data-anim-*` guard), or drop
+  `box-shadow` from the transitioned properties if it is only wanted for hover.
+- **Energy-discard white flash.** `.attached-move-card`
+  (`BoardAnimationLayer.svelte:753-764`) fills `background: #f7f8fa` (near-white).
+  On the first frame(s) of an energy attached→discard, that fill shows at card
+  size before the inner `CardTile` paints — a harsh white flash on top of the
+  card. Candidate fix: make the sprite background transparent (or the energy
+  card-surface tone), or gate the sprite's opacity until the tile has painted.
+
+## Pokemon Checkup (R9) — DESIGN NOTE, backlog (not built)
+
+Between-turns status resolution (burn/poison ticks, sleep/paralysis checks)
+arrives as `Poisoned`/`Burned`/`Asleep`/`Paralyzed`/`Confused` events, which the
+coverage classifier rates **static** — so the checkup passes with no motion. Not
+a bug; a coverage gap Charlie wants acknowledged. A checkup beat would be its own
+step between `TurnEnd` and `TurnStart` (the builder already treats
+`PokemonCheckup` as a forced group — see `forcedStepTypes`), animating each
+status tick: a damage-float on the burned/poisoned Pokemon (reuse `damage-float`
++ `lunge`), a status-badge pulse for sleep/paralysis/confusion, and the coin flip
+for wake/paralysis-recovery where the engine emits one. Keying on the status
+event kind (not the card) gives every Pokemon the same treatment for free.
+Requires: reclassify the status kinds to `polished`/`conditional` in
+`actionAnimationCoverage.ts`, a checkup phase key + view in `cabtReplay.ts`, and a
+status-tick motion in `motions.ts`. Deferred: additive, DOM-runtime, and better
+built once the real-browser rig gates the status-badge visuals.
