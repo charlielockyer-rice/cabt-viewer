@@ -756,7 +756,10 @@
     height: 100%;
     overflow: hidden;
     border-radius: 5px;
-    background: #f7f8fa;
+    /* No opaque fill: the inner card-tile supplies the card surface. A near-white
+       fill here flashed for a frame before the (remote) card art decoded — a
+       harsh white flash on top of the energy at the discard beat. */
+    background: transparent;
     box-shadow:
       0 12px 26px rgba(23, 30, 38, 0.24),
       0 0 0 1px rgba(18, 21, 26, 0.18);

@@ -188,10 +188,13 @@
     background: transparent;
     box-shadow: none;
     display: block;
+    /* filter (the card's drop-shadow) is intentionally NOT transitioned: when a
+       retreat/board-move swaps a card's slot, its drop-shadow re-computes and a
+       transition here animates that change as a shadow flicker under the settling
+       card. Background/box-shadow stay transitioned for hover/selectable glow. */
     transition:
       background var(--transition-fast),
-      box-shadow var(--transition-fast),
-      filter var(--transition-fast);
+      box-shadow var(--transition-fast);
   }
 
   :global(.debug-zones) .board-slot {
