@@ -8,8 +8,6 @@
   type Props = {
     topPlayer: PlayerView;
     bottomPlayer: PlayerView;
-    topActiveSlot: PokemonSlotView;
-    bottomActiveSlot: PokemonSlotView;
     isPlayableTarget: (slot: PokemonSlotView) => boolean;
     isBoardPromptSelectable: (slot: PokemonSlotView) => boolean;
     isBoardPromptSelected: (slot: PokemonSlotView) => boolean;
@@ -27,8 +25,6 @@
   let {
     topPlayer,
     bottomPlayer,
-    topActiveSlot,
-    bottomActiveSlot,
     isPlayableTarget,
     isBoardPromptSelectable,
     isBoardPromptSelected,
@@ -51,48 +47,37 @@
     clickSlot(slot);
   }
 
-  let topStadium = $derived(topPlayer.stadium.at(-1));
-  let bottomStadium = $derived(bottomPlayer.stadium.at(-1));
+  // Actives are rendered per-player in a stable order (keyed by player.index),
+  // so the follow-active seat flip only flips each active's placement class (a
+  // CSS reposition + rotation) instead of swapping which player each slot
+  // renders — the active Pokemon keeps its DOM node through the flip (M2). The
+  // board anchors are already player-index based, so nothing downstream changes.
+  let orderedPlayers = $derived([topPlayer, bottomPlayer].slice().sort((a, b) => a.index - b.index));
 </script>
 
 <div class="active-duel">
-  <BoardSlot
-    slot={topActiveSlot}
-    active
-    placement="top-active-slot"
-    canDrop={isPlayableTarget(topPlayer.active) || canPlaceSetupActive(topPlayer.active)}
-    promptSelectable={isBoardPromptSelectable(topPlayer.active)}
-    promptSelected={isBoardPromptSelected(topPlayer.active)}
-    pickTally={boardPickTally(topPlayer.active)}
-    pickKind={boardPickKind}
-    onclick={() => clickActive(topPlayer.active)}
-    ondragover={(event) => allowDrop(event, topPlayer.active)}
-    ondrop={(event) => dropToSlot(topPlayer.active, event)}
-    evolutionChromeIn={slotHasCompletedEvolution(topPlayer.active)}
-  />
+  {#each orderedPlayers as player (player.index)}
+    {@const top = player.index === topPlayer.index}
+    {@const stadium = player.stadium.at(-1)}
+    <BoardSlot
+      slot={player.active}
+      active
+      placement={top ? 'top-active-slot' : 'bottom-active-slot'}
+      canDrop={isPlayableTarget(player.active) || canPlaceSetupActive(player.active)}
+      promptSelectable={isBoardPromptSelectable(player.active)}
+      promptSelected={isBoardPromptSelected(player.active)}
+      pickTally={boardPickTally(player.active)}
+      pickKind={boardPickKind}
+      onclick={() => clickActive(player.active)}
+      ondragover={(event) => allowDrop(event, player.active)}
+      ondrop={(event) => dropToSlot(player.active, event)}
+      evolutionChromeIn={slotHasCompletedEvolution(player.active)}
+    />
 
-  {#if topStadium}
-    <StadiumCard card={topStadium} owner={topPlayer} placement="top" {showZone} />
-  {/if}
-
-  <BoardSlot
-    slot={bottomActiveSlot}
-    active
-    placement="bottom-active-slot"
-    canDrop={isPlayableTarget(bottomPlayer.active) || canPlaceSetupActive(bottomPlayer.active)}
-    promptSelectable={isBoardPromptSelectable(bottomPlayer.active)}
-    promptSelected={isBoardPromptSelected(bottomPlayer.active)}
-    pickTally={boardPickTally(bottomPlayer.active)}
-    pickKind={boardPickKind}
-    onclick={() => clickActive(bottomPlayer.active)}
-    ondragover={(event) => allowDrop(event, bottomPlayer.active)}
-    ondrop={(event) => dropToSlot(bottomPlayer.active, event)}
-    evolutionChromeIn={slotHasCompletedEvolution(bottomPlayer.active)}
-  />
-
-  {#if bottomStadium}
-    <StadiumCard card={bottomStadium} owner={bottomPlayer} placement="bottom" {showZone} />
-  {/if}
+    {#if stadium}
+      <StadiumCard card={stadium} owner={player} placement={top ? 'top' : 'bottom'} {showZone} />
+    {/if}
+  {/each}
 </div>
 
 <style>

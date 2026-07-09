@@ -10,10 +10,6 @@
   type Props = {
     topPlayer: PlayerView;
     bottomPlayer: PlayerView;
-    topBenchSlots?: PokemonSlotView[];
-    bottomBenchSlots?: PokemonSlotView[];
-    topActiveSlot: PokemonSlotView;
-    bottomActiveSlot: PokemonSlotView;
     canPlayToBenchArea: (player: PlayerView) => boolean;
     canPlaceSetupBench: (player: PlayerView) => boolean;
     playToBenchArea: (player: PlayerView) => void;
@@ -49,10 +45,6 @@
   let {
     topPlayer,
     bottomPlayer,
-    topBenchSlots = [],
-    bottomBenchSlots = [],
-    topActiveSlot,
-    bottomActiveSlot,
     canPlayToBenchArea,
     canPlaceSetupBench,
     playToBenchArea,
@@ -90,6 +82,17 @@
   let bottomLostPileElement = $state<HTMLButtonElement>();
   let bottomDiscardPileElement = $state<HTMLButtonElement>();
   let projectedHoverPile = $state('');
+
+  // Bench zones are rendered per-player in a stable order (keyed by
+  // player.index) so the follow-active seat flip only flips each zone's
+  // top/bottom placement (a CSS reposition) instead of swapping which player it
+  // renders — the bench Pokemon keep their DOM nodes through the flip (M2). The
+  // board anchors are already player-index based, so nothing downstream changes.
+  let orderedPlayers = $derived([topPlayer, bottomPlayer].slice().sort((a, b) => a.index - b.index));
+
+  function benchSlotsFor(player: PlayerView): PokemonSlotView[] {
+    return player.bench.filter((slot) => !slot.empty);
+  }
 
   type ProjectedPileKey = 'top-lost' | 'top-discard' | 'bottom-lost' | 'bottom-discard';
 
@@ -191,28 +194,30 @@
     ondragover={allowBoardPlayDrop}
     ondrop={dropToBoardPlay}
   >
-    <BenchZone
-      player={topPlayer}
-      slots={topBenchSlots}
-      opponent
-      {canPlayToBenchArea}
-      {canPlayOnBoard}
-      {clickBoardPlay}
-      {canPlaceSetupBench}
-      {playToBenchArea}
-      {placeSetupBench}
-      {allowBenchDrop}
-      {dropToBenchArea}
-      {isPlayableTarget}
-      {isBoardPromptSelectable}
-      {isBoardPromptSelected}
-      {boardPickTally}
-      {boardPickKind}
-      {clickSlot}
-      {allowDrop}
-      {dropToSlot}
-      {slotHasCompletedEvolution}
-    />
+    {#each orderedPlayers as benchPlayer (benchPlayer.index)}
+      <BenchZone
+        player={benchPlayer}
+        slots={benchSlotsFor(benchPlayer)}
+        opponent={benchPlayer.index === topPlayer.index}
+        {canPlayToBenchArea}
+        {canPlayOnBoard}
+        {clickBoardPlay}
+        {canPlaceSetupBench}
+        {playToBenchArea}
+        {placeSetupBench}
+        {allowBenchDrop}
+        {dropToBenchArea}
+        {isPlayableTarget}
+        {isBoardPromptSelectable}
+        {isBoardPromptSelected}
+        {boardPickTally}
+        {boardPickKind}
+        {clickSlot}
+        {allowDrop}
+        {dropToSlot}
+        {slotHasCompletedEvolution}
+      />
+    {/each}
 
     <CenterPiles
       {topPlayer}
@@ -230,8 +235,6 @@
     <ActiveDuel
       {topPlayer}
       {bottomPlayer}
-      {topActiveSlot}
-      {bottomActiveSlot}
       {isPlayableTarget}
       {isBoardPromptSelectable}
       {isBoardPromptSelected}
@@ -243,28 +246,6 @@
       {canPlaceSetupActive}
       {placeSetupActive}
       {showZone}
-      {slotHasCompletedEvolution}
-    />
-
-    <BenchZone
-      player={bottomPlayer}
-      slots={bottomBenchSlots}
-      {canPlayToBenchArea}
-      {canPlayOnBoard}
-      {clickBoardPlay}
-      {canPlaceSetupBench}
-      {playToBenchArea}
-      {placeSetupBench}
-      {allowBenchDrop}
-      {dropToBenchArea}
-      {isPlayableTarget}
-      {isBoardPromptSelectable}
-      {isBoardPromptSelected}
-      {boardPickTally}
-      {boardPickKind}
-      {clickSlot}
-      {allowDrop}
-      {dropToSlot}
       {slotHasCompletedEvolution}
     />
 

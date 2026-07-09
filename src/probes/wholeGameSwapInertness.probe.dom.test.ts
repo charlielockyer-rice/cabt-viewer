@@ -278,17 +278,37 @@ describe.skipIf(!hasLog)('whole-game swap inertness (happy-dom, real game log)',
       const top = pile?.querySelector('.discard-card-top .card-tile');
       return top instanceof HTMLElement ? top : null;
     };
+    // Active + bench Pokemon card tiles for a player, keyed by pokemon serial.
+    // The board-slot anchor is player-index based, so a player's slots are found
+    // whether they sit at top or bottom.
+    const boardCardEls = (playerIndex: number): Map<number, HTMLElement> => {
+      const map = new Map<number, HTMLElement>();
+      for (const slot of document.querySelectorAll(`.board-slot[data-owner-index="${playerIndex}"][data-pokemon-serial]`)) {
+        const serial = Number((slot as HTMLElement).dataset.pokemonSerial);
+        const tile = slot.querySelector('.card-tile');
+        if (Number.isFinite(serial) && tile instanceof HTMLElement) {
+          map.set(serial, tile);
+        }
+      }
+      return map;
+    };
+    const boardSerials = (player: PlayerView | undefined): Set<number> => {
+      const slots = [player?.active, ...(player?.bench ?? [])];
+      return new Set(slots.map((slot) => slot?.pokemon?.serial).filter((s): s is number => s !== undefined));
+    };
 
     const findings: Array<{ swap: number; detail: string }> = [];
     let prev = views[0];
     let prevBottom = viewSettingsStore.viewIndex;
     let prevHand: Record<number, Map<number, HTMLElement>> = { 0: handCardEls(0), 1: handCardEls(1) };
     let prevDiscardTop: Record<number, HTMLElement | null> = { 0: discardTopEl(0), 1: discardTopEl(1) };
+    let prevBoard: Record<number, Map<number, HTMLElement>> = { 0: boardCardEls(0), 1: boardCardEls(1) };
     let flips = 0;
     // Node comparisons where both the before and after DOM frames were actually
     // found — guards against a vacuous pass from an anchor-selector mismatch.
     let acrossFlipNodeComparisons = 0;
     let acrossFlipDiscardComparisons = 0;
+    let acrossFlipBoardComparisons = 0;
 
     for (let i = 1; i < views.length; i += 1) {
       const view = views[i];
@@ -346,6 +366,29 @@ describe.skipIf(!hasLog)('whole-game swap inertness (happy-dom, real game log)',
           }
         }
         prevDiscardTop[p] = curTopEl;
+
+        // (C) board-slot (active + bench) node identity across the flip
+        const curBoard = boardCardEls(p);
+        const prevBoardMap = prevBoard[p];
+        const prevBoardSerials = boardSerials(prevPlayer);
+        const curBoardSerials = boardSerials(curPlayer);
+        for (const serial of prevBoardSerials) {
+          if (!curBoardSerials.has(serial)) {
+            continue;
+          }
+          const before = prevBoardMap.get(serial);
+          const after = curBoard.get(serial);
+          if (flipped && before && after) {
+            acrossFlipBoardComparisons += 1;
+          }
+          if (before && after && before !== after) {
+            findings.push({
+              swap: i,
+              detail: `player ${p} board serial ${serial} persisted across ${flipped ? 'a seat flip' : 'a swap'} but its DOM node was recreated`,
+            });
+          }
+        }
+        prevBoard[p] = curBoard;
       }
 
       prev = view;
@@ -353,13 +396,14 @@ describe.skipIf(!hasLog)('whole-game swap inertness (happy-dom, real game log)',
     }
 
     // eslint-disable-next-line no-console
-    console.log('[swap-inertness probe / follow-active]', JSON.stringify({ flips, acrossFlipNodeComparisons, acrossFlipDiscardComparisons, findings: findings.slice(0, 20) }, null, 2));
+    console.log('[swap-inertness probe / follow-active]', JSON.stringify({ flips, acrossFlipNodeComparisons, acrossFlipDiscardComparisons, acrossFlipBoardComparisons, findings: findings.slice(0, 20) }, null, 2));
     expect(findings, JSON.stringify(findings.slice(0, 20), null, 2)).toEqual([]);
-    // The game must actually flip seats, and real hand-card AND discard-top DOM
-    // nodes must have been compared across those flips, or the guard proves
-    // nothing.
+    // The game must actually flip seats, and real hand-card, discard-top AND
+    // board-slot DOM nodes must have been compared across those flips, or the
+    // guard proves nothing.
     expect(flips).toBeGreaterThan(2);
     expect(acrossFlipNodeComparisons).toBeGreaterThan(0);
     expect(acrossFlipDiscardComparisons).toBeGreaterThan(0);
+    expect(acrossFlipBoardComparisons).toBeGreaterThan(0);
   });
 });

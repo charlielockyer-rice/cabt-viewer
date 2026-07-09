@@ -948,10 +948,6 @@
         <GameBoard
           {topPlayer}
           {bottomPlayer}
-          topBenchSlots={topPlayer.bench.filter((slot) => !slot.empty)}
-          bottomBenchSlots={bottomPlayer.bench.filter((slot) => !slot.empty)}
-          topActiveSlot={topPlayer.active}
-          bottomActiveSlot={bottomPlayer.active}
           {canPlayToBenchArea}
           canPlaceSetupBench={() => false}
           {playToBenchArea}
