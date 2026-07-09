@@ -76,17 +76,6 @@ function duplicateHandSerialFrames(views: GameView[]): Array<{ frame: number; pl
   return hits;
 }
 
-function handHasDuplicateSerial(view: GameView): boolean {
-  for (const p of [0, 1]) {
-    const hand = (view.players?.[p] as PlayerView | undefined)?.hand ?? [];
-    const serials = hand.map((c) => c.serial).filter((s): s is number => s !== undefined);
-    if (new Set(serials).size !== serials.length) {
-      return true;
-    }
-  }
-  return false;
-}
-
 // The full frame sequence the replay walker shows: every animation phase's
 // pre-state view, then the settled view, for every step.
 function viewSequence(snapshot: ReturnType<typeof cabtReplayToSnapshot>): GameView[] {
@@ -125,10 +114,13 @@ describe.skipIf(!hasLog)('whole-game swap inertness (happy-dom, real game log)',
     const views = viewSequence(snapshot);
     expect(views.length).toBeGreaterThan(10);
 
-    // OPEN FINDING (reproduced): duplicate hand-card serials collide the
-    // keyed each-block. Reported, not asserted — promote to a hard guard once
-    // the projection/hand-tracking dedupes serials.
+    // HARD GUARD (was an open finding): the pre-state hand builder used to mint
+    // duplicate serials when the settled hand reordered its known cards (serial
+    // 99 doubled at step 9 of this game). Fixed at source in
+    // cabtReplay.ts nextHandCardToAdd; assert the whole game is now clean so a
+    // regression re-throws the keyed-each collision here.
     const dupFrames = duplicateHandSerialFrames(views);
+    expect(dupFrames, JSON.stringify(dupFrames, null, 2)).toEqual([]);
 
     // happy-dom has no Web Animations API; the Hand's FLIP animate()/getAnimations()
     // calls are stubbed globally by the shared setup (src/test-setup/dom-web-animations.ts)
@@ -177,15 +169,8 @@ describe.skipIf(!hasLog)('whole-game swap inertness (happy-dom, real game log)',
     let discardTopComparable = 0;
     let handCardComparable = 0;
 
-    let skippedDupFrames = 0;
     for (let i = 1; i < views.length; i += 1) {
       const view = views[i];
-      // Skip frames that would throw on the keyed-each collision (dev-only
-      // throw); they are already captured as an open finding above.
-      if (handHasDuplicateSerial(view)) {
-        skippedDupFrames += 1;
-        continue;
-      }
       gameStore.game = view;
       flushSync();
       swaps += 1;
@@ -240,7 +225,6 @@ describe.skipIf(!hasLog)('whole-game swap inertness (happy-dom, real game log)',
       log: 'pasted-507c3b0f.json',
       views: views.length,
       swaps,
-      skippedDuplicateSerialFrames: skippedDupFrames,
       discardTopStableChecks: discardTopComparable,
       handCardStableChecks: handCardComparable,
       domNodeChurnFindings: findings.slice(0, 40),

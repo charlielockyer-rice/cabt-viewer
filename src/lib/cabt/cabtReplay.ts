@@ -2343,8 +2343,27 @@ function removeAt<T>(items: T[], index: number): T[] {
 }
 
 function addCardToHand(player: PlayerView, currentPlayer: PlayerView): CardView[] {
-  const nextCard = currentPlayer.hand[player.hand.length] ?? faceDownCard();
-  return [...player.hand, nextCard];
+  return [...player.hand, nextHandCardToAdd(player.hand, currentPlayer.hand)];
+}
+
+// The pre-state hand grows toward the settled hand one card per hand-add event.
+// The positional pick (the settled card at the growing index) is correct when
+// the settled hand is the pre-state hand plus appended cards — the common draw
+// case. But when the settled hand reorders its known serials, that index can
+// land on a serial the pre-state hand already holds, minting a duplicate that
+// collides Hand.svelte's keyed each-block (reproduced: serial 99 doubled). So
+// only trust the positional pick when it is genuinely new; otherwise take the
+// first settled card whose serial the pre-state hand does not already hold.
+export function nextHandCardToAdd(preHand: CardView[], currentHand: CardView[]): CardView {
+  const present = new Set(
+    preHand.map((card) => card.serial).filter((serial): serial is number => serial !== undefined),
+  );
+  const positional = currentHand[preHand.length];
+  if (positional && (positional.serial === undefined || !present.has(positional.serial))) {
+    return positional;
+  }
+  const novel = currentHand.find((card) => card.serial !== undefined && !present.has(card.serial));
+  return novel ?? positional ?? faceDownCard();
 }
 
 function addCardToDiscard(player: PlayerView, currentPlayer: PlayerView, event: ActionTimelineEvent): CardView[] {
