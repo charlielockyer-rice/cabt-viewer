@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LiveObservationNormalizer, synthesizedAnnounceLog, logsWithSynthesizedAnnounce } from './liveSteps';
+import { LiveObservationNormalizer, logsWithSynthesizedAnnounce } from './liveSteps';
 import { CabtAreaType, CabtLogType, CabtOptionType, CabtSelectType, type CabtObservation, type CabtPlayerState } from '../lib/cabt/types';
 
 describe('LiveObservationNormalizer', () => {
@@ -190,15 +190,15 @@ describe('LiveObservationNormalizer', () => {
         appearThisTurn: false, energies: [], energyCards: [], tools: [], preEvolution: [],
       }];
 
-      const log = synthesizedAnnounceLog(previous, [1], [], [], dataMaps);
+      const logs = logsWithSynthesizedAnnounce(previous, [1], [], [], dataMaps);
 
-      expect(log).toEqual(expect.objectContaining({
+      expect(logs).toEqual([expect.objectContaining({
         type: 'Ability',
         playerIndex: 0,
         cardId: 700,
         serial: 5,
         abilityName: 'Punk Up',
-      }));
+      })]);
     });
 
     it('announces retreat like an ability over the retreating active', () => {
@@ -220,9 +220,9 @@ describe('LiveObservationNormalizer', () => {
         appearThisTurn: false, energies: [], energyCards: [], tools: [], preEvolution: [],
       }];
 
-      const log = synthesizedAnnounceLog(previous, [0], [], [], dataMaps);
+      const logs = logsWithSynthesizedAnnounce(previous, [0], [], [], dataMaps);
 
-      expect(log).toEqual(expect.objectContaining({ type: 'Ability', abilityName: 'Retreat', cardId: 700, serial: 9 }));
+      expect(logs).toEqual([expect.objectContaining({ type: 'Ability', abilityName: 'Retreat', cardId: 700, serial: 9 })]);
     });
 
     it('announces a confirmed yes/no ability trigger from its context card', () => {
@@ -240,13 +240,13 @@ describe('LiveObservationNormalizer', () => {
         effect: null,
       };
 
-      expect(synthesizedAnnounceLog(previous, [0], [], [], dataMaps)).toEqual(expect.objectContaining({
+      expect(logsWithSynthesizedAnnounce(previous, [0], [], [], dataMaps)).toEqual([expect.objectContaining({
         type: 'Ability',
         cardId: 700,
         abilityName: 'Punk Up',
-      }));
+      })]);
       // Answering No announces nothing.
-      expect(synthesizedAnnounceLog(previous, [1], [], [], dataMaps)).toBeNull();
+      expect(logsWithSynthesizedAnnounce(previous, [1], [], [], dataMaps)).toEqual([]);
     });
 
     it('announces on-evolve draw abilities when the draws land', () => {
@@ -259,14 +259,14 @@ describe('LiveObservationNormalizer', () => {
         { type: CabtLogType.DRAW, playerIndex: 0, cardId: 7, serial: 32 },
       ];
 
-      expect(synthesizedAnnounceLog(null, null, previousNewLogs, draws, dataMaps)).toEqual(expect.objectContaining({
+      expect(logsWithSynthesizedAnnounce(null, null, previousNewLogs, draws, dataMaps)[0]).toEqual(expect.objectContaining({
         type: 'Ability',
         cardId: 701,
         abilityName: 'We Draw',
         trigger: 'Evolve',
       }));
-      // A different draw count is not the trigger.
-      expect(synthesizedAnnounceLog(null, null, previousNewLogs, draws.slice(0, 2), dataMaps)).toBeNull();
+      // A different draw count is not the trigger — the draws pass through unannounced.
+      expect(logsWithSynthesizedAnnounce(null, null, previousNewLogs, draws.slice(0, 2), dataMaps)).toEqual(draws.slice(0, 2));
     });
 
     it('inserts a triggered-attach announce after the attach (replay-shape oracle)', () => {
@@ -326,7 +326,7 @@ describe('LiveObservationNormalizer', () => {
         effect: null,
       };
 
-      expect(synthesizedAnnounceLog(previous, [0], [], [], dataMaps)).toBeNull();
+      expect(logsWithSynthesizedAnnounce(previous, [0], [], [], dataMaps)).toEqual([]);
     });
   });
 

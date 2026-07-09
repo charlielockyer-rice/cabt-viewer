@@ -11,6 +11,7 @@ import {
   type SlotResolvers,
 } from './cabtProjection';
 import { displayName, energySymbolToType } from './cardView';
+import { synthesizeAnnounceLogs, type AnnounceContext, type AnnounceLog } from './announceSynthesis';
 import { cabtLogsToTimeline } from './logFormat';
 import { CabtAreaType, CabtOptionType } from './types';
 import { resolveCardImageUrl } from '../game/cardImages';
@@ -210,290 +211,47 @@ function logsWithSynthesizedAbility(
   frame: CabtVisualizeFrame,
 ): Array<Record<string, unknown>> {
   const logs = frame.logs ?? [];
-  if (!previousFrame || logs.some((log) => normalizedFrameLogType(log.type) === 'Ability')) {
+  if (!previousFrame) {
     return logs;
   }
-  const abilityLog = abilityLogForSelectedOption(previousFrame, frame)
-    ?? retreatLogForSelectedOption(previousFrame, frame)
-    ?? abilityLogForConfirmedTrigger(previousFrame, frame)
-    ?? abilityLogForTriggeredEvolution(previousFrame, logs);
-  if (abilityLog) {
-    return [abilityLog, ...logs];
-  }
-  const attachAbilityLog = abilityLogForTriggeredAttach(previousFrame, logs);
-  return attachAbilityLog ? logsWithInsertedLog(logs, attachAbilityLog.afterIndex, attachAbilityLog.log) : logs;
+  return synthesizeAnnounceLogs(replayAnnounceContext(previousFrame, frame, logs));
 }
 
-// Triggered abilities (e.g. Punk Up after evolving) are offered as a YesNo
-// confirmation whose contextCard names the source; no Ability option is ever
-// selected, so answering Yes is the only signal to announce from.
-function abilityLogForConfirmedTrigger(
+// Maps a replay frame pair onto the shared announce rule core (announceSynthesis.ts).
+function replayAnnounceContext(
   previousFrame: CabtVisualizeFrame,
   frame: CabtVisualizeFrame,
-): Record<string, unknown> | null {
-  const select = previousFrame.select as Record<string, unknown> | null | undefined;
-  if (!select || String(select.type) !== 'YesNo') {
-    return null;
-  }
-  const contextCard = select.contextCard as Record<string, unknown> | null | undefined;
-  const cardId = numberField(contextCard?.id);
-  const playerIndex = numberField(contextCard?.playerIndex);
-  if (cardId === undefined || playerIndex === undefined) {
-    return null;
-  }
-  const data = cardDatabase.get(cardId);
-  const kind = data?.kind ?? '';
-  if (kind === 'Item' || kind === 'Supporter' || !data?.skills?.length) {
-    return null;
-  }
-  const selected = selectedOptionFromAction(previousFrame.select, frame.action);
-  const optionType = selected?.option?.type;
-  if (normalizedOptionType(optionType) !== 'Yes') {
-    return null;
-  }
-  return {
-    type: 'Ability',
-    playerIndex,
-    cardId,
-    serial: numberField(contextCard?.serial),
-    abilityName: abilityNameForCard(data),
-  };
-}
-
-function abilityLogForSelectedOption(
-  previousFrame: CabtVisualizeFrame,
-  frame: CabtVisualizeFrame,
-): Record<string, unknown> | null {
-  const selected = selectedOptionFromAction(previousFrame.select, frame.action);
-  const option = selected?.option;
-  if (!option || normalizedOptionType(option.type) !== 'Ability') {
-    return null;
-  }
-  const playerIndex = numberField(option.playerIndex) ?? selected.playerIndex;
-  if (playerIndex === undefined) {
-    return null;
-  }
-  const area = numberField(option.area);
-  const index = numberField(option.index) ?? 0;
-  const source = abilitySourceCard(previousFrame, playerIndex, area, index);
-  const cardId = source?.id ?? numberField(option.cardId);
-  if (cardId === undefined) {
-    return null;
-  }
-  const data = cardDatabase.get(cardId);
-  const abilityName = abilityNameForCard(data);
-  return {
-    type: 'Ability',
-    playerIndex,
-    cardId,
-    serial: source?.serial ?? numberField(option.serial),
-    abilityName,
-    area,
-    index,
-  };
-}
-
-// Retreating is chosen from the main menu like an ability; announcing it the
-// same way gives the badge, and the effect bracket then folds the energy
-// discards and the switch into one step.
-function retreatLogForSelectedOption(
-  previousFrame: CabtVisualizeFrame,
-  frame: CabtVisualizeFrame,
-): Record<string, unknown> | null {
-  const selected = selectedOptionFromAction(previousFrame.select, frame.action);
-  const option = selected?.option;
-  if (!option || normalizedOptionType(option.type) !== 'Retreat') {
-    return null;
-  }
-  const playerIndex = numberField(option.playerIndex) ?? selected.playerIndex;
-  if (playerIndex === undefined) {
-    return null;
-  }
-  const active = previousFrame.current.players[playerIndex]?.active?.[0];
-  if (!active) {
-    return null;
-  }
-  return {
-    type: 'Ability',
-    playerIndex,
-    cardId: active.id,
-    serial: active.serial,
-    abilityName: 'Retreat',
-  };
-}
-
-type TriggeredEvolutionAbility = {
-  playerIndex: number;
-  cardId: number;
-  serial?: number;
-  abilityName: string;
-  drawCount: number;
-  area?: number;
-  index?: number;
-};
-
-function abilityLogForTriggeredEvolution(
-  previousFrame: CabtVisualizeFrame,
   logs: Array<Record<string, unknown>>,
-): Record<string, unknown> | null {
-  const trigger = triggeredEvolutionAbility(previousFrame);
-  if (!trigger || !logsAreMatchingTriggeredDraws(logs, trigger)) {
-    return null;
-  }
+): AnnounceContext {
+  const selected = selectedOptionFromAction(previousFrame.select, frame.action);
+  const current = previousFrame.current;
   return {
-    type: 'Ability',
-    playerIndex: trigger.playerIndex,
-    cardId: trigger.cardId,
-    serial: trigger.serial,
-    abilityName: trigger.abilityName,
-    area: trigger.area,
-    index: trigger.index,
-    trigger: 'Evolve',
-  };
-}
-
-function triggeredEvolutionAbility(frame: CabtVisualizeFrame): TriggeredEvolutionAbility | null {
-  const evolveLog = [...(frame.logs ?? [])].reverse().find((log) => normalizedFrameLogType(log.type) === 'Evolve');
-  const playerIndex = typeof evolveLog?.playerIndex === 'number' ? evolveLog.playerIndex : undefined;
-  const cardId = Number(evolveLog?.cardId);
-  if (playerIndex === undefined || !Number.isFinite(cardId)) {
-    return null;
-  }
-  const skill = evolutionTriggeredDrawSkill(cardDatabase.get(cardId));
-  if (!skill) {
-    return null;
-  }
-  const serial = numberField(evolveLog?.serial);
-  const source = evolvedPokemonSource(frame, playerIndex, cardId, serial);
-  return {
-    playerIndex,
-    cardId,
-    serial,
-    abilityName: displayName(skill.name.trim()),
-    drawCount: skill.drawCount,
-    area: source?.area,
-    index: source?.index,
-  };
-}
-
-function evolutionTriggeredDrawSkill(data: CardRow | undefined): { name: string; drawCount: number } | null {
-  for (const skill of data?.skills ?? []) {
-    const text = normalizedAbilityText(skill.text);
-    if (!text.includes('when you play this pokemon from your hand to evolve')) {
-      continue;
-    }
-    const drawCount = Number(text.match(/\bdraw\s+(\d+)\s+cards?\b/)?.[1]);
-    if (Number.isFinite(drawCount) && drawCount > 0 && skill.name.trim()) {
-      return { name: skill.name, drawCount };
-    }
-  }
-  return null;
-}
-
-function normalizedAbilityText(text: string | undefined): string {
-  return (text ?? '')
-    .toLowerCase()
-    .replaceAll('é', 'e')
-    .replaceAll(/\s+/g, ' ')
-    .trim();
-}
-
-function evolvedPokemonSource(
-  frame: CabtVisualizeFrame,
-  playerIndex: number,
-  cardId: number,
-  serial: number | undefined,
-): { area: number; index: number } | undefined {
-  const player = frame.current.players[playerIndex];
-  if (!player) {
-    return undefined;
-  }
-  const activeIndex = (player.active ?? []).findIndex((pokemon) => pokemonRefMatches(pokemon, cardId, serial));
-  if (activeIndex >= 0) {
-    return { area: CabtAreaType.ACTIVE, index: activeIndex };
-  }
-  const benchIndex = (player.bench ?? []).findIndex((pokemon) => pokemonRefMatches(pokemon, cardId, serial));
-  if (benchIndex >= 0) {
-    return { area: CabtAreaType.BENCH, index: benchIndex };
-  }
-  return undefined;
-}
-
-function pokemonRefMatches(pokemon: CabtPokemonRef | undefined, cardId: number, serial: number | undefined): boolean {
-  if (!pokemon) {
-    return false;
-  }
-  if (serial !== undefined) {
-    return pokemon.serial === serial;
-  }
-  return pokemon.id === cardId;
-}
-
-function logsAreMatchingTriggeredDraws(logs: Array<Record<string, unknown>>, trigger: TriggeredEvolutionAbility): boolean {
-  if (logs.length !== trigger.drawCount) {
-    return false;
-  }
-  return logs.every((log) => {
-    const type = normalizedFrameLogType(log.type);
-    return (type === 'Draw' || type === 'DrawReverse')
-      && log.playerIndex === trigger.playerIndex;
-  });
-}
-
-function abilityLogForTriggeredAttach(
-  previousFrame: CabtVisualizeFrame,
-  logs: Array<Record<string, unknown>>,
-): { afterIndex: number; log: Record<string, unknown> } | null {
-  const attachIndex = logs.findIndex((log, index) =>
-    normalizedFrameLogType(log.type) === 'Attach'
-    && logs.slice(index + 1).some((candidate) => normalizedFrameLogType(candidate.type) !== 'Attach')
-    && attachedCardWasInHand(previousFrame, log));
-  if (attachIndex < 0) {
-    return null;
-  }
-  const attach = logs[attachIndex];
-  const cardId = numberField(attach.cardId);
-  const playerIndex = numberField(attach.playerIndex);
-  if (cardId === undefined || playerIndex === undefined) {
-    return null;
-  }
-  return {
-    afterIndex: attachIndex,
-    log: {
-      type: 'Ability',
-      playerIndex,
-      cardId,
-      serial: numberField(attach.serial),
-      cardIdTarget: numberField(attach.cardIdTarget),
-      serialTarget: numberField(attach.serialTarget),
-      abilityName: cardName(cardId),
-      trigger: 'Attach',
+    selectedOption: selected?.option ?? null,
+    selectedPlayerIndex: selected?.playerIndex,
+    select: (previousFrame.select as AnnounceLog | null) ?? null,
+    isYesNoSelect: String((previousFrame.select as Record<string, unknown> | null | undefined)?.type) === 'YesNo',
+    previousLogs: previousFrame.logs ?? [],
+    newLogs: logs,
+    logTypeName: (log) => normalizedFrameLogType(log.type),
+    players: (current.players ?? []).map((player) => ({
+      active: player.active ?? [],
+      bench: player.bench ?? [],
+      hand: player.hand ?? [],
+    })),
+    stadium: current.stadium ?? [],
+    cardMeta: (id) => {
+      const data = cardDatabase.get(id);
+      if (!data) {
+        return undefined;
+      }
+      return {
+        isTrainer: data.kind === 'Item' || data.kind === 'Supporter',
+        skills: data.skills ?? [],
+      };
     },
+    cardDisplayName: (id) => cardDatabase.get(id)?.name,
+    displayName,
   };
-}
-
-function attachedCardWasInHand(frame: CabtVisualizeFrame, log: Record<string, unknown>): boolean {
-  const playerIndex = numberField(log.playerIndex);
-  const player = playerIndex === undefined ? undefined : frame.current.players[playerIndex];
-  if (!player) {
-    return false;
-  }
-  const serial = numberField(log.serial);
-  const cardId = numberField(log.cardId);
-  return (player.hand ?? []).some((card) =>
-    serial !== undefined ? card.serial === serial : cardId !== undefined && card.id === cardId);
-}
-
-function logsWithInsertedLog(
-  logs: Array<Record<string, unknown>>,
-  afterIndex: number,
-  log: Record<string, unknown>,
-): Array<Record<string, unknown>> {
-  return [
-    ...logs.slice(0, afterIndex + 1),
-    log,
-    ...logs.slice(afterIndex + 1),
-  ];
 }
 
 function selectedOptionFromAction(
@@ -521,43 +279,6 @@ function selectedOptionIndex(playerAction: unknown): number | undefined {
   return numberField(playerAction);
 }
 
-function abilitySourceCard(
-  frame: CabtVisualizeFrame,
-  playerIndex: number,
-  area: number | undefined,
-  index: number,
-): CabtCardRef | undefined {
-  if (area === CabtAreaType.STADIUM) {
-    return frame.current.stadium?.[index] ?? frame.current.stadium?.[0];
-  }
-  const player = frame.current.players[playerIndex];
-  if (!player) {
-    return undefined;
-  }
-  if (area === CabtAreaType.ACTIVE) {
-    return player.active?.[index] ?? player.active?.[0];
-  }
-  if (area === CabtAreaType.BENCH) {
-    return player.bench?.[index];
-  }
-  return undefined;
-}
-
-// Option types arrive as either the numeric CabtOptionType code or its
-// PascalCase string name depending on the source; normalize both to the name
-// so callers compare one form.
-const optionTypeNames: Record<number, string> = {
-  [CabtOptionType.ABILITY]: 'Ability',
-  [CabtOptionType.RETREAT]: 'Retreat',
-  [CabtOptionType.YES]: 'Yes',
-};
-
-function normalizedOptionType(type: unknown): string {
-  if (typeof type === 'number' && type in optionTypeNames) {
-    return optionTypeNames[type];
-  }
-  return String(type ?? '');
-}
 
 function normalizedFrameLogType(type: unknown): string {
   return String(type ?? 'Event');
