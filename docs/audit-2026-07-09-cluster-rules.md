@@ -506,3 +506,68 @@ presence/absence) to distinguish gap(a) / jump(b) / third-participant(c, e.g. th
 vacated slot's shadow or a FLIP-animated bench neighbor); (iv) screencap the
 exact flicker frame as eyeball evidence. Rig recipe: `viewer-real-browser-probe`
 memory; episode 84924975 via `?view=replay&replay=<file>`.
+
+## #26 RESOLVED — it was an OVERLAP, and the geometry-jump hypothesis was FALSIFIED
+
+Per-frame geometry trace through the switch handoff (private vite 5174, Playwright
+rAF recorder capturing each board-move sprite's effective transform scale +
+tile `getBoundingClientRect` + the destination slots' `data-anim-hidden`/opacity;
+episode 84924975 states 24 retreat and 38 Teleport; unthrottled AND 4× CPU).
+
+**The jump hypothesis is wrong.** `getComputedStyle(tile).boxShadow` returns the
+AUTHORED value (`0 3px 8px`) on both sprite and settled card — the scaled shadow
+is a composite-time effect of the ancestor `transform: scale()`, so the real
+signal is the sprite's effective scale at handoff. The trace shows the
+board-card-move animation runs to completion: both swap sprites reach
+`scale=1.0000` and HOLD there ~176ms before the sprite is removed. At the last
+sprite frame scale is exactly 1, so rendered shadow blur = 8px = the settled
+card's 8px. **No geometry jump** — in replay or live, throttled or not.
+
+**It is an OVERLAP (failure shape b), and a REGRESSION from #28.** The timeline:
+
+```
++1189ms  sprites=2   destinations HIDDEN (contents/op0)
++1812ms  sprites=2   destinations UN-HIDDEN  ← settled cards now render
++1886ms  sprites=0                           ← sprites removed ~57–74ms LATER
+```
+
+For ~7 frames / ~57ms both destination slots show their settled card AND the
+scale-1 sprite sits exactly on top → each card drawn twice → doubled drop-shadow.
+Identical window unthrottled (57ms) and at 4× CPU (58ms) = a fixed wall-clock
+defer, not paint-timing = structural, exactly as Charlie reports.
+
+Root cause: `ca01cd8` drops the switch sprite synchronously with the un-hide ONLY
+when `claimSignature(element)` differs after the swap (its "destination already
+authoritative" test). But `#28` (`1151f0e`) re-keyed the bench by Pokemon
+identity, so on a swap the vacating occupant's bench slot NODE IS DESTROYED and
+the arriving card renders in a fresh node. The claimed (now-detached) node keeps
+its frozen dataset serial, so `claimSignature` still "matches" → the claim is
+treated as still-relevant → `endScope` takes the deferred settle-timer branch
+(40ms + 2 rAF) → both sprites linger over the already-authoritative settled cards.
+`ca01cd8`'s synchronous drop silently stopped firing for switches the moment the
+bench keying changed under it. (The active slot, keyed by player index, mutates
+in place and DOES change signature — but one deferred bench claim forces the whole
+`endScope` down the settle branch.)
+
+Fix (`settleClaim.ts` + `BoardAnimationLayer.endScope`): the destination is
+authoritative — release now, drop the sprite synchronously — when the claimed
+element has LEFT THE DOCUMENT (`!element.isConnected`) OR is still attached but
+now shows a different card. A detached identity-keyed node covers nothing; its
+replacement is authoritative from creation. Only a still-attached same-card
+element defers (the genuine "destination may not have painted" gap case). This
+restores `ca01cd8`'s synchronous switch drop under identity-keyed slots and is
+robust to future re-keying. Guarded by `settleClaim.test.ts` (detached → release;
+attached-same → defer; attached-changed → release; full switch shape → all
+release).
+
+Rig evidence (settle-overlap frames = a switch sprite at scale≈1 while every
+destination claim has already released):
+- Replay retreat (state 24): **7 → 0** unthrottled; 7 (throttled) → 0.
+- Replay Teleport (state 38): overlap window → **0** (single un-hide↔drop
+  transition, no intermediate frame).
+- LIVE agent-vs-agent retreat (copycat-v0, private engine 8096; sprites
+  `410-active-72`/`410-bench-79`): **0** settle-overlap frames post-fix — the live
+  path drives the identical two-sprite board-move through the same `endScope`, so
+  the "replay-only rig gap" is closed.
+
+Suite 309 green (+4 `settleClaim`), `tsc` clean. Commit: see git log for `#26`.

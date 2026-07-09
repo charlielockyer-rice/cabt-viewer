@@ -8,6 +8,7 @@
   import { resolveAnchor } from '../anim/anchors';
   import { choreograph, type CardMotion } from '../anim/motions';
   import { animVisibility, type ReleaseClaim } from '../anim/visibility';
+  import { claimSignature, boardClaimIsAuthoritative } from '../anim/settleClaim';
   import { cardBackCssVar } from '../game/cardAssets';
   import { replayAnimationPhaseGapMs } from '../game/replay';
   import type { ActionTimelineEvent, PlayerView } from '../game/types';
@@ -383,12 +384,17 @@
     motionReleases.clear();
     const spriteIds = new Set(sprites.map((sprite) => sprite.id));
 
-    // Svelte reuses slot elements across view swaps: if a claimed element now
-    // shows a different card (bench reshuffled after a switch), holding the
-    // claim through the settle window would hide the wrong occupant.
+    // A claim whose destination is already authoritative releases now (and drops
+    // its sprite synchronously below); one whose settled card may not have
+    // painted yet defers past the settle window. Authoritative = the claimed
+    // element left the DOM (an identity-keyed bench slot destroyed on a swap, its
+    // arriving card already rendered in a fresh node) OR it is still attached but
+    // now shows a different card (a position-keyed slot mutated in place). See
+    // settleClaim.ts — holding a detached-node claim is what re-doubled the
+    // switch drop-shadow after the bench was re-keyed by Pokemon identity.
     const releases: ReleaseClaim[] = [];
     for (const claim of claims) {
-      if (claimSignature(claim.element) !== claim.signature) {
+      if (boardClaimIsAuthoritative(claim.element, claim.signature)) {
         claim.release();
       } else {
         releases.push(claim.release);
@@ -481,10 +487,6 @@
 
   function isOpponentSide(element: HTMLElement): boolean {
     return !!element.closest('.top-active-slot, .bench-row.opponent, .top-stadium-card');
-  }
-
-  function claimSignature(element: HTMLElement): string {
-    return element.dataset.pokemonSerial ?? element.dataset.cardSerial ?? '';
   }
 
   function planeElement(): HTMLElement | null {
