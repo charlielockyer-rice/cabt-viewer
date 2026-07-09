@@ -14,12 +14,15 @@ files or raw card CSV.
 
 - Node.js `>=20.19.0 <25`
 - npm
-- Optional for local CABT play on macOS: Docker
+- Optional for local CABT play on macOS: a native `cg/libcg.dylib` in your
+  `sample_submission`, or Docker as a fallback
 - Optional for local CABT play: Kaggle's provided `sample_submission`
   directory from the competition data bundle
 
 The provided CABT engine ships native Linux x86-64 and Windows x64 libraries.
-On macOS, the bridge runs the Linux library through Docker.
+On macOS, the bridge uses a native `cg/libcg.dylib` when your
+`sample_submission` includes one, and otherwise runs the Linux library through
+Docker.
 
 ## Quick Start
 
@@ -149,12 +152,14 @@ The opponent selector includes:
 Deck-backed sample agents load their bundled `deck.csv` into the opponent deck
 box and make it read-only so the agent and deck stay paired.
 
-On Linux, the bridge uses your local Python. On macOS, it starts Docker with
-`--platform linux/amd64` and mounts `CABT_SAMPLE_SUBMISSION_DIR` read-only into
-the container. Set `CABT_ENGINE_MODE=native` to skip Docker and run the bridge
-on your local Python instead (requires a sample_submission with a native
-`libcg.dylib`); set `PYTHON` to choose the interpreter — useful when agents
-need extra packages such as torch.
+On Linux, the bridge uses your local Python. On macOS, it uses your local
+Python too when `CABT_SAMPLE_SUBMISSION_DIR` contains a native `cg/libcg.dylib`;
+otherwise it starts Docker with `--platform linux/amd64` and mounts
+`CABT_SAMPLE_SUBMISSION_DIR` read-only into the container. Set
+`CABT_ENGINE_MODE=native` to force the local-Python path (and `PYTHON` to choose
+the interpreter — useful when agents need extra packages such as torch), or
+`CABT_ENGINE_MODE=docker` to force the Docker path even when a `libcg.dylib` is
+present.
 
 ### Workspace agents
 

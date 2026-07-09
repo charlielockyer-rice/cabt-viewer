@@ -488,7 +488,7 @@ class CabtBridgeClient {
 }
 
 function bridgeProcessCommand(): { command: string; args: string[] } {
-  if (process.env.CABT_ENGINE_MODE === 'native' || process.platform === 'linux') {
+  if (useNativeBridge()) {
     return { command: process.env.PYTHON ?? 'python3', args: [BRIDGE_PATH] };
   }
   const dockerBridgePath = `/workspace/${toPosixPath(path.relative(WORKSPACE_ROOT, BRIDGE_PATH))}`;
@@ -521,6 +521,28 @@ function bridgeProcessCommand(): { command: string; args: string[] } {
       dockerBridgePath,
     ],
   };
+}
+
+// Native (local Python) vs Docker selection. Native on Linux, when explicitly
+// asked (CABT_ENGINE_MODE=native), or on macOS when a native libcg.dylib is
+// present in the sample submission — the compiled arm64 engine runs far faster
+// than the Linux library through Docker. Docker stays the macOS fallback when
+// no dylib is present; CABT_ENGINE_MODE=docker forces it even when one is.
+function useNativeBridge(): boolean {
+  if (process.env.CABT_ENGINE_MODE === 'docker') {
+    return false;
+  }
+  if (process.env.CABT_ENGINE_MODE === 'native' || process.platform === 'linux') {
+    return true;
+  }
+  return process.platform === 'darwin' && hasNativeMacLibrary();
+}
+
+function hasNativeMacLibrary(): boolean {
+  const sampleSubmissionDir = process.env.CABT_SAMPLE_SUBMISSION_DIR
+    ? path.resolve(process.env.CABT_SAMPLE_SUBMISSION_DIR)
+    : path.join(FRONTEND_ROOT, 'sample_submission');
+  return fs.existsSync(path.join(sampleSubmissionDir, 'cg', 'libcg.dylib'));
 }
 
 function toPosixPath(value: string): string {
