@@ -42,27 +42,33 @@ Machinery: `animationEventPhases` / `animationPhaseKey` / `animationPhaseUsesSou
    effect-driven switch, whatever the underlying event shape.
 
 ### Current behavior / gaps
-- Rule 4 holds for a `Switch` log (Boss's Orders) — verified by the oracle test
-  "holds the source board while a Switch log swaps active and benched Pokemon"
-  (BoardMove phase view is pre-swap). **Task 4**: retreat still reads reversed,
-  so retreat's real event shape is either not a `Switch` (uncovered path) or its
-  multi-phase sequence (energy-discard phases then swap) loses the pre-swap
-  source view. NEEDS the real retreat event shape (Kaggle 84924975) to confirm
-  which; the swap-motion builders (`switchMotions`, `moveCardChoreography`
-  bench↔active) both read correct faces IF fed a pre-swap view, so the defect is
-  in the view fed to the swap phase for the retreat shape specifically.
-- Rule 2 is NOT enforced: `animationPhaseKey` has no `TurnStart`/`TurnEnd`
-  boundary handling, so a batch spanning attack→TurnEnd→TurnStart→opponent-draw
-  produces the opponent's draw phase inside the attacker's step. **Task 5**: the
-  draw animates in the attack response, then re-animates after the seat switch
-  rebuilds. Conditional on shape (Charlie's lead: appears after Itchy Pollen —
-  a lingering next-turn effect that changes the boundary batch). NEEDS the real
-  cross-boundary batch (with and without Itchy Pollen) to see where the draw
-  lands and why it doubles.
-- Rule 3 is partial: KO departure/aftermath split exists; promotion is not its
-  own phase class. **Task 7**: promotion rides the KO batch (forced) or appears
-  without a crossing motion (chosen). NEEDS the real KO→promotion shape (chosen
-  vs forced) to extend the phase split.
+- **Task 4 — FIXED (commit c3e1c38).** Root cause was NOT the swap phase itself:
+  a retreat discards the active's energy (ENERGY→DISCARD) then swaps (`Switch`),
+  coalesced into one step, energy first. `applyReplayAreaDelta`'s ENERGY/TOOL
+  branch resynced the whole `active`/`bench` to `currentPlayer` to update badges,
+  importing the post-swap board POSITIONS into the running `phaseStartView`; the
+  following BoardMove phase then built its "pre-swap" source view from that
+  contaminated view. Boss's Orders has no preceding energy move, so it was fine.
+  Fixed by making an energy/tool move update only the badges of the holding
+  Pokemon (matched by serial, position preserved) — verified against real Kaggle
+  frames 22-24 and regression-tested (swap phase view is pre-swap).
+- **Task 5 — root cause pinned, live-path fix pending.** Rule 2 is ALREADY
+  enforced in REPLAY: the step builder splits the Itchy-Pollen boundary batch
+  (real frame 26 = [Attack, HPChange, TurnEnd, TurnStart, Draw]) into an attack
+  step and a separate "turn started" step carrying the draw. The LIVE path does
+  NOT: `localEngine.appendSteps` runs `stepAnimationPhases` on each whole
+  observation and never splits at `TurnStart`, so the opponent's start-of-turn
+  draw animates inside the attacker's step (then the seat flip re-renders and it
+  re-animates). FIX: port replay's turn-boundary split to the live step builder
+  (events after `TurnStart` become their own step with the new turn's pre-state).
+  Testable at the step level; touches live runtime + the seat-flip re-render, so
+  wants Charlie's visual confirmation.
+- **Task 7 — same boundary machinery.** Real KO→promotion (frames 92-95): KO
+  frame (active→discard + area-10 pre-evo stack→discard + energy→discard), then
+  opponent prize-take frame, then a promotion frame [BENCH→ACTIVE, TurnEnd,
+  TurnStart, Draw]. Promotion arrives bundled WITH the turn boundary, so it
+  rides the same live split as Task 5. Replay isolates the promotion + new-turn
+  draw; live needs the same TurnStart split, plus promotion as its own beat.
 
 ---
 
@@ -132,6 +138,14 @@ Machinery: `revealLayout.ts`, `RevealSessionLayer.takeRevealedCard` /
   recovery abilities the same animation for free. Coordinate with Task 3.
 
 ---
+
+## Notes
+
+- Area code 10 = the pre-evolution stack, confirmed against
+  `CabtAreaType.PRE_EVOLUTION` (types.ts). On a knockout the whole evolution
+  stack empties to discard via area-10→discard MoveCards (real frame 93). The
+  Task 4 fix deliberately left the PRE_EVOLUTION area-delta on the whole-board
+  resync (unchanged) so KO discard handling is untouched.
 
 ## Status
 
