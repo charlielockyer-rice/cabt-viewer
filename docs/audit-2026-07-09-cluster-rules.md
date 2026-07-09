@@ -247,6 +247,65 @@ step, so 50 never becomes its own fork. Confirmed: it is the empty-active
 intermediate the promotion beat now animates from — a multi-observation state,
 exactly the "checkup/auto-resolution frames" hypothesis.
 
+## Claim/handoff residue cluster (R4 / R6 / R7 FIXED, R5 documented)
+
+Round-1 visibility claims that release at the wrong boundary in replay's paced
+settle path (vs live's fast-advancing apply path). Two Sonnet investigators
+root-caused these against the episode; the manager reached R6/R7 independently
+and the reports converged.
+
+- **R7 — Punk Up hides a same-id hand energy — FIXED (`b52f1ff`).** NOT a DOM
+  claim: a view-projection removal. Punk Up attaches a Dark Energy from the
+  DECK; the Attach event names the deck card's serial, absent from the hand.
+  `removeBySerialOrCardId` (hand removal) fell through to cardId when the finite
+  serial wasn't found, evicting the hand's other same-id Dark Energy until the
+  next raw step rebuilt. Serial-strict fix: finite serial not found → return
+  undefined, never fall through to cardId (mirrors `removeMovedCardFromZone`).
+  The reveal/attach choreography is untouched. Episode step 67 / stateIndex 91.
+- **R6 — prize-take flicker persists in replay — FIXED (`d27a967`).** Round-1
+  (`9971f8c`) claims the source prize slots during the take, but a concealed
+  take scheduled the claim release + sprite cleanup on `prizeTakeDirectMs`
+  (520ms) while the phase holds for the canonical `prizeTakeMs` (1180ms) — a
+  ~660ms window where the claim is gone but the settled post-take view hasn't
+  landed, so the taken prize repaints in its slot. Schedule the claim/cleanup
+  on the canonical `prizeTakeMs`; the 520ms stays visual-only (`.direct` CSS).
+  Runtime timing (not headlessly verifiable). Episode step 68 / stateIndex 94.
+- **R4 — Lillie shuffle old-hand flash — FIXED (`21ab3f6`).** Two compounding
+  seams. (1) `animationSourceViewForPhase` listed `HandToDeck` in
+  `animationPhaseUsesSourceView` but had no branch → fell through to
+  `phaseStartView`, keeping the departing cards in the rendered hand all beat,
+  where the sibling Play/Attach beats already drop them at motion launch. Added
+  the branch (apply HAND→DECK moves at display time). (2) `startResets` skipped
+  releasing the source claim in replay (`!replayMode`), deferring to `endScope`
+  where the un-hide raced `Hand.svelte`'s out-transition → the flash; release on
+  the same bounded schedule live uses. Fix (1) is headless-verified (phase hand
+  now empty at stateIndex 45/85); fix (2) is runtime. One approved oracle
+  reshape (the phased-views test asserted the pre-fix HandToDeck rendering).
+- **R5 — evolution base-card blink — DOCUMENTED, not built (browser-rig
+  follow-up, task #23).** Evolve is the only hand-play-family motion with no
+  visibility claim on its destination (`motions.ts` evolve branch:
+  `hide: []`, `hideResolvedTarget: !evolve` = false, `waitForDestinationCard:
+  false`); it gets only the decorative chrome-fade effect, never covering the
+  card art. So the pre-evolution card stays painted under the flying sprite, and
+  when the sprite is removed the base shows for a beat if the evolved card's
+  `<img>` hasn't decoded (main-thread jank — hence inconsistent across
+  Alakazam/Kadabra/Dudunsparce). The investigator proposed a destination claim +
+  destination-ready handoff replacing the `evolveVisibleMs` timer. **Refinement
+  the manager found:** the timer is not the real coupling — `endScope()`
+  (`ViewportAnimationLayer.svelte:790`) does `sprites = []` and releases ALL
+  claims unconditionally on every scope change, so the evolve sprite is already
+  cleared the instant the next view lands, and a destination claim would be
+  released at that same tick. The robust fix therefore requires evolve to OPT OUT
+  of `endScope`'s unconditional clear and hand off on a destination-ready poll
+  (the evolved `cardId`/`serial` actually rendered in the slot), mirroring
+  `BoardAnimationLayer.handOffWhenDestinationReady`, plus a destination
+  `'contents'` claim held across that poll. This is an invasive change to the
+  core scope-teardown path, is a paint-timing seam that headless tests cannot
+  observe (synthetic tests lie about it — see `viewer-real-browser-probe`
+  memory), and risks the evolve animation. Deferred to the real-browser rig
+  rather than blind-shipped. Headlessly assertable precondition: `choreograph`
+  emits zero hide claims and `waitForDestinationCard: false` for an Evolve event.
+
 ## Cosmetic (R8) — DOCUMENTED for a verified polish pass
 
 Both are handoff-seam CSS/sprite issues; neither is verifiable headlessly (the
