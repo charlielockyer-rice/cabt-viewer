@@ -2570,12 +2570,118 @@ describe('cabtReplayToSnapshot', () => {
       .map((slot) => slot.pokemon?.serial)).toEqual([6, 13]);
   });
 
-  it('holds deck-benched Pokemon off the board until the placement phase, when a Special Energy attach triggers them', () => {
-    // Telepath Psychic Energy (card 19): attaching it from hand to a {P} Pokemon
-    // searches the deck for up to 2 Basic {P} Pokemon and benches them. The
-    // Attach event board-syncs the end-state bench, so without a pre-state beat
-    // the two incoming Pokemon flash onto the bench during the attach phase
-    // before the deck-placement phase animates them in.
+  // Real shape from Kaggle episode 84924975 (Charlie's reported repro), frames
+  // 3->4->5. Telepath Psychic Energy (card 19) attaches to a {P} Pokemon and its
+  // effect searches the deck for up to 2 Basic {P} Pokemon and benches them. The
+  // engine emits the Attach and the two DECK->BENCH placements in SEPARATE frames
+  // (attach alone, then placements + shuffle); the step builder coalesces them
+  // into one step whose Attach phase board-syncs the end-state bench. Without a
+  // pre-state beat the two incoming Abra flash onto the bench during the attach
+  // phase before the deck-placement phase animates them in.
+  it('holds deck-benched Pokemon off the board until the placement phase (real card-19 Telepath Psychic Energy shape)', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 741, serial: 20, hp: 50, maxHp: 50, energyCards: [] }],
+            bench: [],
+            benchMax: 5,
+            hand: [{ id: 19, serial: 8 }, { id: 743, serial: 29 }],
+            deckCount: 46,
+            prize: [],
+          }, {
+            active: [{ id: 646, serial: 85, hp: 70, maxHp: 70 }],
+            bench: [],
+            benchMax: 5,
+            handCount: 6,
+            deckCount: 47,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'Attach', playerIndex: 0, cardId: 19, serial: 8, cardIdTarget: 741, serialTarget: 20 },
+        ],
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 741, serial: 20, hp: 50, maxHp: 50, energyCards: [{ id: 19, serial: 8 }] }],
+            bench: [],
+            benchMax: 5,
+            hand: [{ id: 743, serial: 29 }],
+            deckCount: 46,
+            prize: [],
+          }, {
+            active: [{ id: 646, serial: 85, hp: 70, maxHp: 70 }],
+            bench: [],
+            benchMax: 5,
+            handCount: 6,
+            deckCount: 47,
+            prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'MoveCard', playerIndex: 0, cardId: 741, serial: 21, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.BENCH },
+          { type: 'MoveCard', playerIndex: 0, cardId: 741, serial: 18, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.BENCH },
+          { type: 'Shuffle', playerIndex: 0 },
+        ],
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 741, serial: 20, hp: 50, maxHp: 50, energyCards: [{ id: 19, serial: 8 }] }],
+            bench: [
+              { id: 741, serial: 21, hp: 50, maxHp: 50 },
+              { id: 741, serial: 18, hp: 50, maxHp: 50 },
+            ],
+            benchMax: 5,
+            hand: [{ id: 743, serial: 29 }],
+            deckCount: 44,
+            prize: [],
+          }, {
+            active: [{ id: 646, serial: 85, hp: 70, maxHp: 70 }],
+            bench: [],
+            benchMax: 5,
+            handCount: 6,
+            deckCount: 47,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    // The attach and its triggered placement coalesce into one step.
+    const step = snapshot.steps.find((candidate) =>
+      candidate.animationPhases?.some((phase) => phase.key.startsWith('DeckBoardPlace:')));
+    expect(step).toBeDefined();
+    expect(step?.animationPhases?.map((phase) => phase.key.replace(/:\d+$/, ''))).toEqual([
+      'Attach',
+      'DeckBoardPlace',
+      'Shuffle',
+    ]);
+
+    // THE GUARD: the settled board and the attach phase must NOT yet show the
+    // two Abra the later placement phase benches — otherwise they flash in early.
+    const benchSerials = (view: { players: Array<{ bench: Array<{ empty: boolean; pokemon?: { serial?: number } }> }> } | undefined) =>
+      (view?.players[0].bench ?? []).filter((slot) => !slot.empty).map((slot) => slot.pokemon?.serial);
+    expect(benchSerials(step?.displayView ?? step?.view)).toEqual([]);
+    const phaseBench = (key: string) => benchSerials(
+      step?.animationPhases?.find((phase) => phase.key.startsWith(key))?.view);
+    expect(phaseBench('Attach:')).toEqual([]);
+    expect(phaseBench('DeckBoardPlace:')).toEqual([21, 18]);
+  });
+
+  // Whiff variant (real frames 34/107): the search finds no eligible Basic {P}
+  // Pokemon, so the Attach and Shuffle arrive together with ZERO placements. The
+  // deferral must tolerate this — no placement phase, existing bench untouched.
+  it('leaves the bench untouched when a Special Energy search whiffs (no deck placements)', () => {
     const snapshot = cabtReplayToSnapshot({
       visualize: [{
         current: {
@@ -2583,27 +2689,24 @@ describe('cabtReplayToSnapshot', () => {
           yourIndex: 0,
           result: -1,
           players: [{
-            active: [{ id: 721, serial: 4, hp: 150, maxHp: 150 }],
-            bench: [],
+            active: [{ id: 742, serial: 24, hp: 80, maxHp: 80, energyCards: [] }],
+            bench: [{ id: 741, serial: 18, hp: 50, maxHp: 50 }],
             benchMax: 5,
-            hand: [{ id: 19, serial: 20 }],
-            deckCount: 50,
-            discard: [],
+            hand: [{ id: 19, serial: 9 }],
+            deckCount: 40,
             prize: [],
           }, {
-            active: [],
+            active: [{ id: 646, serial: 85, hp: 70, maxHp: 70 }],
             bench: [],
             benchMax: 5,
-            handCount: 0,
-            deckCount: 50,
+            handCount: 6,
+            deckCount: 47,
             prize: [],
           }],
         },
       }, {
         logs: [
-          { type: 'Attach', playerIndex: 0, cardId: 19, serial: 20, cardIdTarget: 721, serialTarget: 4 },
-          { type: 'MoveCard', playerIndex: 0, cardId: 722, serial: 6, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.BENCH },
-          { type: 'MoveCard', playerIndex: 0, cardId: 723, serial: 13, fromArea: CabtAreaType.DECK, toArea: CabtAreaType.BENCH },
+          { type: 'Attach', playerIndex: 0, cardId: 19, serial: 9, cardIdTarget: 742, serialTarget: 24 },
           { type: 'Shuffle', playerIndex: 0 },
         ],
         current: {
@@ -2611,50 +2714,32 @@ describe('cabtReplayToSnapshot', () => {
           yourIndex: 0,
           result: -1,
           players: [{
-            active: [{ id: 721, serial: 4, hp: 150, maxHp: 150, energyCards: [{ id: 19, serial: 20 }] }],
-            bench: [
-              { id: 722, serial: 6, hp: 60, maxHp: 60 },
-              { id: 723, serial: 13, hp: 60, maxHp: 60 },
-            ],
+            active: [{ id: 742, serial: 24, hp: 80, maxHp: 80, energyCards: [{ id: 19, serial: 9 }] }],
+            bench: [{ id: 741, serial: 18, hp: 50, maxHp: 50 }],
             benchMax: 5,
             hand: [],
-            deckCount: 48,
-            discard: [],
+            deckCount: 40,
             prize: [],
           }, {
-            active: [],
+            active: [{ id: 646, serial: 85, hp: 70, maxHp: 70 }],
             bench: [],
             benchMax: 5,
-            handCount: 0,
-            deckCount: 50,
+            handCount: 6,
+            deckCount: 47,
             prize: [],
           }],
         },
       }],
     });
 
-    // The attach resolves as its own step, then the triggered effect (a
-    // synthesized Ability announce) places the Pokemon from the deck in a
-    // following step.
-    const attachStep = snapshot.steps.find((step) => step.actionTimeline?.every((event) => event.kind === 'Attach'));
-    const placementStep = snapshot.steps.find((step) => step.animationPhases?.some((phase) => phase.key.startsWith('DeckBoardPlace:')));
-    expect(attachStep).toBeDefined();
-    expect(placementStep).toBeDefined();
-
-    // THE GUARD: the attach step's settled board must NOT yet show the Pokemon
-    // that the later placement step benches — otherwise they flash in early.
-    const benchOnAttach = (attachStep?.displayView ?? attachStep?.view)?.players[0].bench.filter((slot) => !slot.empty) ?? [];
-    expect(benchOnAttach).toEqual([]);
-
-    const phaseKinds = placementStep?.animationPhases?.map((phase) => phase.key.replace(/:\d+$/, ''));
-    expect(phaseKinds).toEqual(['Ability', 'DeckBoardPlace', 'Shuffle']);
-    const benchByPhase = (key: string) => placementStep?.animationPhases
-      ?.find((phase) => phase.key.startsWith(key))?.view.players[0].bench
-      .filter((slot) => !slot.empty).map((slot) => slot.pokemon?.serial);
-    // The pre-placement (ability) phase holds the bench empty; the placement
-    // phase animates the two Pokemon in.
-    expect(benchByPhase('Ability:')).toEqual([]);
-    expect(benchByPhase('DeckBoardPlace:')).toEqual([6, 13]);
+    const step = snapshot.steps.find((candidate) =>
+      candidate.actionTimeline?.some((event) => event.kind === 'Attach'));
+    expect(step).toBeDefined();
+    // No placement phase, and the pre-existing bench Pokemon stays put throughout.
+    expect(step?.animationPhases?.some((phase) => phase.key.startsWith('DeckBoardPlace:'))).toBeFalsy();
+    for (const phase of step?.animationPhases ?? []) {
+      expect(phase.view.players[0].bench.filter((slot) => !slot.empty).map((slot) => slot.pokemon?.serial)).toEqual([18]);
+    }
   });
 
   it('coalesces Waitress-style reveal, attach, return, and shuffle into one replay step', () => {
