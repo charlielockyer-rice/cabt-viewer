@@ -284,15 +284,25 @@
       viewSettingsStore.followPlayer(playerIndex);
     }
   });
-  // Live eval bar: re-score MY seat's win probability each time a new
-  // interactive decision settles (never mid-animation). copycat-v1-20m reads
-  // the bottom seat's own observation; the engine server holds it and proxies
-  // to the eval sidecar. Read-only — a missing sidecar just leaves the bar off.
+  // Live eval bar: re-score MY seat's win probability on the ANIMATION clock,
+  // not the engine clock. The engine resolves a turn instantly but the viewer
+  // animates it over seconds; if we scored the moment the decision arrived, the
+  // bar would spike to the outcome BEFORE the cards finish playing (a spoiler).
+  // liveApplyGeneration bumps once per APPLIED view — including each animation
+  // step and the final settled view — while playingSequence stays true through
+  // the sequence. Gating on !playingSequence means we reveal the value only when
+  // a view has actually settled on screen, so the bar steps in time with the
+  // cards (each of my own actions settles separately) and the opponent's value
+  // lands as their turn finishes animating. Instant paths (animations off)
+  // settle immediately, so the value shows at once. copycat-v1-20m reads the
+  // bottom seat's own observation; the engine holds it and proxies to the
+  // sidecar. Read-only — a missing sidecar just leaves the bar off.
   $effect(() => {
-    const seq = gameStore.decision?.seq;
+    const settled = gameStore.liveApplyGeneration;
     const settling = gameStore.playingSequence;
     const seat = viewIndex;
-    if (replayMode || !gameStore.game || settling || seq === undefined) {
+    void settled;
+    if (replayMode || !gameStore.game || settling) {
       return;
     }
     void evalStore.refreshLive(seat);
