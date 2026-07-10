@@ -12,7 +12,7 @@ import {
 } from './cabtProjection';
 import { displayName } from './cardView';
 import { classifyCard } from './cardClassify';
-import { synthesizeAnnounceLogs, type AnnounceContext, type AnnounceLog } from './announceSynthesis';
+import { synthesizeAnnounceLogs, stampAttachSourceZones, type AnnounceContext, type AnnounceLog } from './announceSynthesis';
 import { cabtLogsToTimeline } from './logFormat';
 import { CabtAreaType, CabtOptionType } from './types';
 import { resolveCardImageUrl } from '../game/cardImages';
@@ -330,7 +330,9 @@ function logsWithSynthesizedAbility(
   if (!previousFrame) {
     return logs;
   }
-  return synthesizeAnnounceLogs(replayAnnounceContext(previousFrame, frame, logs));
+  const context = replayAnnounceContext(previousFrame, frame, logs);
+  stampAttachSourceZones(context);
+  return synthesizeAnnounceLogs(context);
 }
 
 // Maps a replay frame pair onto the shared announce rule core (announceSynthesis.ts).

@@ -895,16 +895,58 @@ function attachChoreography(
     durationMs: attachMoveMs,
   };
 
-  // An ability that attaches from the deck (Punk Up style) has no hand
-  // source: present it as a reveal — the energy fans out from the deck, then
-  // flies onto its Pokemon through the reveal session's attach handoff.
-  //
-  // But a hand-played on-attach Special Energy (Enriching, Telepath) generates
-  // its OWN announce over the SAME card (trigger 'Attach', matching cardId) —
-  // that is NOT a deck source, it came from the hand and must attach normally.
-  // Excluding that self-announce keeps those energies on the ordinary attach
-  // path (identical to any other energy) while a real ability (Punk Up, a
-  // different card) still routes its deck-attach through the reveal.
+  const revealChoreography = (): Choreography => ({
+    motions: [{
+      id: `${event.id}-attach-reveal-${serial}`,
+      style: 'reveal',
+      space: 'viewport',
+      player,
+      sprite: { kind: 'card', card: cabtCardToView(cardId) },
+      from: { kind: 'deck', player },
+      to: { kind: 'deck', player },
+      startMs,
+      durationMs: actionAnimationTiming.deckRevealMs,
+      toDeck: false,
+      fromDeck: true,
+      waitForDestinationCard: false,
+      hide: [],
+      revealSerial: serial,
+    }],
+    effects: [{ ...effect, startMs: startMs + actionAnimationTiming.deckRevealMs }],
+  });
+
+  const handPlayChoreography = (): Choreography => ({
+    motions: [{
+      id: `${event.id}-attach-hand-${serial}`,
+      style: 'hand-play',
+      space: 'viewport',
+      player,
+      sprite: { kind: 'card', card: cabtCardToView(cardId) },
+      from: { kind: 'hand-slot', player, serial },
+      to: { kind: 'pokemon', player, serial: serialTarget, cardId: cardIdTarget },
+      startMs,
+      durationMs: attachMoveMs,
+      toDeck: false,
+      fromDeck: false,
+      waitForDestinationCard: false,
+      hide: [],
+      hideResolvedTarget: false,
+    }],
+    effects: [{ ...effect, startMs: startMs + attachMoveMs }],
+  });
+
+  // The ONE decision the source zone drives is the PARADIGM: a deck-sourced
+  // attach (Punk Up: an ability pulls an energy from the deck) fans out of the
+  // deck as a reveal; a hand-sourced attach never does. Ground truth is the
+  // stamped fromArea (stampAttachSourceZones in announceSynthesis.ts, from the
+  // action's own source zone). When it's absent — a triggered ability's attach
+  // surfaces no Attach option to read — fall back to the old heuristic: an
+  // ability in context whose energy isn't in the current hand reads as
+  // deck-sourced. The self-announce a hand-played on-attach Special Energy
+  // (Enriching, Telepath) emits over its OWN card (trigger 'Attach', same
+  // cardId) is excluded so it never trips that fallback — the #61 fix, now only
+  // a backstop since fromArea=HAND already routes those to the hand path.
+  const fromArea = num(params.fromArea);
   const abilityContext = context.some((candidate) => {
     if (candidate.kind !== 'Ability') {
       return false;
@@ -915,47 +957,17 @@ function attachChoreography(
   });
   const inHand = serial !== undefined
     && players.some((candidate) => candidate.hand.some((card) => card.serial === serial));
-  if (abilityContext && !inHand && serial !== undefined) {
-    return {
-      motions: [{
-        id: `${event.id}-attach-reveal-${serial}`,
-        style: 'reveal',
-        space: 'viewport',
-        player,
-        sprite: { kind: 'card', card: cabtCardToView(cardId) },
-        from: { kind: 'deck', player },
-        to: { kind: 'deck', player },
-        startMs,
-        durationMs: actionAnimationTiming.deckRevealMs,
-        toDeck: false,
-        fromDeck: true,
-        waitForDestinationCard: false,
-        hide: [],
-        revealSerial: serial,
-      }],
-      effects: [{ ...effect, startMs: startMs + actionAnimationTiming.deckRevealMs }],
-    };
+  const deckSourced = fromArea === CabtAreaType.DECK
+    || (fromArea === undefined && abilityContext && !inHand);
+  if (deckSourced && serial !== undefined) {
+    return revealChoreography();
   }
+  // Ordinary hand attach. Fly it in only when its hand slot is still present to
+  // fly from; otherwise settle the badge — the long-standing behaviour for a
+  // card already gone from the animated view (deliberately NOT changed here, so
+  // plain and on-attach energies keep the identical, already-accepted look).
   if (inHand && serial !== undefined) {
-    return {
-      motions: [{
-        id: `${event.id}-attach-hand-${serial}`,
-        style: 'hand-play',
-        space: 'viewport',
-        player,
-        sprite: { kind: 'card', card: cabtCardToView(cardId) },
-        from: { kind: 'hand-slot', player, serial },
-        to: { kind: 'pokemon', player, serial: serialTarget, cardId: cardIdTarget },
-        startMs,
-        durationMs: attachMoveMs,
-        toDeck: false,
-        fromDeck: false,
-        waitForDestinationCard: false,
-        hide: [],
-        hideResolvedTarget: false,
-      }],
-      effects: [{ ...effect, startMs: startMs + attachMoveMs }],
-    };
+    return handPlayChoreography();
   }
   return { motions: [], effects: [effect] };
 }

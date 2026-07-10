@@ -293,7 +293,7 @@ describe('choreograph viewport family', () => {
 
   it('presents ability deck-attaches as a reveal followed by the attach handoff', () => {
     const players = [player(0, card(100, 1)), player(1)];
-    const batch = [event('Attach', 0, { cardId: 500, serial: 11, cardIdTarget: 100, serialTarget: 1 })];
+    const batch = [event('Attach', 0, { cardId: 500, serial: 11, cardIdTarget: 100, serialTarget: 1, fromArea: CabtAreaType.DECK })];
     const context = [event('Ability', 0, { cardId: 648, serial: 2, abilityName: 'Punk Up' }), ...batch];
 
     const { motions, effects } = choreograph(batch, players, context);
@@ -310,7 +310,7 @@ describe('choreograph viewport family', () => {
     // come from the deck, so it must attach like any other energy, not fan out
     // of the deck. Punk Up (a real ability on a different card) still reveals.
     const players = [player(0, card(100, 1)), player(1)];
-    const batch = [event('Attach', 0, { cardId: 500, serial: 11, cardIdTarget: 100, serialTarget: 1 })];
+    const batch = [event('Attach', 0, { cardId: 500, serial: 11, cardIdTarget: 100, serialTarget: 1, fromArea: CabtAreaType.HAND })];
     const context = [
       event('Ability', 0, {
         cardId: 500,
@@ -334,7 +334,7 @@ describe('choreograph viewport family', () => {
     const active = card(100, 1);
     const energy = card(500, 11);
     const players = [{ ...player(0, active), hand: [energy] }, player(1)];
-    const events = [event('Attach', 0, { cardId: 500, serial: 11, cardIdTarget: 100, serialTarget: 1 })];
+    const events = [event('Attach', 0, { cardId: 500, serial: 11, cardIdTarget: 100, serialTarget: 1, fromArea: CabtAreaType.HAND })];
 
     const { motions, effects } = choreograph(events, players);
     expect(motions).toHaveLength(1);
@@ -349,6 +349,59 @@ describe('choreograph viewport family', () => {
     expect(effects).toHaveLength(1);
     expect(effects[0].kind).toBe('attach-under');
     expect(effects[0].startMs).toBe(motions[0].startMs + motions[0].durationMs);
+  });
+
+  it('falls back to the ability/hand heuristic when fromArea is not stamped (older logs)', () => {
+    // Same two scenarios as above, but with no fromArea on the Attach event at
+    // all (as an older, pre-stamp replay log would look) — attachChoreography
+    // must still resolve them exactly as before via the inHand/abilityContext
+    // heuristic, so nothing regresses for logs the stamp never touched.
+    const deckPlayers = [player(0, card(100, 1)), player(1)];
+    const deckBatch = [event('Attach', 0, { cardId: 500, serial: 11, cardIdTarget: 100, serialTarget: 1 })];
+    const deckContext = [event('Ability', 0, { cardId: 648, serial: 2, abilityName: 'Punk Up' }), ...deckBatch];
+    const deckResult = choreograph(deckBatch, deckPlayers, deckContext);
+    expect(deckResult.motions.map((motion) => motion.style)).toEqual(['reveal']);
+
+    const handActive = card(200, 2);
+    const handEnergy = card(501, 12);
+    const handPlayers = [{ ...player(0, handActive), hand: [handEnergy] }, player(1)];
+    const handEvents = [event('Attach', 0, { cardId: 501, serial: 12, cardIdTarget: 200, serialTarget: 2 })];
+    const handResult = choreograph(handEvents, handPlayers);
+    expect(handResult.motions.map((motion) => motion.style)).toEqual(['hand-play']);
+  });
+
+  it('trusts a stamped fromArea DECK even when the card still resolves in a hand in the view', () => {
+    // A stale/contradictory view (card still shows in a hand) must lose to the
+    // ground-truth stamp: fromArea DECK still reveals from the deck.
+    const active = card(100, 1);
+    const energy = card(500, 11);
+    const players = [{ ...player(0, active), hand: [energy] }, player(1)];
+    const events = [event('Attach', 0, { cardId: 500, serial: 11, cardIdTarget: 100, serialTarget: 1, fromArea: CabtAreaType.DECK })];
+
+    const { motions, effects } = choreograph(events, players);
+    expect(motions.map((motion) => [motion.style, motion.revealSerial])).toEqual([['reveal', 11]]);
+    expect(effects.map((effect) => effect.kind)).toContain('attach-under');
+  });
+
+  it('trusts a stamped fromArea HAND to prevent the deck-reveal even with an ability in context', () => {
+    // An ability in context (a different card, Punk-Up-shaped) with the energy
+    // missing from the current hand would trip the deck-reveal heuristic — but
+    // the ground-truth stamp says HAND, so it must NOT fan out of the deck. The
+    // source zone drives only the paradigm (reveal vs ordinary attach); the
+    // hand-play-vs-badge look stays as it always was. With the card already gone
+    // from the animated view it settles as the badge (the accepted look for a
+    // hand attach that has left the hand); with the card still in hand it flies.
+    const players = [player(0, card(100, 1)), player(1)];
+    const batch = [event('Attach', 0, { cardId: 500, serial: 11, cardIdTarget: 100, serialTarget: 1, fromArea: CabtAreaType.HAND })];
+    const context = [event('Ability', 0, { cardId: 648, serial: 2, abilityName: 'Punk Up' }), ...batch];
+
+    const gone = choreograph(batch, players, context);
+    expect(gone.motions.some((motion) => motion.style === 'reveal')).toBe(false);
+    expect(gone.effects.map((effect) => effect.kind)).toContain('attach-under');
+
+    // Same stamp, but the card is still in the hand → it flies from the hand.
+    const inHand = choreograph(batch, [{ ...player(0, card(100, 1)), hand: [card(500, 11)] }, player(1)], context);
+    expect(inHand.motions.map((motion) => motion.style)).toEqual(['hand-play']);
   });
 
   it('emits attach-under target effects for Attach events', () => {

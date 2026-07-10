@@ -244,6 +244,57 @@ function attachedCardHasOnAttachEffect(context: AnnounceContext, cardId: number 
     /when you attach this/i.test(skill.text ?? ''));
 }
 
+// Ground-truth source zone for an Attach log: HAND (2) or DECK (1). Both
+// pipelines stamp this onto the log (stampAttachSourceZones) so motions.ts's
+// attachChoreography can branch on fact instead of inferring it from the
+// CURRENT (post-attach) view, which is wrong once the card has already left
+// the hand (bug #61: an on-attach special energy looked deck-sourced because
+// its own announce was mistaken for an ability context).
+//
+// Ground truth first: when the acting seat's decision WAS the Attach option
+// itself, its `area` field names the source directly (HAND or DECK) — no
+// inference needed. That only covers a directly-chosen attach, though; a
+// triggered ability's attach (Punk Up: confirm YesNo, then pick a card from a
+// nested selection) never surfaces an Attach option, so there is no ground
+// truth to read. For those, fall back to the one thing the pre-step view can
+// prove: if the card was in a hand before this step, it came from the hand.
+// (The view has no deck-contents list, so "not in hand" cannot itself prove
+// DECK — it stays unknown, and attachChoreography's own fallback heuristic,
+// unchanged, covers that case.)
+export function attachSourceZone(context: AnnounceContext, attachLog: AnnounceLog): number | undefined {
+  const playerIndex = numberField(attachLog.playerIndex);
+  const option = context.selectedOption;
+  if (
+    option
+    && playerIndex !== undefined
+    && normalizedOptionTypeName(optionType(option)) === 'Attach'
+    && (numberField(option.playerIndex) ?? context.selectedPlayerIndex) === playerIndex
+  ) {
+    const area = numberField(option.area);
+    if (area !== undefined) {
+      return area;
+    }
+  }
+  return attachedCardWasInHand(context, attachLog) ? CabtAreaType.HAND : undefined;
+}
+
+// Mutates each Attach log in context.newLogs with its resolved fromArea (see
+// attachSourceZone). Mutation is the established pattern here — cf.
+// markPassAnnounceEvents in cabtReplay.ts, which flags TurnEnd events the
+// same way. Both pipeline adapters call this before synthesizeAnnounceLogs so
+// replay and live stamp byte-identical fromArea values.
+export function stampAttachSourceZones(context: AnnounceContext): void {
+  for (const log of context.newLogs) {
+    if (context.logTypeName(log) !== 'Attach') {
+      continue;
+    }
+    const zone = attachSourceZone(context, log);
+    if (zone !== undefined) {
+      log.fromArea = zone;
+    }
+  }
+}
+
 function attachedCardWasInHand(context: AnnounceContext, log: AnnounceLog): boolean {
   const playerIndex = numberField(log.playerIndex);
   const player = playerIndex === undefined ? undefined : context.players[playerIndex];
@@ -344,7 +395,7 @@ function numberField(value: unknown): number | undefined {
 // Option types arrive as either the numeric CabtOptionType code or a PascalCase
 // string; normalize the ones the rules test.
 function normalizedOptionTypeName(type: unknown): string {
-  const names: Record<number, string> = { 10: 'Ability', 12: 'Retreat', 1: 'Yes' };
+  const names: Record<number, string> = { 10: 'Ability', 12: 'Retreat', 1: 'Yes', 8: 'Attach' };
   if (typeof type === 'number' && type in names) {
     return names[type];
   }

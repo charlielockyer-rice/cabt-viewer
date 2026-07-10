@@ -1,6 +1,6 @@
 import { type CabtDataMaps } from '../lib/cabt/cabtProjection';
 import { displayName } from '../lib/cabt/cardView';
-import { synthesizeAnnounceLogs, type AnnounceContext, type AnnounceLog } from '../lib/cabt/announceSynthesis';
+import { synthesizeAnnounceLogs, stampAttachSourceZones, type AnnounceContext, type AnnounceLog } from '../lib/cabt/announceSynthesis';
 import {
   CabtAreaType,
   CabtCardType,
@@ -201,7 +201,9 @@ export function logsWithSynthesizedAnnounce(
   newLogs: BridgeLog[],
   dataMaps: CabtDataMaps,
 ): BridgeLog[] {
-  return synthesizeAnnounceLogs(liveAnnounceContext(previous, action, previousNewLogs, newLogs, dataMaps));
+  const context = liveAnnounceContext(previous, action, previousNewLogs, newLogs, dataMaps);
+  stampAttachSourceZones(context);
+  return synthesizeAnnounceLogs(context);
 }
 
 function liveAnnounceContext(
