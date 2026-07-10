@@ -67,6 +67,12 @@
   // Live play swaps the view before this effect runs, so an attached card's
   // badge can already be gone. Pre-effect snapshots keep its last geometry.
   let attachedRects = new Map<number, LocalRect>();
+  // Same idea for a Pokemon slot: a promotion's source view vacates the promoted
+  // Pokemon from the bench so the bench reflows DURING the flight (#39). That
+  // removes its slot from the DOM before the board-move launches, so we snapshot
+  // every board Pokemon's card-tile rect (keyed by serial) from the pre-update
+  // DOM and fly from it when the live source element is gone.
+  let boardMoveSourceRects = new Map<number, LocalRect>();
 
   onMount(() => {
     if (typeof window.matchMedia !== 'function') {
@@ -116,6 +122,33 @@
     }
     if (rects.size) {
       attachedRects = rects;
+    }
+    const slotRects = new Map<number, LocalRect>();
+    for (const slot of document.querySelectorAll('.board-slot[data-pokemon-serial]')) {
+      if (!(slot instanceof HTMLElement) || slot.closest('[data-anim-layer]')) {
+        continue;
+      }
+      const serial = Number(slot.dataset.pokemonSerial);
+      if (!Number.isFinite(serial)) {
+        continue;
+      }
+      const rect = localRectIn(plane, slot.querySelector('.card-tile') ?? slot);
+      if (rect && rect.width > 0) {
+        slotRects.set(serial, rect);
+      }
+    }
+    if (slotRects.size) {
+      // MERGE, don't replace: a promotion's source view has already vacated the
+      // promoted Pokemon by the time this runs, so its rect is absent from
+      // slotRects — keep the last-known rect (captured while it was still on the
+      // bench a view earlier) so the flight can launch from it. Present serials
+      // are refreshed; only truly-departed ones retain a stale rect, and those
+      // are read solely for the vacated-source flight that needs exactly that.
+      const merged = new Map(boardMoveSourceRects);
+      for (const [serial, rect] of slotRects) {
+        merged.set(serial, rect);
+      }
+      boardMoveSourceRects = merged;
     }
   });
 
@@ -278,10 +311,18 @@
   async function beginBoardMove(motion: CardMotion, plane: HTMLElement, startedGeneration: number) {
     const from = resolveAnchor(motion.from);
     const to = resolveAnchor(motion.to);
-    if (!from || !to) {
+    if (!to) {
       return;
     }
-    const fromRect = localRectIn(plane, from.geometry);
+    // A promotion's source view vacates the promoted Pokemon from the bench (#39),
+    // so its slot element is already gone here — fly from the pre-vacate snapshot
+    // instead. When the source IS still present (retreat/Teleport, or before the
+    // view-side vacate lands), this is identical to reading from.geometry, so the
+    // fallback is a safe no-op.
+    const sourceSerial = motion.from.kind === 'pokemon' ? motion.from.serial : undefined;
+    const fromRect = from
+      ? localRectIn(plane, from.geometry)
+      : (sourceSerial !== undefined ? boardMoveSourceRects.get(sourceSerial) ?? null : null);
     const toRect = localRectIn(plane, to.geometry);
     if (!fromRect || !toRect || fromRect.width <= 0 || toRect.width <= 0) {
       return;
@@ -295,7 +336,7 @@
       width: toRect.width,
       height: toRect.height,
       vars: boardMoveVars(fromRect, toRect, 0, 0),
-      opponentSide: isOpponentSide(from.element) || isOpponentSide(to.element),
+      opponentSide: (from ? isOpponentSide(from.element) : false) || isOpponentSide(to.element),
       measuring: true,
     };
     sprites = [...sprites, sprite];
@@ -303,7 +344,9 @@
     if (startedGeneration !== generation) {
       return;
     }
-    if (!document.body.contains(from.element) || !document.body.contains(to.element)) {
+    // Only the destination must still exist. A vacated source (from === null) has
+    // no element to contain — the sprite flies from its snapshotted rect.
+    if (!document.body.contains(to.element) || (from !== null && !document.body.contains(from.element))) {
       sprites = sprites.filter((item) => item.id !== sprite.id);
       return;
     }
