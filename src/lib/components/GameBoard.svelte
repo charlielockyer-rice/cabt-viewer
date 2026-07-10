@@ -102,7 +102,7 @@
   // each seat flip (detected via which player is on top) — not a scrub concern,
   // so it plays during normal stepping/playback, and scrub-gating still wins.
   let seatFadeMode = $derived(viewSettingsStore.seatTransition === 'fade');
-  let seatFading = $state(false);
+  let planeElement = $state<HTMLElement>();
   let lastTopIndex = topPlayer?.index;
   $effect(() => {
     const topIndex = topPlayer?.index;
@@ -110,14 +110,16 @@
       return;
     }
     lastTopIndex = topIndex;
-    if (seatFadeMode && !scrubbing) {
-      // Restart the one-shot fade: clear the class this frame, re-add next frame
-      // so the browser sees a fresh animation start. `class:seat-fading` keeps
-      // the rule reachable (an imperative class would be pruned as unused CSS).
-      seatFading = false;
-      requestAnimationFrame(() => {
-        seatFading = true;
-      });
+    // Drive the fade imperatively via the Web Animations API: element.animate
+    // restarts cleanly on every flip (a reactive class toggled off→on gets
+    // batched by Svelte and never restarts the CSS animation). The reposition
+    // itself is instant (card transitions zeroed in fade mode below), so the dim
+    // masks it.
+    if (seatFadeMode && !scrubbing && planeElement && typeof planeElement.animate === 'function') {
+      planeElement.animate(
+        [{ opacity: 1 }, { opacity: 0.06, offset: 0.42 }, { opacity: 0.06, offset: 0.58 }, { opacity: 1 }],
+        { duration: 300, easing: 'ease' },
+      );
     }
   });
 
@@ -232,11 +234,11 @@
   ondrop={dropToBoardPlay}
 >
   <div
+    bind:this={planeElement}
     class="game-board-plane"
     class:can-play-on-board={canPlayOnBoard}
     class:has-eval-bar={showEvalBar}
     class:seat-fade-mode={seatFadeMode}
-    class:seat-fading={seatFading}
     data-scrubbing={scrubbing ? '' : undefined}
     role="presentation"
     ondragover={allowBoardPlayDrop}
@@ -375,16 +377,6 @@
      dim. The fade is restarted per seat flip from the script (reflow trick). */
   .game-board-plane.seat-fade-mode :global(.card-tile) {
     transition-duration: 0s;
-  }
-
-  .game-board-plane.seat-fade-mode.seat-fading {
-    animation: seat-fade 320ms ease;
-  }
-
-  @keyframes seat-fade {
-    0% { opacity: 1; }
-    38%, 58% { opacity: 0.08; }
-    100% { opacity: 1; }
   }
 
   .game-board-plane {
