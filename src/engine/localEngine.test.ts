@@ -915,6 +915,95 @@ describe('LocalEngineController.evaluate (eval bar)', () => {
   });
 });
 
+describe('LocalEngineController.analyzeReplayOmniscient (judge line, #45 T2)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // A seat-`seat` decision frame carrying that seat's own hand + the search seed.
+  function frame(stateIndex: number, seat: number, hand: number[] | null, sbi: string | null) {
+    return {
+      stateIndex,
+      searchBeginInput: sbi,
+      select: yesNoSelect(),
+      current: currentState({
+        yourIndex: seat,
+        players: seat === 0
+          ? [playerState({ hand: hand?.map((id) => ({ id })) ?? null, handCount: hand?.length ?? 0 }),
+             playerState({ hand: null, handCount: 3 })]
+          : [playerState({ hand: null, handCount: 3 }),
+             playerState({ hand: hand?.map((id) => ({ id })) ?? null, handCount: hand?.length ?? 0 })],
+      }),
+    };
+  }
+
+  function engine() {
+    return new LocalEngineController() as any;
+  }
+
+  it('sends per-decision items with the opponent last-known hand and the search seed', async () => {
+    let body: any;
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: any) => {
+      body = JSON.parse(init.body);
+      return { ok: true, json: async () => ({ ok: true, qValues: [0.40, 0.42] }) } as Response;
+    }));
+    // seat 1 revealed hand [7,8] at state 1; seat 0's decision at state 2 pins it.
+    const frames = [
+      frame(0, 0, [1, 2], 'seed0'),
+      frame(1, 1, [7, 8], 'seed1'),
+      frame(2, 0, [3, 4], 'seed2'),
+    ];
+    const result = await engine().analyzeReplayOmniscient(frames, 0, Array(60).fill(3), Array(60).fill(4));
+
+    expect(result).toEqual({
+      ok: true,
+      points: [{ stateIndex: 0, qWin: 0.40 }, { stateIndex: 2, qWin: 0.42 }],
+      ready: true,
+    });
+    // one item per seat-0 decision that carries a seed (states 0 and 2)
+    expect(body.items).toHaveLength(2);
+    const last = body.items[1];
+    expect(last.observation.search_begin_input).toBe('seed2');
+    expect(Object.keys(last.observation).sort()).toEqual(['current', 'search_begin_input', 'select']);
+    expect(last.deckSelf).toEqual(Array(60).fill(3));
+    expect(last.oppDeck).toEqual(Array(60).fill(4));
+    // the opponent's hand as of THEIR last decision before state 2 (state 1)
+    expect(last.oppLastHand).toEqual([7, 8]);
+  });
+
+  it('skips decision frames with no search seed (legacy/Kaggle frames)', async () => {
+    let body: any;
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: any) => {
+      body = JSON.parse(init.body);
+      return { ok: true, json: async () => ({ ok: true, qValues: [0.5] }) } as Response;
+    }));
+    const frames = [frame(0, 0, [1], null), frame(1, 0, [2], 'seed1')];
+    const result = await engine().analyzeReplayOmniscient(frames, 0, Array(60).fill(3), Array(60).fill(4));
+
+    expect(body.items).toHaveLength(1);            // only the seeded frame
+    expect(body.items[0].observation.search_begin_input).toBe('seed1');
+    expect(result.ready).toBe(true);
+  });
+
+  it('returns unavailable without calling the sidecar when a deck is missing', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const frames = [frame(0, 0, [1], 'seed0')];
+    const result = await engine().analyzeReplayOmniscient(frames, 0, Array(60).fill(3), []);
+
+    expect(result).toEqual({ ok: true, points: [], ready: false });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('degrades to ready:false (never throws) when the sidecar is unreachable', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('ECONNREFUSED'); }));
+    const frames = [frame(0, 0, [1], 'seed0')];
+    const result = await engine().analyzeReplayOmniscient(frames, 0, Array(60).fill(3), Array(60).fill(4));
+
+    expect(result).toEqual({ ok: true, points: [], ready: false });
+  });
+});
+
 function playerState(overrides: Record<string, unknown> = {}) {
   return {
     active: [null],

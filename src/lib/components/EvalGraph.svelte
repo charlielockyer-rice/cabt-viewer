@@ -9,6 +9,9 @@
   type Props = {
     myPoints: EvalPoint[];
     oppPoints: EvalPoint[];
+    // The near-omniscient "judge's line" for my seat (#45 T2): a full-search read
+    // that knows the hands. On-demand; empty until computed. Authoritative.
+    judgePoints?: EvalPoint[];
     stateCount: number;
     currentStateIndex: number;
     seek: (stateIndex: number) => void;
@@ -17,11 +20,15 @@
     myAvailable?: boolean;
     oppAvailable?: boolean;
     loading?: boolean;
+    judgeState?: 'idle' | 'loading' | 'ready' | 'unavailable';
+    canComputeJudge?: boolean;
+    computeJudge?: () => void;
   };
 
   let {
-    myPoints, oppPoints, stateCount, currentStateIndex, seek,
+    myPoints, oppPoints, judgePoints = [], stateCount, currentStateIndex, seek,
     myName = 'You', oppName = 'Opponent', myAvailable = true, oppAvailable = true, loading = false,
+    judgeState = 'idle', canComputeJudge = false, computeJudge = () => {},
   }: Props = $props();
 
   const W = 1000;
@@ -54,9 +61,12 @@
   let myLine = $derived(linePath(myPoints));
   let myArea = $derived(areaPath(myPoints));
   let oppLine = $derived(linePath(oppPoints));
+  let judgeLine = $derived(linePath(judgePoints));
+  let judgeReady = $derived(judgeState === 'ready' && judgePoints.length > 0);
   let cursorX = $derived(x(Math.min(currentStateIndex, span)));
   let myAt = $derived(nearest(myPoints, currentStateIndex));
   let oppAt = $derived(nearest(oppPoints, currentStateIndex));
+  let judgeAt = $derived(nearest(judgePoints, currentStateIndex));
 
   let dragging = $state(false);
   function seekFromEvent(event: PointerEvent, el: SVGSVGElement) {
@@ -82,6 +92,15 @@
       {:else}
         <span class="key unavailable">{oppName} perspective unavailable — older replay</span>
       {/if}
+      {#if judgeReady}
+        <span class="key judge" title="A full-search read that knows the hands (near-omniscient: exact decks + hands as of last turn)."><i></i>Judge {pct(judgeAt)}</span>
+      {:else if judgeState === 'loading'}
+        <span class="key judge-pending">Computing judge's line…</span>
+      {:else if judgeState === 'unavailable'}
+        <span class="key unavailable">Judge's line unavailable — this replay</span>
+      {:else if canComputeJudge}
+        <button class="judge-btn" onclick={() => computeJudge()} title="Search every decision with the hands known — a full-strength read of the position. Takes a moment.">Reveal judge's line</button>
+      {/if}
     </div>
     <svg
       viewBox={`0 0 ${W} ${H}`}
@@ -100,9 +119,11 @@
       {#if myAvailable}<path class="area" d={myArea} />{/if}
       {#if myAvailable}<path class="line mine" d={myLine} />{/if}
       {#if oppAvailable}<path class="line opp" d={oppLine} />{/if}
+      {#if judgeReady}<path class="line judge" d={judgeLine} />{/if}
       <line class="cursor" x1={cursorX} y1="0" x2={cursorX} y2={H} />
       {#if myAvailable && myAt}<circle class="dot mine" cx={x(myAt.stateIndex)} cy={y(myAt.pWin)} r="6" />{/if}
       {#if oppAvailable && oppAt}<circle class="dot opp" cx={x(oppAt.stateIndex)} cy={y(oppAt.pWin)} r="6" />{/if}
+      {#if judgeReady && judgeAt}<circle class="dot judge" cx={x(judgeAt.stateIndex)} cy={y(judgeAt.pWin)} r="6" />{/if}
     </svg>
   {:else}
     <span class="hint">{loading ? 'Evaluating…' : 'No eval curve (evaluator off or decks unavailable for this replay).'}</span>
@@ -134,7 +155,26 @@
   .key i { width: 10px; height: 2.5px; border-radius: 2px; display: inline-block; }
   .key.mine i { background: var(--accent-base); }
   .key.opp i { background: #d9772e; }
+  .key.judge { color: #7fc6ff; }
+  .key.judge i { width: 12px; height: 3px; background: #56b6ff; }
+  .key.judge-pending { color: #7fc6ff; font-weight: 600; font-style: italic; }
   .key.unavailable { color: var(--text-muted); font-weight: 600; font-style: italic; }
+
+  /* The one interactive legend item: the legend is pointer-transparent so clicks
+     fall through to the scrub svg, but the compute button must catch its own. */
+  .judge-btn {
+    pointer-events: auto;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 700;
+    color: #7fc6ff;
+    background: rgba(86, 182, 255, 0.12);
+    border: 1px solid rgba(86, 182, 255, 0.5);
+    border-radius: 5px;
+    padding: 1px 7px;
+    cursor: pointer;
+  }
+  .judge-btn:hover { background: rgba(86, 182, 255, 0.22); }
 
   svg { width: 100%; height: 100%; display: block; cursor: pointer; touch-action: none; overflow: visible; }
 
@@ -143,6 +183,9 @@
   .line { fill: none; stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
   .line.mine { stroke: var(--accent-base); }
   .line.opp { stroke: #d9772e; stroke-dasharray: 5 3; }
+  /* The judge's line: authoritative — solid and heavier than the self-views. */
+  .line.judge { stroke: #56b6ff; stroke-width: 2.75; }
+  .dot.judge { fill: #56b6ff; }
   .cursor { stroke: var(--text-primary); stroke-width: 1.5; vector-effect: non-scaling-stroke; opacity: 0.55; }
   .dot { stroke: var(--app-backdrop-bg); stroke-width: 2; vector-effect: non-scaling-stroke; }
   .dot.mine { fill: var(--accent-strong); }

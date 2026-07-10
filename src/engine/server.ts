@@ -118,6 +118,19 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Near-omniscient "judge's line" (#45 T2): exchange-depth search per decision,
+  // on-demand for a whole episode. Same large-body allowance as eval-replay.
+  if (req.method === 'POST' && url.pathname === '/local-engine/analyze-omniscient') {
+    try {
+      const body = JSON.parse((await readBody(req, 64_000_000)) || '{}');
+      writeJson(res, 200, await controller.analyzeReplayOmniscient(
+        body?.frames ?? [], Number(body?.seat ?? 0), body?.deckSelf ?? [], body?.oppDeck ?? []));
+    } catch (error) {
+      writeJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
+
   if (req.method !== 'POST' || url.pathname !== '/local-engine') {
     writeJson(res, 404, { ok: false, error: 'Not found' });
     return;

@@ -5,9 +5,11 @@
 // winning?" from ONE fixed seat's (hidden-info-asymmetric) observation.
 
 export type EvalPoint = { stateIndex: number; pWin: number };
+export type OmniscientFrame = { current: unknown; select: unknown; stateIndex: number; searchBeginInput: string | null };
 
 type LiveEvalResponse = { ok: boolean; pWin: number | null; seat: number; ready: boolean };
 type ReplayEvalResponse = { ok: boolean; points: EvalPoint[]; ready: boolean };
+type OmniscientResponse = { ok: boolean; points: Array<{ stateIndex: number; qWin: number }>; ready: boolean };
 
 class EvalStore {
   // P(the tracked seat wins) at the current live position, or null when the
@@ -26,9 +28,18 @@ class EvalStore {
   // opponent line is empty/degraded.
   replayCurves = $state<[EvalPoint[], EvalPoint[]]>([[], []]);
   replayLoading = $state(false);
+  // The near-omniscient "judge's line" per seat (#45 T2): the searched value of
+  // each seat's best move with the opponent's hidden state pinned to what the
+  // replay recorded. ON-DEMAND (heavy exchange-depth search) — computed only when
+  // the user asks, then cached here for the rest of the session. `omniscientReady`
+  // gates the UI: idle -> not requested; loading -> computing; then the curves (or
+  // `unavailable` when no honest+seeded frames exist to judge).
+  omniscientCurves = $state<[EvalPoint[], EvalPoint[]]>([[], []]);
+  omniscientState = $state<'idle' | 'loading' | 'ready' | 'unavailable'>('idle');
 
   private liveToken = 0;
   private replayToken = 0;
+  private omniscientToken = 0;
 
   reset(): void {
     this.liveToken += 1;
@@ -41,6 +52,9 @@ class EvalStore {
     this.replayToken += 1;
     this.replayCurves = [[], []];
     this.replayLoading = false;
+    this.omniscientToken += 1;
+    this.omniscientCurves = [[], []];
+    this.omniscientState = 'idle';
   }
 
   // Refresh the live bar for BOTH perspectives — my seat's self-view and the
@@ -95,6 +109,44 @@ class EvalStore {
     this.replayLoading = false;
   }
 
+  // Compute the near-omniscient judge's line on demand. Only honest seats are
+  // judged (a seat needs its own hand present for the value axis); each seat's
+  // search additionally needs the frames' searchBeginInput, so a replay lacking
+  // it yields no points -> 'unavailable'. Idempotent per token; safe to await.
+  async analyzeOmniscient(
+    frames: OmniscientFrame[],
+    decks: number[][],
+    honestSeats: [boolean, boolean],
+  ): Promise<void> {
+    const token = ++this.omniscientToken;
+    this.omniscientState = 'loading';
+    this.omniscientCurves = [[], []];
+    const seats = [0, 1].filter((seat) => honestSeats[seat]);
+    const results = await Promise.all(
+      seats.map((seat) =>
+        postJson<OmniscientResponse>('/local-engine/analyze-omniscient', {
+          frames, seat, deckSelf: decks[seat] ?? [], oppDeck: decks[seat === 0 ? 1 : 0] ?? [],
+        })),
+    );
+    if (token !== this.omniscientToken) {
+      return;
+    }
+    const next: [EvalPoint[], EvalPoint[]] = [[], []];
+    seats.forEach((seat, i) => {
+      next[seat] = (results[i]?.points ?? []).map((p) => ({ stateIndex: p.stateIndex, pWin: p.qWin }));
+    });
+    this.omniscientCurves = next;
+    this.omniscientState = (next[0].length || next[1].length) ? 'ready' : 'unavailable';
+  }
+
+  omniscientForSeat(seat: number): EvalPoint[] {
+    return this.omniscientCurves[seat] ?? [];
+  }
+
+  omniscientAt(stateIndex: number, seat: number): number | null {
+    return nearestAtOrBefore(this.omniscientCurves[seat] ?? [], stateIndex);
+  }
+
   curveForSeat(seat: number): EvalPoint[] {
     return this.replayCurves[seat] ?? [];
   }
@@ -102,17 +154,23 @@ class EvalStore {
   // Nearest curve point at or before a state index for one seat — lets the bar
   // track the scrubber even between that seat's decision states.
   pWinAtState(stateIndex: number, seat: number): number | null {
-    const curve = this.replayCurves[seat] ?? [];
-    let best: number | null = null;
-    for (const point of curve) {
-      if (point.stateIndex <= stateIndex) {
-        best = point.pWin;
-      } else {
-        break;
-      }
-    }
-    return best ?? curve[0]?.pWin ?? null;
+    return nearestAtOrBefore(this.replayCurves[seat] ?? [], stateIndex);
   }
+}
+
+// Nearest curve point at or before a state index — lets a bar/marker track the
+// scrubber between that seat's decision states. Falls back to the first point so
+// a marker shows from the start rather than popping in at the first decision.
+function nearestAtOrBefore(curve: EvalPoint[], stateIndex: number): number | null {
+  let best: number | null = null;
+  for (const point of curve) {
+    if (point.stateIndex <= stateIndex) {
+      best = point.pWin;
+    } else {
+      break;
+    }
+  }
+  return best ?? curve[0]?.pWin ?? null;
 }
 
 async function postJson<T>(path: string, body: unknown): Promise<T | null> {

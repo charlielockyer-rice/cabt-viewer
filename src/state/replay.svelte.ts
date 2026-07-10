@@ -5,7 +5,16 @@ import { cabtReplayToSnapshot } from '../lib/cabt/cabtReplay';
 // The raw per-state observation ({current, select}) the value head needs, kept
 // alongside the projected snapshot (which drops it). Frame index === stateIndex
 // because the snapshot's stateCount is exactly visualize.length.
-export type ReplayObservationFrame = { current: unknown; select: unknown; stateIndex: number };
+export type ReplayObservationFrame = {
+  current: unknown;
+  select: unknown;
+  stateIndex: number;
+  // The engine's opaque search seed. Present on raw agent-vs-agent frames;
+  // REQUIRED by the near-omniscient analysis line (cg.api.search_begin rejects an
+  // observation without it). Absent on legacy/Kaggle frames -> that line is
+  // unavailable, same as the honesty gate.
+  searchBeginInput: string | null;
+};
 
 class ReplayStore {
   replay = $state<ReplaySnapshot | null>(null);
@@ -382,11 +391,15 @@ function observationFramesFrom(json: unknown): ReplayObservationFrame[] {
   if (!Array.isArray(visualize)) {
     return [];
   }
-  return visualize.map((frame, stateIndex) => ({
-    current: (frame as { current?: unknown })?.current ?? null,
-    select: (frame as { select?: unknown })?.select ?? null,
-    stateIndex,
-  }));
+  return visualize.map((frame, stateIndex) => {
+    const sbi = (frame as { search_begin_input?: unknown })?.search_begin_input;
+    return {
+      current: (frame as { current?: unknown })?.current ?? null,
+      select: (frame as { select?: unknown })?.select ?? null,
+      stateIndex,
+      searchBeginInput: typeof sbi === 'string' ? sbi : null,
+    };
+  });
 }
 
 function replayCandidates(id: string): string[] {

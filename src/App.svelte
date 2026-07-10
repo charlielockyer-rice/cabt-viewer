@@ -329,6 +329,25 @@
   // 1 - oppPWin in the bar). Replay: from the opponent's curve; live: the
   // opponent's most recent decision eval.
   let evalBarOppPWin = $derived(replayMode ? evalStore.pWinAtState(replayStateIndex, oppIndex) : evalStore.oppPWin);
+  // The near-omniscient "judge's line" value for the followed seat at the scrubbed
+  // state (#45 T2) — replay-only, on-demand, so null until the user computes it.
+  let evalBarOmniscient = $derived(
+    replayMode && evalStore.omniscientState === 'ready'
+      ? evalStore.omniscientAt(replayStateIndex, viewIndex)
+      : null,
+  );
+  // Whether the judge's line CAN be computed for this replay: a raw/omniscient
+  // save (honest seats) whose frames carry the engine search seed. Kaggle/legacy
+  // replays can't, so the affordance is hidden rather than offered-then-failing.
+  let canComputeJudgeLine = $derived(
+    replayMode
+      && (replayStore.honestSeats[0] || replayStore.honestSeats[1])
+      && replayStore.observationFrames.some((f) => typeof f.searchBeginInput === 'string'),
+  );
+  function computeJudgeLine(): void {
+    void evalStore.analyzeOmniscient(
+      replayStore.observationFrames, replayStore.decks, replayStore.honestSeats);
+  }
   let gameFinished = $derived(game?.phase === 7);
   // "Opponent is thinking" indicator gate: a live game where I'm playing and the
   // top (opponent) seat is a (possibly slow) agent. ThinkingIndicator applies
@@ -947,6 +966,7 @@
           <EvalGraph
             myPoints={evalStore.curveForSeat(viewIndex)}
             oppPoints={evalStore.curveForSeat(oppIndex)}
+            judgePoints={evalStore.omniscientForSeat(viewIndex)}
             stateCount={replayStore.replay.stateCount}
             currentStateIndex={replayStateIndex}
             seek={(index) => replayStore.setStateIndex(index)}
@@ -955,6 +975,9 @@
             myAvailable={replayStore.honestSeats[viewIndex]}
             oppAvailable={replayStore.honestSeats[oppIndex]}
             loading={evalStore.replayLoading}
+            judgeState={evalStore.omniscientState}
+            canComputeJudge={canComputeJudgeLine}
+            computeJudge={computeJudgeLine}
           />
         </div>
       {/if}
@@ -1052,6 +1075,7 @@
           {showEvalBar}
           evalPWin={evalBarPWin}
           evalOppPWin={evalBarOppPWin}
+          evalOmniscient={evalBarOmniscient}
           evalMyName={bottomPlayer?.name ?? 'You'}
           evalOpponentName={topPlayer?.name ?? 'Opponent'}
         />

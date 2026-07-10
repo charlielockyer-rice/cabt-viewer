@@ -265,6 +265,52 @@ export class LocalEngineController {
     return { ok: true, points, ready: true };
   }
 
+  // The near-omniscient "judge's line" (#45 T2): for each of `seat`'s decisions,
+  // an EXCHANGE-depth search that pins the opponent's hidden state to what the
+  // replay recorded (their exact deck + hand as of their last decision). Returns
+  // the judge's win-prob for `seat` on that seat's own axis. On-demand + heavy;
+  // one batch per episode, cached by the caller. Needs BOTH decks and each
+  // acting frame's `searchBeginInput` (the engine's search seed) — frames without
+  // it (legacy/Kaggle) are skipped, so the line degrades to unavailable.
+  async analyzeReplayOmniscient(
+    frames: Array<{ current: CabtObservation['current']; select: CabtObservation['select'];
+                    stateIndex: number; searchBeginInput: string | null }>,
+    seat: number,
+    deckSelf: number[],
+    oppDeck: number[],
+  ): Promise<{ ok: true; points: Array<{ stateIndex: number; qWin: number }>; ready: boolean }> {
+    const scored = frames.filter(
+      (frame) => frame.current && frame.select && frame.current.yourIndex === seat
+        && (frame.current.result ?? -1) < 0 && typeof frame.searchBeginInput === 'string',
+    );
+    // The judge needs the real matchup on BOTH sides; without either deck (or
+    // without the engine's search seed on the frames) there is no true line.
+    if (!scored.length || !deckSelf.length || !oppDeck.length) {
+      return { ok: true, points: [], ready: false };
+    }
+    const items = scored.map((frame) => ({
+      observation: { current: frame.current, select: frame.select,
+                     search_begin_input: frame.searchBeginInput },
+      deckSelf,
+      oppDeck,
+      oppLastHand: lastKnownHand(frames, frame.stateIndex, seat === 0 ? 1 : 0),
+    }));
+    // Exchange-depth search per decision is seconds each; a whole episode is
+    // minutes. The engine proxy holds a long timeout; this is the on-demand path.
+    const result = await evalSidecar<{ ok: boolean; qValues: Array<number | null> }>(
+      '/analyze-omniscient-batch', { items }, 1_800_000);
+    if (!result?.qValues) {
+      return { ok: true, points: [], ready: false };
+    }
+    const points: Array<{ stateIndex: number; qWin: number }> = [];
+    result.qValues.forEach((qWin, index) => {
+      if (typeof qWin === 'number') {
+        points.push({ stateIndex: scored[index].stateIndex, qWin });
+      }
+    });
+    return { ok: true, points, ready: true };
+  }
+
   close(): void {
     this.bridge.close();
     this.invalidateSession('CABT bridge closed.');
@@ -667,6 +713,33 @@ function hasNativeMacLibrary(): boolean {
 
 function toPosixPath(value: string): string {
   return value.split(path.sep).join('/');
+}
+
+// The opponent's hand as of THEIR most recent decision at or before `beforeState`
+// -- the last frame the replay recorded that seat's own (exact) hand. This is the
+// ground truth the near-omniscient world pins; the Python side carries it forward
+// and samples only the cards drawn since. null when the seat never revealed a hand
+// (the world builder then samples the whole hand from the exact deck).
+function lastKnownHand(
+  frames: Array<{ current: CabtObservation['current']; stateIndex: number }>,
+  beforeState: number,
+  seat: number,
+): number[] | null {
+  for (let index = frames.length - 1; index >= 0; index -= 1) {
+    const frame = frames[index];
+    if (frame.stateIndex > beforeState) {
+      continue;
+    }
+    const current = frame.current;
+    if (!current || current.yourIndex !== seat) {
+      continue;
+    }
+    const hand = current.players?.[seat]?.hand;
+    if (Array.isArray(hand)) {
+      return hand.map((card) => card?.id).filter((id): id is number => typeof id === 'number');
+    }
+  }
+  return null;
 }
 
 function createSessionId(): string {
