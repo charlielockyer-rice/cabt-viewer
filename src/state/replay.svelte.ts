@@ -334,7 +334,12 @@ async function loadCabtReplay(candidates: string[]): Promise<LoadedReplay> {
 }
 
 function observationFramesFrom(json: unknown): ReplayObservationFrame[] {
-  const visualize = (json as { visualize?: unknown })?.visualize;
+  // Prefer the raw (pre-conceal) frames when present: they carry each acting
+  // seat's own hand, so BOTH seats' value lines are honest. Fall back to the
+  // concealed playback frames (legacy saves) or an already-omniscient
+  // spectator/Kaggle replay. Indexed identically to `visualize` (stateIndex).
+  const source = (json as { rawVisualize?: unknown; visualize?: unknown });
+  const visualize = Array.isArray(source?.rawVisualize) ? source.rawVisualize : source?.visualize;
   if (!Array.isArray(visualize)) {
     return [];
   }

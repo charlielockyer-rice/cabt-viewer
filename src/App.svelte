@@ -316,12 +316,12 @@
       return;
     }
     const frames = replayStore.observationFrames;
-    const seat = viewIndex;
-    void evalStore.loadReplayCurve(frames, seat, replayStore.decks[seat] ?? []);
+    void evalStore.loadReplayCurve(frames, replayStore.decks);
   });
   let replayStateIndex = $derived(replayStore.currentStep?.stateIndex ?? 0);
-  let showEvalBar = $derived(replayMode ? evalStore.replayCurve.length > 0 : evalStore.live);
-  let evalBarPWin = $derived(replayMode ? evalStore.pWinAtState(replayStateIndex) : evalStore.pWin);
+  let oppIndex = $derived(topPlayer?.index ?? (viewIndex === 0 ? 1 : 0));
+  let showEvalBar = $derived(replayMode ? evalStore.curveForSeat(viewIndex).length > 0 : evalStore.live);
+  let evalBarPWin = $derived(replayMode ? evalStore.pWinAtState(replayStateIndex, viewIndex) : evalStore.pWin);
   let gameFinished = $derived(game?.phase === 7);
   // "Opponent is thinking" indicator gate: a live game where I'm playing and the
   // top (opponent) seat is a (possibly slow) agent. ThinkingIndicator applies
@@ -938,11 +938,13 @@
         />
         <div class="eval-graph-dock">
           <EvalGraph
-            points={evalStore.replayCurve}
+            myPoints={evalStore.curveForSeat(viewIndex)}
+            oppPoints={evalStore.curveForSeat(oppIndex)}
             stateCount={replayStore.replay.stateCount}
             currentStateIndex={replayStateIndex}
             seek={(index) => replayStore.setStateIndex(index)}
             myName={bottomPlayer?.name ?? 'You'}
+            oppName={topPlayer?.name ?? 'Opponent'}
             loading={evalStore.replayLoading}
           />
         </div>

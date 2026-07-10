@@ -118,6 +118,12 @@ export class LocalEngineController {
   private sessionId = '';
   private decisionSeq = 0;
   private replayFrames: CabtObservation[] = [];
+  // The pre-conceal (raw) observations, one per replay frame. Each carries the
+  // ACTING seat's own hidden info (its hand), which the normalizer hides in
+  // replayFrames for a human game. Persisted as `rawVisualize` so the replay
+  // eval graph can score BOTH seats' own-view lines (the seat-1 line needs
+  // seat 1's hand, absent from the concealed playback frames).
+  private rawFrames: CabtObservation[] = [];
   private replayPlayerLabels: [string, string] = ['Player 1', 'Player 2'];
   private replayModeLabel = 'Self vs Agent';
   private playerControls: [PlayerControl, PlayerControl] = ['self', 'agent'];
@@ -166,6 +172,9 @@ export class LocalEngineController {
     const name = `Local ${this.replayModeLabel} ${created.toLocaleString()}`;
     const replay = {
       visualize: this.replayFrames,
+      // Raw (pre-conceal) frames for both-seat eval — playback still uses the
+      // concealed `visualize`; this only feeds the value head.
+      rawVisualize: this.rawFrames,
       // Persist both seats' decks so the replay eval graph can rebuild the
       // deck-conditioned observation encoding losslessly (a single observation
       // can't recover the full deck — prizes/deck stay hidden).
@@ -263,6 +272,7 @@ export class LocalEngineController {
     this.lastNewLogs = [];
     this.pendingSequence = [];
     this.replayFrames = [];
+    this.rawFrames = [];
     this.playerControls = playerControls;
     this.replayModeLabel = `${controlLabel(playerControls[0])} vs ${controlLabel(playerControls[1])}`;
     this.replayPlayerLabels = [
@@ -376,6 +386,7 @@ export class LocalEngineController {
       this.lastNewLogs = newLogs;
       this.observation = observation;
       this.replayFrames.push(observation);
+      this.rawFrames.push(observations[index]);
       if (!stepLogs.length) {
         continue;
       }
@@ -445,6 +456,7 @@ export class LocalEngineController {
     this.lastNewLogs = [];
     this.pendingSequence = [];
     this.replayFrames = [];
+    this.rawFrames = [];
     this.decks = [[], []];
     this.logs = [...this.logs, { id: this.logId++, message }];
   }

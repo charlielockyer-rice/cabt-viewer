@@ -16,8 +16,12 @@ class EvalStore {
   // Whether the sidecar answered at all this game (used to hide the bar when
   // the evaluator isn't running, rather than showing a stale/blank rail).
   live = $state(false);
-  // The replay value curve: one point per decision state of the tracked seat.
-  replayCurve = $state<EvalPoint[]>([]);
+  // Replay value curves, one per SEAT (index = seat). Each holds one point per
+  // that seat's own decision state; the two lines interleave on the timeline and
+  // their divergence is the information asymmetry. Both honest when the replay
+  // carries raw/omniscient frames (each acting seat's own hand); otherwise the
+  // opponent line is empty/degraded.
+  replayCurves = $state<[EvalPoint[], EvalPoint[]]>([[], []]);
   replayLoading = $state(false);
 
   private liveToken = 0;
@@ -31,7 +35,7 @@ class EvalStore {
 
   clearReplay(): void {
     this.replayToken += 1;
-    this.replayCurve = [];
+    this.replayCurves = [[], []];
     this.replayLoading = false;
   }
 
@@ -55,34 +59,43 @@ class EvalStore {
     }
   }
 
+  // Score BOTH seats' own-view lines over the episode (each seat's frames are
+  // filtered server-side to that seat's decisions). Two batch calls in parallel.
   async loadReplayCurve(
     frames: Array<{ current: unknown; select: unknown; stateIndex: number }>,
-    seat: number,
-    deck: number[],
+    decks: number[][],
   ): Promise<void> {
     const token = ++this.replayToken;
     this.replayLoading = true;
-    this.replayCurve = [];
-    const result = await postJson<ReplayEvalResponse>('/local-engine/eval-replay', { frames, seat, deck });
+    this.replayCurves = [[], []];
+    const [a, b] = await Promise.all([
+      postJson<ReplayEvalResponse>('/local-engine/eval-replay', { frames, seat: 0, deck: decks[0] ?? [] }),
+      postJson<ReplayEvalResponse>('/local-engine/eval-replay', { frames, seat: 1, deck: decks[1] ?? [] }),
+    ]);
     if (token !== this.replayToken) {
       return;
     }
-    this.replayCurve = result?.points ?? [];
+    this.replayCurves = [a?.points ?? [], b?.points ?? []];
     this.replayLoading = false;
   }
 
-  // Nearest curve point at or before a state index — for the replay bar to
-  // track the scrubber even between decision states.
-  pWinAtState(stateIndex: number): number | null {
+  curveForSeat(seat: number): EvalPoint[] {
+    return this.replayCurves[seat] ?? [];
+  }
+
+  // Nearest curve point at or before a state index for one seat — lets the bar
+  // track the scrubber even between that seat's decision states.
+  pWinAtState(stateIndex: number, seat: number): number | null {
+    const curve = this.replayCurves[seat] ?? [];
     let best: number | null = null;
-    for (const point of this.replayCurve) {
+    for (const point of curve) {
       if (point.stateIndex <= stateIndex) {
         best = point.pWin;
       } else {
         break;
       }
     }
-    return best ?? this.replayCurve[0]?.pWin ?? null;
+    return best ?? curve[0]?.pWin ?? null;
   }
 }
 
