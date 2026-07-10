@@ -1,6 +1,11 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { cabtReplayToSnapshot } from './cabtReplay';
 import { CabtAreaType } from './types';
+
+const here = dirname(fileURLToPath(import.meta.url));
 
 describe('cabtReplayToSnapshot', () => {
   it('loads top-level Kaggle episode JSON from the public archive datasets', () => {
@@ -3168,6 +3173,92 @@ describe('cabtReplayToSnapshot', () => {
     expect(snapshot.steps.map((step) => step.type)).toEqual(['TurnEnd', 'TurnStart']);
     expect(snapshot.steps[0].actionTimeline?.[0]).toEqual(expect.objectContaining({ kind: 'TurnEnd' }));
     expect(snapshot.steps[1].actionTimeline?.map((event) => event.kind)).toEqual(['TurnStart', 'Draw']);
+  });
+
+  it('flags a TurnEnd for the Pass announce when the ending turn never attacked', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        logs: [
+          { type: 'TurnEnd', playerIndex: 0 },
+          { type: 'TurnStart', playerIndex: 1 },
+          { type: 'Draw', playerIndex: 1, cardId: 3, serial: 12 },
+        ],
+        current: {
+          turn: 3,
+          yourIndex: 1,
+          result: -1,
+          players: [{
+            active: [], bench: [], benchMax: 5, handCount: 0, deckCount: 10, prize: [],
+          }, {
+            active: [], bench: [], benchMax: 5, handCount: 1, deckCount: 9, prize: [],
+          }],
+        },
+      }],
+    });
+
+    const turnEndEvent = snapshot.steps.find((step) => step.type === 'TurnEnd')?.actionTimeline?.[0];
+    expect(turnEndEvent).toEqual(expect.objectContaining({ kind: 'TurnEnd' }));
+    expect((turnEndEvent?.params as Record<string, unknown>).passAnnounce).toBe(true);
+  });
+
+  it('gives the Pass-flagged TurnEnd its own animation beat with dwell time (not a phaseless flash)', () => {
+    // Real game (committed fixture) — a TurnEnd with a real prior turn view, so
+    // the beat actually projects. A phaseless (0ms) Pass step would flash the
+    // bubble by on auto-play; this guards the mark-before-build ordering AND the
+    // Pass dedicated-view carve-out (a lone announce phase is otherwise collapsed
+    // by groupedStepAnimationPhases).
+    const log = JSON.parse(readFileSync(resolve(here, '../../../public/game-logs/cabt-match.json'), 'utf8'));
+    const snapshot = cabtReplayToSnapshot(log);
+    const passSteps = snapshot.steps.filter((step) =>
+      (step.actionTimeline ?? []).some((event) =>
+        event.kind === 'TurnEnd' && (event.params as Record<string, unknown> | undefined)?.passAnnounce));
+    expect(passSteps.length).toBeGreaterThan(0);
+    for (const step of passSteps) {
+      const phases = step.animationPhases ?? [];
+      expect(phases.some((phase) => phase.key.startsWith('Pass:'))).toBe(true);
+      expect(phases.reduce((sum, phase) => sum + phase.durationMs, 0)).toBeGreaterThan(0);
+    }
+  });
+
+  it('does not flag a TurnEnd for the Pass announce when the turn ended via an attack (no double-announce)', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 2,
+          yourIndex: 1,
+          result: -1,
+          players: [{
+            active: [{ id: 722, serial: 10, hp: 70, maxHp: 70 }], bench: [], benchMax: 5, handCount: 6, deckCount: 45, prize: [],
+          }, {
+            active: [{ id: 721, serial: 20, hp: 150, maxHp: 150 }], bench: [], benchMax: 5, handCount: 6, deckCount: 43, prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'Attack', playerIndex: 1, cardId: 721, serial: 20, attackId: 1042 },
+          { type: 'HpChange', playerIndex: 0, cardId: 722, serial: 10, value: -30 },
+          { type: 'TurnEnd', playerIndex: 1 },
+          { type: 'TurnStart', playerIndex: 0 },
+          { type: 'Draw', playerIndex: 0, cardId: 723, serial: 30 },
+        ],
+        current: {
+          turn: 3,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [{ id: 722, serial: 10, hp: 40, maxHp: 70 }], bench: [], benchMax: 5,
+            hand: [{ id: 1 }, { id: 1 }, { id: 1 }, { id: 1 }, { id: 1 }, { id: 1 }, { id: 723 }],
+            handCount: 7, deckCount: 44, prize: [],
+          }, {
+            active: [{ id: 721, serial: 20, hp: 150, maxHp: 150 }], bench: [], benchMax: 5, handCount: 6, deckCount: 43, prize: [],
+          }],
+        },
+      }],
+    });
+
+    const turnEndEvent = snapshot.steps.find((step) => step.type === 'TurnEnd')?.actionTimeline?.[0];
+    expect(turnEndEvent).toEqual(expect.objectContaining({ kind: 'TurnEnd' }));
+    expect((turnEndEvent?.params as Record<string, unknown> | undefined)?.passAnnounce).toBeFalsy();
   });
 
   it('does not show a later turn-start draw on an earlier attack step from the same frame', () => {

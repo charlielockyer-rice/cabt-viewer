@@ -4,7 +4,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { cabtObservationToGameView, projectDecision, type CabtDataMaps } from '../lib/cabt/cabtProjection';
-import { stepAnimationPhases } from '../lib/cabt/cabtReplay';
+import { markPassAnnounceEvents, stepAnimationPhases } from '../lib/cabt/cabtReplay';
 import { cabtLogsToTimeline } from '../lib/cabt/logFormat';
 import { LiveObservationNormalizer, logsWithSynthesizedAnnounce } from './liveSteps';
 import { workspaceAgentPath } from './workspaceAgents';
@@ -114,6 +114,11 @@ export class LocalEngineController {
   private timelineId = 1;
   private normalizer = new LiveObservationNormalizer();
   private lastNewLogs: Array<Record<string, unknown>> = [];
+  // Carries "did the current turn attack yet" across observations/selects, so
+  // a TurnEnd reached without ever attacking (explicit pass, forced pass, an
+  // effect ending the turn) gets flagged for the Pass announce — see
+  // markPassAnnounceEvents in cabtReplay.ts, the rule shared with replay.
+  private passAnnounceState = { attackedThisTurn: false };
   private pendingSequence: GameView[] = [];
   private sessionId = '';
   private decisionSeq = 0;
@@ -332,6 +337,7 @@ export class LocalEngineController {
     this.timelineId = 1;
     this.normalizer = new LiveObservationNormalizer(concealedSeats(playerControls));
     this.lastNewLogs = [];
+    this.passAnnounceState = { attackedThisTurn: false };
     this.pendingSequence = [];
     this.replayFrames = [];
     this.rawFrames = [];
@@ -466,6 +472,7 @@ export class LocalEngineController {
       // still standing for its knock-out, both switchers at their source
       // slots for a retreat). One live step per phase.
       const step = this.buildStep(observation, stepLogs);
+      markPassAnnounceEvents(step.actionTimeline ?? [], this.passAnnounceState);
       const previousView = previousObservation
         ? {
             ...cabtObservationToGameView(previousObservation, this.logs, this.dataMaps, []),
@@ -523,6 +530,7 @@ export class LocalEngineController {
     this.timelineId = 1;
     this.normalizer = new LiveObservationNormalizer();
     this.lastNewLogs = [];
+    this.passAnnounceState = { attackedThisTurn: false };
     this.pendingSequence = [];
     this.replayFrames = [];
     this.rawFrames = [];

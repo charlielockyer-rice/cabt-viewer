@@ -172,6 +172,10 @@ export function choreograph(
       effects.push(...announceEffects(event, events));
       continue;
     }
+    if (event.kind === 'TurnEnd') {
+      effects.push(...passAnnounceEffects(event, events));
+      continue;
+    }
     if (event.kind === 'HPChange') {
       const result = damageChoreography(event, events, context);
       motions.push(...result.motions);
@@ -255,6 +259,31 @@ function announceEffects(event: ActionTimelineEvent, batch: ActionTimelineEvent[
     label: announceLabel(event),
     startMs: actionAnimationStartMs(batch, event),
     durationMs: attack ? actionAnimationTiming.attackAnnounceMs : actionAnimationTiming.abilityAnnounceMs,
+  }];
+}
+
+// A turn that ended without an attack (explicit pass, forced pass with no
+// legal actions, or an effect that ended the turn) gets the SAME bubble an
+// attack announces, just relabeled "Pass" — reusing 'announce-attack' means
+// zero new render/CSS surface. Marked upstream (cabtReplay.ts / localEngine.ts)
+// on the TurnEnd event's own params, so this stays a pure read of the flag.
+// Always anchors to the active slot: a turn boundary has no card identity of
+// its own (unlike an attack/ability, which may resolve one from a played card).
+function passAnnounceEffects(event: ActionTimelineEvent, batch: ActionTimelineEvent[]): TargetEffect[] {
+  const params = eventParams(event);
+  const player = event.playerIndex;
+  if (player === undefined || !params.passAnnounce) {
+    return [];
+  }
+  return [{
+    id: `${event.id}-announce`,
+    kind: 'announce-attack',
+    anchor: { kind: 'slot', player, slot: 'active', index: 0 },
+    player,
+    order: 0,
+    label: 'Pass',
+    startMs: actionAnimationStartMs(batch, event),
+    durationMs: actionAnimationTiming.attackAnnounceMs,
   }];
 }
 

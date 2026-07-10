@@ -274,6 +274,113 @@ describe('LocalEngineController', () => {
     expect(response.sequence[drawBeatIndex].turn).toBe(4);
   });
 
+  it('does not flag the TurnEnd for a Pass announce when the turn ended via an attack (no double-announce)', () => {
+    // Same bundled shape as the Task 5 test above ([Attack, HPChange, TurnEnd,
+    // TurnStart, Draw] in one observation) — the attack already punctuates the
+    // turn, so the TurnEnd here must NOT carry the Pass-announce flag.
+    const engine = new LocalEngineController() as any;
+    const preState = currentState({
+      turn: 3,
+      yourIndex: 1,
+      players: [
+        playerState({ hand: [{ id: 50, serial: 100 }], handCount: 1, deckCount: 40, active: [{ id: 10, serial: 5, hp: 100, maxHp: 100 }] }),
+        playerState({ hand: null, handCount: 4, active: [{ id: 20, serial: 6, hp: 70, maxHp: 70 }] }),
+      ],
+    });
+    const endState = currentState({
+      turn: 4,
+      yourIndex: 0,
+      players: [
+        playerState({ hand: [{ id: 50, serial: 100 }, { id: 60, serial: 200 }], handCount: 2, deckCount: 39, active: [{ id: 10, serial: 5, hp: 80, maxHp: 100 }] }),
+        playerState({ hand: null, handCount: 4, active: [{ id: 20, serial: 6, hp: 70, maxHp: 70 }] }),
+      ],
+    });
+    engine.observation = { select: null, logs: [], current: preState };
+    engine.dataMaps = { cardData: {}, attacks: {} };
+
+    engine.applyBridgeResponse({
+      ok: true,
+      id: 1,
+      observation: {
+        select: null,
+        logs: [
+          { type: CabtLogType.ATTACK, playerIndex: 1, cardId: 20, serial: 6, attackId: 323 },
+          { type: CabtLogType.HP_CHANGE, playerIndex: 0, cardId: 10, serial: 5, value: -20 },
+          { type: CabtLogType.TURN_END, playerIndex: 1 },
+          { type: CabtLogType.TURN_START, playerIndex: 0 },
+          { type: CabtLogType.DRAW, playerIndex: 0, cardId: 60, serial: 200 },
+        ],
+        current: endState,
+      },
+    });
+
+    const response = engine.viewResponse();
+    expect(response.ok).toBe(true);
+    if (!response.ok || !response.sequence) return;
+
+    const turnEndBeat = response.sequence.find((view: any) =>
+      (view.actionTimeline ?? []).some((event: any) => event.kind === 'TurnEnd'));
+    expect(turnEndBeat).toBeTruthy();
+    const turnEndEvent = turnEndBeat.actionTimeline.find((event: any) => event.kind === 'TurnEnd');
+    expect(turnEndEvent.params?.passAnnounce).toBeFalsy();
+  });
+
+  it('flags a bundled TurnEnd for the Pass announce when the turn ends without an attack', () => {
+    // Same bundled shape, but the turn had no Attack event: an explicit pass,
+    // a forced pass with no legal actions, or an effect ending the turn all
+    // look identical here — no Attack happened, so the TurnEnd is flagged.
+    const engine = new LocalEngineController() as any;
+    const preState = currentState({
+      turn: 3,
+      yourIndex: 1,
+      players: [
+        playerState({ hand: [{ id: 50, serial: 100 }], handCount: 1, deckCount: 40, active: [{ id: 10, serial: 5, hp: 100, maxHp: 100 }] }),
+        playerState({ hand: null, handCount: 4, active: [{ id: 20, serial: 6, hp: 70, maxHp: 70 }] }),
+      ],
+    });
+    const endState = currentState({
+      turn: 4,
+      yourIndex: 0,
+      players: [
+        playerState({ hand: [{ id: 50, serial: 100 }, { id: 60, serial: 200 }], handCount: 2, deckCount: 39, active: [{ id: 10, serial: 5, hp: 100, maxHp: 100 }] }),
+        playerState({ hand: null, handCount: 4, active: [{ id: 20, serial: 6, hp: 70, maxHp: 70 }] }),
+      ],
+    });
+    engine.observation = { select: null, logs: [], current: preState };
+    engine.dataMaps = { cardData: {}, attacks: {} };
+
+    engine.applyBridgeResponse({
+      ok: true,
+      id: 1,
+      observation: {
+        select: null,
+        logs: [
+          { type: CabtLogType.TURN_END, playerIndex: 1 },
+          { type: CabtLogType.TURN_START, playerIndex: 0 },
+          { type: CabtLogType.DRAW, playerIndex: 0, cardId: 60, serial: 200 },
+        ],
+        current: endState,
+      },
+    });
+
+    const response = engine.viewResponse();
+    expect(response.ok).toBe(true);
+    if (!response.ok || !response.sequence) return;
+
+    // The TurnEnd must survive as its own beat (not silently dropped when
+    // bundled with the following turn-start draw) and carry the flag.
+    const turnEndBeat = response.sequence.find((view: any) =>
+      (view.actionTimeline ?? []).some((event: any) => event.kind === 'TurnEnd'));
+    expect(turnEndBeat).toBeTruthy();
+    const turnEndEvent = turnEndBeat.actionTimeline.find((event: any) => event.kind === 'TurnEnd');
+    expect(turnEndEvent.params?.passAnnounce).toBe(true);
+
+    // It stays distinct from the new turn's draw beat (its own scrubbable step).
+    const drawBeat = response.sequence.find((view: any) =>
+      (view.actionTimeline ?? []).some((event: any) => event.kind === 'Draw'));
+    expect(drawBeat).not.toBe(turnEndBeat);
+  });
+
   it('splits a KO-promotion-plus-turn-boundary batch so promotion and draw are distinct beats (Task 7)', () => {
     // Real shape from ep84924975 frame 95: after a KO and prize take (earlier
     // frames), one observation carries [MoveCard BENCH->ACTIVE (promotion),

@@ -215,6 +215,32 @@ function splitAtTurnStart(events: ActionTimelineEvent[]): ActionTimelineEvent[][
   return segments;
 }
 
+// A turn that ends without ever attacking (an explicit pass, a forced pass
+// with no legal actions, or an effect that ends the turn) gets a "Pass"
+// announce bubble over the ending player's active slot — the SAME bubble
+// machinery an attack uses (motions.ts), just relabeled. It rides the
+// existing (forced) TurnEnd step rather than inserting a new one: that step
+// is already where the follow-active side switch to the next player happens
+// (replayFollow.ts reads the TurnEnd event to flip), so the bubble lands
+// right at that boundary with zero new scrubbable steps — the byte-identical
+// step stream is untouched. The flag rides the TurnEnd event's own params so
+// motions.ts stays a pure function of the event stream; both replay (below)
+// and live (localEngine.ts) funnel through this one rule.
+export function markPassAnnounceEvents(events: ActionTimelineEvent[], state: { attackedThisTurn: boolean }): void {
+  for (const event of events) {
+    if (event.kind === 'TurnStart') {
+      state.attackedThisTurn = false;
+    } else if (event.kind === 'Attack') {
+      state.attackedThisTurn = true;
+    } else if (event.kind === 'TurnEnd' && !state.attackedThisTurn) {
+      const params = event.params as Record<string, unknown> | undefined;
+      if (params) {
+        params.passAnnounce = true;
+      }
+    }
+  }
+}
+
 export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
   const visualFrames = extractVisualizeFrames(input);
   if (!visualFrames.length) {
@@ -242,6 +268,19 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
     const groups = replayActionGroups(timeline.events, frame.current.turn);
     frameEntries.push({ frame, view, groups });
   });
+
+  // Flag pass-ending TurnEnds BEFORE buildDecisionSteps so the gated `Pass:`
+  // animationPhaseKey fires while the phases are built — otherwise the flagged
+  // TurnEnd step is phaseless and the bubble gets no dwell time on auto-play.
+  // These are the same event objects the steps reference, walked in frame order
+  // so the per-turn "did we attack" state threads correctly (mirrors live,
+  // which marks each step before its phases are built).
+  const passAnnounceState = { attackedThisTurn: false };
+  for (const entry of frameEntries) {
+    for (const group of entry.groups) {
+      markPassAnnounceEvents(group.events, passAnnounceState);
+    }
+  }
 
   const steps = buildDecisionSteps(frameEntries, views);
 
@@ -1459,6 +1498,16 @@ function animationPhaseKey(event: ActionTimelineEvent): string | null {
   if (event.kind === 'Ability') {
     return `Ability:${playerKey}`;
   }
+  // A TurnEnd only earns its own phase key when it's flagged for the Pass
+  // announce (markPassAnnounceEvents) — an ordinary TurnEnd (a turn that
+  // ended via an attack) keeps NO key, so it silently rides the previous
+  // phase's events as before. This narrow key exists solely so a bundled
+  // live observation (TurnEnd+TurnStart+Draw in one batch) doesn't drop the
+  // Pass-flagged TurnEnd when segmenting at the turn boundary — see
+  // stepAnimationPhases' single-phase-segment fallback.
+  if (event.kind === 'TurnEnd') {
+    return (params?.passAnnounce ? `Pass:${playerKey}` : null);
+  }
   if (event.kind === 'Switch') {
     return `BoardMove:${playerKey}`;
   }
@@ -1542,6 +1591,7 @@ function animationPhaseNeedsDedicatedView(phase: AnimationEventPhase): boolean {
   return phase.key.startsWith('Evolve:')
     || phase.key.startsWith('Ability:')
     || phase.key.startsWith('Attack:')
+    || phase.key.startsWith('Pass:')
     || phase.key.startsWith('Damage:')
     || phase.key.startsWith('KnockOut:')
     || phase.key.startsWith('BoardToDeck:')
@@ -1852,6 +1902,9 @@ function animationPhaseCardDurationMs(key: string): number {
   if (key.startsWith('Ability:')) {
     return actionAnimationTiming.abilityAnnounceMs;
   }
+  if (key.startsWith('Pass:')) {
+    return actionAnimationTiming.attackAnnounceMs;
+  }
   if (key.startsWith('Damage:')) {
     return actionAnimationTiming.damageMs;
   }
@@ -1909,6 +1962,9 @@ function animationPhaseStepMs(key: string): number {
   }
   if (key.startsWith('Ability:')) {
     return actionAnimationTiming.abilityAnnounceMs;
+  }
+  if (key.startsWith('Pass:')) {
+    return actionAnimationTiming.attackAnnounceMs;
   }
   if (key.startsWith('Damage:')) {
     return 0;

@@ -465,3 +465,25 @@ describe('attack announce robustness', () => {
     expect(effects.find((effect) => effect.kind === 'announce-ability')).toBeUndefined();
   });
 });
+
+describe('pass announce', () => {
+  it('announces "Pass" over the ending player\'s active slot when the TurnEnd is flagged', () => {
+    // The flag is set upstream (cabtReplay.ts / localEngine.ts) on a TurnEnd
+    // event whose turn never attacked; motions.ts just reads it.
+    const { effects } = choreograph([
+      { id: 903, message: 'Player 2 ended their turn.', playerIndex: 1, kind: 'TurnEnd', params: { passAnnounce: true } },
+    ], [player(0), player(1)]);
+    const announce = effects.find((effect) => effect.kind === 'announce-attack');
+    expect(announce).toBeTruthy();
+    expect(announce!.anchor).toEqual({ kind: 'slot', player: 1, slot: 'active', index: 0 });
+    expect(announce!.label).toBe('Pass');
+    expect(announce!.durationMs).toBe(actionAnimationTiming.attackAnnounceMs);
+  });
+
+  it('does not announce a Pass when the turn ended via an attack (no flag, no double-announce)', () => {
+    const { effects } = choreograph([
+      { id: 904, message: 'Player 2 ended their turn.', playerIndex: 1, kind: 'TurnEnd', params: {} },
+    ], [player(0), player(1)]);
+    expect(effects).toHaveLength(0);
+  });
+});
