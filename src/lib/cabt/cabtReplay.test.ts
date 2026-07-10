@@ -4271,7 +4271,7 @@ describe('cabtReplayToSnapshot', () => {
     expect(snapshot.views[step.stateIndex].players[0].discard.map((card) => card.serial)).toEqual([91]);
   });
 
-  it('holds the source board while a benched Pokemon is promoted active', () => {
+  it('vacates the promoted Pokemon from the bench at promotion-flight launch', () => {
     const snapshot = cabtReplayToSnapshot({
       visualize: [{
         current: {
@@ -4323,10 +4323,65 @@ describe('cabtReplayToSnapshot', () => {
 
     const step = snapshot.steps[1];
     expect(step.animationPhases?.map((phase) => phase.key)).toEqual(['BoardMove:1']);
-    expect(step.animationPhases?.[0].view.players[1].bench[0].pokemon?.serial).toBe(67);
+    // The bench source view is already settled while the promotion sprite is in
+    // flight: the promoted Pokemon has left the bench (so the surviving bench
+    // re-centers DURING the flight, not after it lands) and the active is empty.
+    expect(step.animationPhases?.[0].view.players[1].bench.some((slot) => slot.pokemon?.serial === 67)).toBe(false);
+    expect(step.animationPhases?.[0].view.players[1].bench.every((slot) => slot.empty)).toBe(true);
     expect(step.animationPhases?.[0].view.players[1].active.empty).toBe(true);
     expect(snapshot.views[step.stateIndex].players[1].active.pokemon?.serial).toBe(67);
     expect(snapshot.views[step.stateIndex].players[1].bench.some((slot) => slot.pokemon?.serial === 67)).toBe(false);
+  });
+
+  it('compacts the surviving bench in the promotion source view (mid-bench promotion)', () => {
+    // The single-card-bench fixtures above only prove the promoted card is gone;
+    // this pins the actual fix: promoting a MID-bench Pokemon leaves the source
+    // view with the survivors already compacted (the vacated slot removed, later
+    // survivors index-shifted forward) so the #28 bench FLIP re-centers DURING
+    // the ~520ms flight, not after the card lands. Mirrors ep84924975's
+    // [20,21,22] -> [20,22] shape.
+    const left = { id: 720, serial: 20, hp: 90, maxHp: 90 };
+    const promoted = { id: 721, serial: 21, hp: 90, maxHp: 90 };
+    const right = { id: 722, serial: 22, hp: 90, maxHp: 90 };
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        current: {
+          turn: 4,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [], bench: [], benchMax: 5, handCount: 0, deckCount: 45, prize: [],
+          }, {
+            active: [], bench: [left, promoted, right], benchMax: 5, handCount: 0, deckCount: 46, prize: [],
+          }],
+        },
+      }, {
+        logs: [
+          { type: 'MoveCard', playerIndex: 1, cardId: 721, serial: 21, fromArea: CabtAreaType.BENCH, toArea: CabtAreaType.ACTIVE },
+        ],
+        current: {
+          turn: 4,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [], bench: [], benchMax: 5, handCount: 0, deckCount: 45, prize: [],
+          }, {
+            active: [promoted], bench: [left, right], benchMax: 5, handCount: 0, deckCount: 46, prize: [],
+          }],
+        },
+      }],
+    });
+
+    const promotionPhase = snapshot.steps[1].animationPhases?.[0];
+    expect(promotionPhase?.key).toBe('BoardMove:1');
+    const sourceBench = promotionPhase?.view.players[1].bench ?? [];
+    // Survivors compacted, in order, promoted gone, active empty — the settled bench.
+    expect(sourceBench.filter((slot) => slot.pokemon).map((slot) => slot.pokemon?.serial)).toEqual([20, 22]);
+    expect(sourceBench.some((slot) => slot.pokemon?.serial === 21)).toBe(false);
+    expect(promotionPhase?.view.players[1].active.empty).toBe(true);
+    // The source bench matches the settled board (nothing left to move at landing).
+    const settledBench = snapshot.views[snapshot.steps[1].stateIndex].players[1].bench;
+    expect(settledBench.filter((slot) => slot.pokemon).map((slot) => slot.pokemon?.serial)).toEqual([20, 22]);
   });
 
   it('animates the promotion beat when an ability vacates the active and promotes from the bench in one step', () => {
@@ -4440,9 +4495,11 @@ describe('cabtReplayToSnapshot', () => {
       step.animationPhases?.some((phase) => phase.key.startsWith('BoardMove')));
     expect(abilityStep).toBeDefined();
     const promotionPhase = abilityStep?.animationPhases?.find((phase) => phase.key.startsWith('BoardMove'));
-    // The promotion animates bench(24)->active from an empty-active pre-state.
+    // The promotion animates bench(24)->active from an empty-active pre-state,
+    // with the bench already vacated so the surviving bench re-centers during the
+    // flight rather than after the card lands.
     expect(promotionPhase?.view.players[0].active.empty).toBe(true);
-    expect(promotionPhase?.view.players[0].bench.some((slot) => slot.pokemon?.serial === 24)).toBe(true);
+    expect(promotionPhase?.view.players[0].bench.some((slot) => slot.pokemon?.serial === 24)).toBe(false);
     // Every phase up to and including the promotion keeps the active empty after
     // the vacate — the promoted Pokemon never appears before its own beat.
     const boardMoveIndex = abilityStep?.animationPhases?.findIndex((phase) => phase.key.startsWith('BoardMove')) ?? -1;

@@ -1580,7 +1580,7 @@ function animationSourceViewForPhase(
     return projectedViewForEvents(phaseStartView, currentView, phase.events, { deferMoveCardEvents: true });
   }
   if (phase.key.startsWith('BoardMove:')) {
-    return boardMoveSourceView(
+    const source = boardMoveSourceView(
       projectedViewForEvents(phaseStartView, currentView, phase.events, {
         deferBoardStateEvents: true,
         deferMoveCardEvents: true,
@@ -1588,6 +1588,16 @@ function animationSourceViewForPhase(
       phaseStartView,
       currentView,
     );
+    // A composition-changing promotion (a bench Pokemon moves into an empty
+    // active spot, with no reciprocal active->bench in the phase) vacates its
+    // bench slot at flight LAUNCH so the surviving bench re-centers DURING the
+    // ~520ms flight — one settle beat, not the two-stage "card lands, then the
+    // bench slides" compression Charlie flagged (#34). A swap (retreat, Boss's
+    // Orders, Teleport) keeps both cards at their source slots so the crossing
+    // animates and the bench composition is unchanged — left untouched. The anim
+    // layer's board-move sprite must snapshot the source rect before this view
+    // vacates the slot; that companion lives in BoardAnimationLayer.
+    return isPromotionVacatePhase(phase) ? benchVacatedForPromotion(source, phase) : source;
   }
   if (phase.key.startsWith('AttachedMove:')) {
     return projectedViewForEvents(phaseStartView, currentView, phase.events, { deferMoveCardEvents: true });
@@ -1596,6 +1606,92 @@ function animationSourceViewForPhase(
     return projectedViewForEvents(phaseStartView, currentView, phase.events, { deferMoveCardEvents: true });
   }
   return phaseStartView;
+}
+
+// True when a BoardMove phase promotes a bench Pokemon into an empty active spot
+// with no reciprocal active->bench move — i.e. the bench shrinks (a KO or
+// ability-vacate promotion), as opposed to a swap (retreat / Boss's Orders /
+// Teleport) where a card returns to the bench and its composition is unchanged.
+// A BoardMove phase batches only same-player board-position moves, so this reads
+// the whole phase without grouping by owner.
+function isPromotionVacatePhase(phase: AnimationEventPhase): boolean {
+  let promotes = false;
+  for (const event of phase.events) {
+    if (!isMoveCardKind(event.kind)) {
+      continue;
+    }
+    const params = event.params as Record<string, unknown> | undefined;
+    const fromArea = Number(params?.fromArea);
+    const toArea = Number(params?.toArea);
+    if (fromArea === CabtAreaType.ACTIVE && toArea === CabtAreaType.BENCH) {
+      return false;
+    }
+    if (fromArea === CabtAreaType.BENCH && toArea === CabtAreaType.ACTIVE) {
+      promotes = true;
+    }
+  }
+  return promotes;
+}
+
+// Remove the promoted Pokemon from the bench of a promotion source view so the
+// surviving bench is already compacted (occupied slots forward, empties back) —
+// the settled bench, shown while the promotion sprite is still in flight. The
+// phase's currentView predates the promotion frame, so the promoted card can't
+// be dropped by copying the end-state bench (it is still on it there); it is
+// removed explicitly by the serial(s) the BENCH->ACTIVE move(s) name.
+function benchVacatedForPromotion(view: GameView, phase: AnimationEventPhase): GameView {
+  const promotedByPlayer = new Map<number, Set<number>>();
+  for (const event of phase.events) {
+    const params = event.params as Record<string, unknown> | undefined;
+    if (!isMoveCardKind(event.kind)
+      || Number(params?.fromArea) !== CabtAreaType.BENCH
+      || Number(params?.toArea) !== CabtAreaType.ACTIVE) {
+      continue;
+    }
+    const serial = Number(params?.serial);
+    if (event.playerIndex === undefined || !Number.isFinite(serial)) {
+      continue;
+    }
+    const serials = promotedByPlayer.get(event.playerIndex) ?? new Set<number>();
+    serials.add(serial);
+    promotedByPlayer.set(event.playerIndex, serials);
+  }
+  if (!promotedByPlayer.size) {
+    return view;
+  }
+  return {
+    ...view,
+    players: view.players.map((player, playerIndex) => {
+      const promoted = promotedByPlayer.get(playerIndex);
+      if (!promoted) {
+        return player;
+      }
+      const isPromoted = (slot: PokemonSlotView) =>
+        slot.pokemon?.serial !== undefined && promoted.has(slot.pokemon.serial);
+      const occupied = player.bench.filter((slot) => !!slot.pokemon && !isPromoted(slot));
+      const empties = player.bench
+        .filter((slot) => !slot.pokemon || isPromoted(slot))
+        .map((slot) => (isPromoted(slot) ? emptyBenchSlot(slot) : slot));
+      return { ...player, bench: [...occupied, ...empties] };
+    }),
+  };
+}
+
+// A bench slot emptied by a departure, keeping its slot identity so the row
+// renders an empty tile at the back rather than the promoted card.
+function emptyBenchSlot(slot: PokemonSlotView): PokemonSlotView {
+  return {
+    ...slot,
+    empty: true,
+    pokemon: undefined,
+    cards: [],
+    damage: 0,
+    hp: 0,
+    retreat: [],
+    energy: [],
+    tools: [],
+    specialConditions: [],
+  };
 }
 
 function boardMoveSourceView(sourceView: GameView, phaseStartView: GameView, currentView: GameView): GameView {
