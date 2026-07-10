@@ -1,7 +1,7 @@
 <script lang="ts">
   import BoardPerspectiveControls from './BoardPerspectiveControls.svelte';
   import { labelFor } from '../game/labels';
-  import type { ThemePreference } from '../../state/viewSettings.svelte';
+  import { viewSettingsStore, type ThemePreference } from '../../state/viewSettings.svelte';
 
   type Props = {
     boardTilt: number;
@@ -64,6 +64,21 @@
     <input type="checkbox" bind:checked={followActive} />
     Follow active player
   </label>
+  <span class="seat-switch" role="group" aria-label="Side switch transition">
+    Side switch:
+    <button
+      type="button"
+      class:active={viewSettingsStore.seatTransition === 'flip'}
+      aria-pressed={viewSettingsStore.seatTransition === 'flip'}
+      onclick={() => (viewSettingsStore.seatTransition = 'flip')}
+    >Flip</button>
+    <button
+      type="button"
+      class:active={viewSettingsStore.seatTransition === 'fade'}
+      aria-pressed={viewSettingsStore.seatTransition === 'fade'}
+      onclick={() => (viewSettingsStore.seatTransition = 'fade')}
+    >Fade</button>
+  </span>
   <label>
     <input type="checkbox" bind:checked={debugZones} />
     Debug zones
@@ -150,6 +165,28 @@
     color: var(--button-text);
     font-size: 10px;
     font-weight: 700;
+  }
+
+  .seat-switch {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 1px 5px;
+    color: var(--text-secondary);
+    font-size: 10px;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+
+  .seat-switch button {
+    width: auto;
+    padding: 3px 8px;
+  }
+
+  .seat-switch button.active {
+    border-color: var(--accent-base, #52bca8);
+    background: var(--selection-bg, rgba(82, 188, 168, 0.18));
+    color: var(--text-primary);
   }
 
   .table-toolbar input.compact-number {
