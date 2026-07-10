@@ -37,8 +37,13 @@ function settledViews(snapshot: ReturnType<typeof cabtReplayToSnapshot>): GameVi
   return views;
 }
 
-function plane(): HTMLElement | null {
-  return document.querySelector('.game-board-plane');
+function boardLayer(): HTMLElement | null {
+  return document.querySelector('.board');
+}
+// A hand panel covered by the fade gate (proves the freeze reaches the hands,
+// which live OUTSIDE the board plane as siblings in .board).
+function gatedHandPanel(): Element | null {
+  return document.querySelector('.board[data-seat-fading] .player-panel');
 }
 
 describe('fade side-switch selects the fade path', () => {
@@ -92,7 +97,7 @@ describe('fade side-switch selects the fade path', () => {
     // Asserted synchronously after the flip's flushSync: the WAAPI stub resolves
     // .finished on a microtask, so the lift hasn't run yet either way — in Flip
     // mode the attribute is never set to begin with.
-    expect(plane()?.hasAttribute('data-seat-fading')).toBe(false);
+    expect(boardLayer()?.hasAttribute('data-seat-fading')).toBe(false);
 
     unmount(app!);
     app = undefined;
@@ -102,6 +107,7 @@ describe('fade side-switch selects the fade path', () => {
     viewSettingsStore.seatTransition = 'fade';
     mountAtFrame0(views);
     let armed = false;
+    let handCovered = false;
     let prev = viewSettingsStore.viewIndex;
     for (let i = 1; i <= flipFrame; i += 1) {
       gameStore.game = views[i];
@@ -110,10 +116,13 @@ describe('fade side-switch selects the fade path', () => {
       prev = viewSettingsStore.viewIndex;
       if (flipped) {
         // Must be armed at the instant of the flip, before any microtask lifts it.
-        armed = plane()?.hasAttribute('data-seat-fading') ?? false;
+        armed = boardLayer()?.hasAttribute('data-seat-fading') ?? false;
+        // And the gate must reach the hand panels, not just the board plane.
+        handCovered = gatedHandPanel() !== null;
         break;
       }
     }
-    expect(armed, 'fade mode must set data-seat-fading at the seat flip').toBe(true);
+    expect(armed, 'fade mode must set data-seat-fading on the board layer at the seat flip').toBe(true);
+    expect(handCovered, 'the fade gate must cover the hand panels (outside the board plane)').toBe(true);
   });
 });
