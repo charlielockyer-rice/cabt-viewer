@@ -641,6 +641,36 @@ vacated bench slot at flight LAUNCH (the R4 HandToDeck "leave at launch" pattern
 so the FLIP runs DURING the flight and settles before the card lands — one settle
 beat, not two.
 
+### FIXED (#39) — a two-agent view/anim split (`64a90fd` anim, `bf6b9db` view)
+
+Split along the option-(i) seam: the anim half landed first as a safe no-op, the
+view half completes it.
+- **View half (`bf6b9db`, `cabtReplay.ts`):** the promotion BoardMove phase's
+  source view compacts the promoted Pokemon out of the bench (settled layout,
+  active still empty) via `benchVacatedForPromotion` / `isPromotionVacatePhase`.
+  Gated to a composition-changing promotion — a BENCH→ACTIVE with NO reciprocal
+  ACTIVE→BENCH in the phase — so Switch retreats and MoveCard swaps keep their
+  pre-swap source board untouched. On ep84924975 state 94: source bench
+  `[23,22,14,_,_]` → `[23,14,_,_,_]`.
+- **Anim half (`64a90fd`, `BoardAnimationLayer.svelte`):** a `$effect.pre` snapshots
+  every board Pokemon's card-tile rect keyed by serial, MERGED across views (last
+  known rect per serial). When `resolveAnchor(from)` is null (the vacated slot is
+  gone), `beginBoardMove` flies from `boardMoveSourceRects.get(serial)`; the
+  document-contains guard now requires only the DESTINATION element.
+
+**LOAD-BEARING INVARIANT — do not break by "simplifying" the #29 partition:** the
+anim merge needs the promoted card's rect from a RECENT view. The #29 KO partition
+guarantees it: the promoted renders on the bench through the KnockOut beat AND the
+PrizeTake beat (ep84924975 Actions 72/73) and only leaves the bench in the
+Promotion beat (74), where the vacate+flight happens. Collapsing those beats back
+together, or vacating the promoted earlier than the promotion phase, would evict
+the rect before the sprite launches → the promotion teleports (no flight). The
+#34 fix and the #29 four-beat partition reinforce each other.
+
+Rig-verified on origin (both halves): promotion beat 74, survivors slide DURING the
+~520ms flight (13 frames each), **0 post-landing bench-move frames / 283 sampled**;
+retreat (#26) still 0-overlap. Unit: 320 pass, tsc clean.
+
 ## Fast-scrub artifacts + SCRUB MODE (#36)
 
 **The flip side of the round-4 rule: timer-based cleanup loses to any path that
