@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import { LocalEngineController } from './localEngine';
 import { workspaceAgentDeckFile, workspaceAgentOptions } from './workspaceAgents';
+import { workspaceDeckCsvFile, workspaceDeckOptions } from './workspaceDecks';
 
 const port = Number(process.env.LOCAL_ENGINE_PORT ?? 8095);
 const host = process.env.LOCAL_ENGINE_HOST ?? '127.0.0.1';
@@ -54,6 +55,30 @@ const server = http.createServer(async (req, res) => {
     const deckFile = workspaceAgentDeckFile(id);
     if (!deckFile || !fs.existsSync(deckFile)) {
       writeJson(res, 404, { ok: false, error: `No deck for agent ${id}` });
+      return;
+    }
+    const csv = fs.readFileSync(deckFile, 'utf8');
+    res.writeHead(200, { 'Content-Type': 'text/csv', 'Content-Length': Buffer.byteLength(csv) });
+    res.end(csv);
+    return;
+  }
+
+  // Deck catalog (all Limitless archetypes + Kaggle decks), decoupled from
+  // agents. The picker lists these; a deck's CSV is served by id below.
+  if (req.method === 'GET' && url.pathname === '/local-engine/decks') {
+    try {
+      writeJson(res, 200, { decks: workspaceDeckOptions() });
+    } catch (error) {
+      writeJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname.startsWith('/local-engine/deck-csv/')) {
+    const id = decodeURIComponent(url.pathname.slice('/local-engine/deck-csv/'.length));
+    const deckFile = workspaceDeckCsvFile(id);
+    if (!deckFile || !fs.existsSync(deckFile)) {
+      writeJson(res, 404, { ok: false, error: `No deck ${id}` });
       return;
     }
     const csv = fs.readFileSync(deckFile, 'utf8');

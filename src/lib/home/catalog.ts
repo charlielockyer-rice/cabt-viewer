@@ -3,9 +3,17 @@ export type AgentOption = {
   name: string;
   description?: string;
   path?: string;
-  deckUrl?: string;
-  // Deck-general agent: the paired deck is only a default, not a lock.
-  anyDeck?: boolean;
+  // Rule-based agents may name a catalog deck to SOFT-select when chosen
+  // (never a lock — the picker stays free). General agents have none.
+  preferredDeck?: string;
+};
+
+// A selectable deck in the picker, decoupled from agents. Served by the engine
+// server from CABT_DECKS_FILE (all Limitless archetypes + Kaggle decks).
+export type DeckOption = {
+  id: string;
+  name: string;
+  deckUrl: string;
 };
 
 export type GameLogEntry = {
@@ -41,6 +49,13 @@ export async function loadAgentOptions(): Promise<AgentOption[]> {
 
 export async function loadGameLogs(): Promise<GameLogEntry[]> {
   return loadJsonList<GameLogEntry>('/game-logs/logs.json', 'logs');
+}
+
+// The deck catalog is engine-served only (CABT_DECKS_FILE); a down engine just
+// means an empty picker (the engine is required to play anyway).
+export async function loadDeckOptions(): Promise<DeckOption[]> {
+  const decks = await loadJsonList<DeckOption>('/local-engine/decks', 'decks').catch(() => [] as DeckOption[]);
+  return decks.filter((deck) => typeof deck.deckUrl === 'string' && typeof deck.name === 'string');
 }
 
 async function loadJsonList<T extends { id?: unknown }>(url: string, key: string): Promise<T[]> {

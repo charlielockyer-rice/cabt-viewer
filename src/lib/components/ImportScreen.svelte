@@ -1,6 +1,6 @@
 <script lang="ts">
   import KaggleEpisodeBrowser from './KaggleEpisodeBrowser.svelte';
-  import type { AgentOption, GameLogEntry } from '../home/catalog';
+  import type { AgentOption, DeckOption, GameLogEntry } from '../home/catalog';
   import type { PlayerControl } from '../game/httpClient';
   import type { KaggleEpisodeDay, KaggleEpisodeSummary } from '../kaggle/episodes';
 
@@ -18,11 +18,10 @@
     player1DeckSource: string;
     player2DeckSource: string;
     agents?: AgentOption[];
+    decks?: DeckOption[];
     gameLogs?: GameLogEntry[];
     player1DeckLocked?: boolean;
     player2DeckLocked?: boolean;
-    player1AgentHasPairedDeck?: boolean;
-    player2AgentHasPairedDeck?: boolean;
     busy?: boolean;
     catalogBusy?: boolean;
     error?: string;
@@ -47,11 +46,10 @@
     player1DeckSource = $bindable(),
     player2DeckSource = $bindable(),
     agents = [],
+    decks = [],
     gameLogs = [],
     player1DeckLocked = false,
     player2DeckLocked = false,
-    player1AgentHasPairedDeck = false,
-    player2AgentHasPairedDeck = false,
     busy = false,
     catalogBusy = false,
     error = '',
@@ -66,7 +64,6 @@
   }: Props = $props();
 
   let logSource = $state<LogSource>('kaggle');
-  let deckOptions = $derived(agents.filter((agent) => !!agent.deckUrl));
   let startDisabled = $derived(
     busy
       || (player1Control === 'agent' && !player1AgentId)
@@ -135,12 +132,12 @@
             <span>Deck</span>
             <select
               bind:value={player1DeckSource}
-              disabled={busy || player1AgentHasPairedDeck}
+              disabled={busy}
               aria-label="Player 1 deck"
             >
               <option value="import">Import deck</option>
-              {#each deckOptions as agent}
-                <option value={agent.id}>{agent.name}</option>
+              {#each decks as deck}
+                <option value={deck.id}>{deck.name}</option>
               {/each}
             </select>
           </span>
@@ -194,12 +191,12 @@
             <span>Deck</span>
             <select
               bind:value={player2DeckSource}
-              disabled={busy || player2AgentHasPairedDeck}
+              disabled={busy}
               aria-label="Player 2 deck"
             >
               <option value="import">Import deck</option>
-              {#each deckOptions as agent}
-                <option value={agent.id}>{agent.name}</option>
+              {#each decks as deck}
+                <option value={deck.id}>{deck.name}</option>
               {/each}
             </select>
           </span>

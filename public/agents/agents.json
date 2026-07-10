@@ -8,23 +8,23 @@
     {
       "id": "official-random-abomasnow",
       "name": "Official random sample (Mega Abomasnow)",
-      "description": "Kaggle sample-submission policy: chooses a random legal option with the bundled Mega Abomasnow ex deck.",
+      "description": "Kaggle sample-submission policy: chooses a random legal option. Rule-based — auto-selects its Mega Abomasnow ex deck.",
       "path": "public/agents/official-random-abomasnow/main.py",
-      "deckUrl": "/agents/official-random-abomasnow/deck.csv"
+      "preferredDeck": "kaggle-abomasnow"
     },
     {
       "id": "mega-lucario-ex",
       "name": "Rule-based Mega Lucario ex",
-      "description": "Kaggle notebook sample: rule-based Mega Lucario ex deck that pivots between Lucario, Hariyama, and Solrock.",
+      "description": "Kaggle notebook sample: rule-based Mega Lucario ex that pivots between Lucario, Hariyama, and Solrock. Auto-selects its deck.",
       "path": "public/agents/mega-lucario-ex/main.py",
-      "deckUrl": "/agents/mega-lucario-ex/deck.csv"
+      "preferredDeck": "kaggle-mega-lucario"
     },
     {
       "id": "dragapult-ex",
       "name": "Rule-based Dragapult ex",
-      "description": "Kaggle notebook sample: rule-based Dragapult ex deck focused on early setup and Phantom Dive pressure.",
+      "description": "Kaggle notebook sample: rule-based Dragapult ex focused on early setup and Phantom Dive pressure. Auto-selects its deck.",
       "path": "public/agents/dragapult-ex/main.py",
-      "deckUrl": "/agents/dragapult-ex/deck.csv"
+      "preferredDeck": "kaggle-dragapult"
     }
   ]
 }

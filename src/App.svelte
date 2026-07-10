@@ -42,7 +42,7 @@
     stadiumOption,
   } from './lib/game/decisions';
   import { commitPick, observeDecision, pickTally, runProgress, type EffectRun } from './lib/game/effectSelector';
-  import { loadAgentOptions, loadGameLogs, type AgentOption, type GameLogEntry } from './lib/home/catalog';
+  import { loadAgentOptions, loadDeckOptions, loadGameLogs, type AgentOption, type DeckOption, type GameLogEntry } from './lib/home/catalog';
   import { kaggleEpisodeReplayUrl, type KaggleEpisodeDay, type KaggleEpisodeSummary } from './lib/kaggle/episodes';
   import type { ActionTimelineEvent, BoardSlotRef, DecisionOptionView, PokemonSlotView, PlayerView } from './lib/game/types';
   import { deckImportStore } from './state/deckImport.svelte';
@@ -63,6 +63,7 @@
   let lastKaggleDaySlug = $state(initialSearchParam('kaggleDay'));
   let lastKaggleEpisodeId = $state(initialSearchParam('kaggleEpisode'));
   let agents = $state<AgentOption[]>([]);
+  let decks = $state<DeckOption[]>([]);
   let gameLogs = $state<GameLogEntry[]>([]);
   let player1Control = $state<PlayerControl>('self');
   let player2Control = $state<PlayerControl>('agent');
@@ -122,8 +123,8 @@
   let themePreference = $derived(viewSettingsStore.themePreference);
   let selectedPlayer1Agent = $derived(agents.find((agent) => agent.id === player1AgentId));
   let selectedPlayer2Agent = $derived(agents.find((agent) => agent.id === player2AgentId));
-  let selectedPlayer1Deck = $derived(agents.find((agent) => agent.id === player1DeckSource && agent.deckUrl));
-  let selectedPlayer2Deck = $derived(agents.find((agent) => agent.id === player2DeckSource && agent.deckUrl));
+  let selectedPlayer1Deck = $derived(decks.find((deck) => deck.id === player1DeckSource));
+  let selectedPlayer2Deck = $derived(decks.find((deck) => deck.id === player2DeckSource));
   onMount(() => {
     const stopThemeSync = viewSettingsStore.startThemeSync();
     if (initialSearchParam('debug') === 'clickability') {
@@ -152,34 +153,24 @@
       document.body.classList.remove('logs-home-page');
     };
   });
-  // Locked agents (deck-specific bots) always play their paired deck; anyDeck
-  // agents get it as a default when first selected but the picker stays free.
+  // Agents are UNTIED from decks. A rule agent may name a preferredDeck, which
+  // SOFT-selects that catalog deck once when the agent is chosen (Charlie can
+  // then change it freely). General agents have no preferredDeck, so choosing
+  // one never touches the deck selection.
   let player1DefaultedAgentId = $state('');
   let player2DefaultedAgentId = $state('');
   $effect(() => {
-    if (player1Control !== 'agent' || !selectedPlayer1Agent?.deckUrl) {
-      return;
-    }
-    if (selectedPlayer1Agent.anyDeck) {
-      if (player1DefaultedAgentId !== selectedPlayer1Agent.id) {
-        player1DefaultedAgentId = selectedPlayer1Agent.id;
-        player1DeckSource = selectedPlayer1Agent.id;
-      }
-    } else if (player1DeckSource !== selectedPlayer1Agent.id) {
-      player1DeckSource = selectedPlayer1Agent.id;
+    const agent = player1Control === 'agent' ? selectedPlayer1Agent : undefined;
+    if (agent?.preferredDeck && player1DefaultedAgentId !== agent.id) {
+      player1DefaultedAgentId = agent.id;
+      player1DeckSource = agent.preferredDeck;
     }
   });
   $effect(() => {
-    if (player2Control !== 'agent' || !selectedPlayer2Agent?.deckUrl) {
-      return;
-    }
-    if (selectedPlayer2Agent.anyDeck) {
-      if (player2DefaultedAgentId !== selectedPlayer2Agent.id) {
-        player2DefaultedAgentId = selectedPlayer2Agent.id;
-        player2DeckSource = selectedPlayer2Agent.id;
-      }
-    } else if (player2DeckSource !== selectedPlayer2Agent.id) {
-      player2DeckSource = selectedPlayer2Agent.id;
+    const agent = player2Control === 'agent' ? selectedPlayer2Agent : undefined;
+    if (agent?.preferredDeck && player2DefaultedAgentId !== agent.id) {
+      player2DefaultedAgentId = agent.id;
+      player2DeckSource = agent.preferredDeck;
     }
   });
   $effect(() => {
@@ -394,8 +385,9 @@
     catalogBusy = true;
     catalogError = '';
     try {
-      const [nextAgents, nextLogs] = await Promise.all([loadAgentOptions(), loadGameLogs()]);
+      const [nextAgents, nextDecks, nextLogs] = await Promise.all([loadAgentOptions(), loadDeckOptions(), loadGameLogs()]);
       agents = nextAgents;
+      decks = nextDecks;
       gameLogs = nextLogs;
       if (!player1AgentId || !nextAgents.some((agent) => agent.id === player1AgentId)) {
         player1AgentId = nextAgents[0]?.id ?? '';
@@ -403,10 +395,10 @@
       if (!player2AgentId || !nextAgents.some((agent) => agent.id === player2AgentId)) {
         player2AgentId = nextAgents[0]?.id ?? '';
       }
-      if (player1DeckSource !== 'import' && !nextAgents.some((agent) => agent.id === player1DeckSource && agent.deckUrl)) {
+      if (player1DeckSource !== 'import' && !nextDecks.some((deck) => deck.id === player1DeckSource)) {
         player1DeckSource = 'import';
       }
-      if (player2DeckSource !== 'import' && !nextAgents.some((agent) => agent.id === player2DeckSource && agent.deckUrl)) {
+      if (player2DeckSource !== 'import' && !nextDecks.some((deck) => deck.id === player2DeckSource)) {
         player2DeckSource = 'import';
       }
     } catch (error) {
@@ -417,12 +409,8 @@
   }
 
   async function ensureSelectedDecksLoaded() {
-    const player1Source = forcedDeckSource(player1Control, selectedPlayer1Agent, player1DeckSource);
-    const player2Source = forcedDeckSource(player2Control, selectedPlayer2Agent, player2DeckSource);
-    player1DeckSource = player1Source;
-    player2DeckSource = player2Source;
-    const player1Loaded = await ensureDeckLoaded(player1Source, 0);
-    const player2Loaded = await ensureDeckLoaded(player2Source, 1);
+    const player1Loaded = await ensureDeckLoaded(player1DeckSource, 0);
+    const player2Loaded = await ensureDeckLoaded(player2DeckSource, 1);
     return player1Loaded && player2Loaded;
   }
 
@@ -434,15 +422,11 @@
     if (lastLoaded === deckSource) {
       return true;
     }
-    const deckUrl = agents.find((agent) => agent.id === deckSource)?.deckUrl;
+    const deckUrl = decks.find((deck) => deck.id === deckSource)?.deckUrl;
     if (!deckUrl) {
       return true;
     }
     return loadSelectedDeck(deckUrl, deckSource, playerIndex);
-  }
-
-  function forcedDeckSource(control: PlayerControl, agent: AgentOption | undefined, deckSource: string) {
-    return control === 'agent' && agent?.deckUrl && !agent.anyDeck ? agent.id : deckSource;
   }
 
   async function loadSelectedDeck(deckUrl: string, deckSource: string, playerIndex: number) {
@@ -859,11 +843,10 @@
         bind:player1DeckSource
         bind:player2DeckSource
         {agents}
+        {decks}
         {gameLogs}
         player1DeckLocked={player1DeckSource !== 'import'}
         player2DeckLocked={player2DeckSource !== 'import'}
-        player1AgentHasPairedDeck={player1Control === 'agent' && !!selectedPlayer1Agent?.deckUrl && !selectedPlayer1Agent.anyDeck}
-        player2AgentHasPairedDeck={player2Control === 'agent' && !!selectedPlayer2Agent?.deckUrl && !selectedPlayer2Agent.anyDeck}
         busy={sessionBusy || player1DeckLoading || player2DeckLoading}
         {catalogBusy}
         {error}
