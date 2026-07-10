@@ -303,6 +303,33 @@ describe('choreograph viewport family', () => {
     expect(effects[0].startMs).toBe(motions[0].durationMs);
   });
 
+  it('does not deck-reveal a hand-played on-attach special energy (its own announce is not a deck source)', () => {
+    // Enriching / Telepath: a hand-played Special Energy that announces its own
+    // on-attach effect (trigger 'Attach' over the SAME card). By the time the
+    // attach animates, the energy has left the hand in the view — but it did NOT
+    // come from the deck, so it must attach like any other energy, not fan out
+    // of the deck. Punk Up (a real ability on a different card) still reveals.
+    const players = [player(0, card(100, 1)), player(1)];
+    const batch = [event('Attach', 0, { cardId: 500, serial: 11, cardIdTarget: 100, serialTarget: 1 })];
+    const context = [
+      event('Ability', 0, {
+        cardId: 500,
+        serial: 11,
+        cardIdTarget: 100,
+        serialTarget: 1,
+        abilityName: 'Enriching Energy',
+        trigger: 'Attach',
+      }),
+      ...batch,
+    ];
+
+    const { motions, effects } = choreograph(batch, players, context);
+    expect(motions.some((motion) => motion.style === 'reveal')).toBe(false);
+    // Identical to a plain energy attach in the same (post-attach) view state.
+    expect(motions.map((motion) => motion.style)).toEqual(choreograph(batch, players).motions.map((motion) => motion.style));
+    expect(effects.map((effect) => effect.kind)).toContain('attach-under');
+  });
+
   it('flies hand attachments to the target before the attach-under effect', () => {
     const active = card(100, 1);
     const energy = card(500, 11);

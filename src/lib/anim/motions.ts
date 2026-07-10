@@ -898,7 +898,21 @@ function attachChoreography(
   // An ability that attaches from the deck (Punk Up style) has no hand
   // source: present it as a reveal — the energy fans out from the deck, then
   // flies onto its Pokemon through the reveal session's attach handoff.
-  const abilityContext = context.some((candidate) => candidate.kind === 'Ability');
+  //
+  // But a hand-played on-attach Special Energy (Enriching, Telepath) generates
+  // its OWN announce over the SAME card (trigger 'Attach', matching cardId) —
+  // that is NOT a deck source, it came from the hand and must attach normally.
+  // Excluding that self-announce keeps those energies on the ordinary attach
+  // path (identical to any other energy) while a real ability (Punk Up, a
+  // different card) still routes its deck-attach through the reveal.
+  const abilityContext = context.some((candidate) => {
+    if (candidate.kind !== 'Ability') {
+      return false;
+    }
+    const candidateParams = eventParams(candidate);
+    const isSelfAttachAnnounce = candidateParams.trigger === 'Attach' && num(candidateParams.cardId) === cardId;
+    return !isSelfAttachAnnounce;
+  });
   const inHand = serial !== undefined
     && players.some((candidate) => candidate.hand.some((card) => card.serial === serial));
   if (abilityContext && !inHand && serial !== undefined) {
