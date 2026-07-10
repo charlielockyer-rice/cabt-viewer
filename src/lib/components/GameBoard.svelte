@@ -46,6 +46,7 @@
     replayMode?: boolean;
     showEvalBar?: boolean;
     evalPWin?: number | null;
+    evalOppPWin?: number | null;
     evalMyName?: string;
     evalOpponentName?: string;
   };
@@ -86,6 +87,7 @@
     replayMode = false,
     showEvalBar = false,
     evalPWin = null,
+    evalOppPWin = null,
     evalMyName = 'You',
     evalOpponentName = 'Opponent',
   }: Props = $props();
@@ -250,7 +252,7 @@
            The plane is transform-style: flat, so this adds no preserve-3d
            context and cannot reintroduce the Chromium hit-test breakage. -->
       <div class="board-eval-rail">
-        <EvalBar pWin={evalPWin} myName={evalMyName} opponentName={evalOpponentName} />
+        <EvalBar pWin={evalPWin} oppPWin={evalOppPWin} myName={evalMyName} opponentName={evalOpponentName} />
       </div>
     {/if}
 

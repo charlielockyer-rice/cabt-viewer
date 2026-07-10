@@ -305,7 +305,8 @@
     if (replayMode || !gameStore.game || settling) {
       return;
     }
-    void evalStore.refreshLive(seat);
+    // Score both perspectives: my seat and the opponent (the other seat).
+    void evalStore.refreshLive(seat, seat === 0 ? 1 : 0);
   });
   // Replay eval graph: batch-score the whole episode from the tracked seat's
   // view once a replay loads (or when the viewer switches sides). The frames +
@@ -324,6 +325,10 @@
   let oppIndex = $derived(topPlayer?.index ?? (viewIndex === 0 ? 1 : 0));
   let showEvalBar = $derived(replayMode ? evalStore.curveForSeat(viewIndex).length > 0 : evalStore.live);
   let evalBarPWin = $derived(replayMode ? evalStore.pWinAtState(replayStateIndex, viewIndex) : evalStore.pWin);
+  // The opponent's self-view P(they win), for the layered bar (mapped to
+  // 1 - oppPWin in the bar). Replay: from the opponent's curve; live: the
+  // opponent's most recent decision eval.
+  let evalBarOppPWin = $derived(replayMode ? evalStore.pWinAtState(replayStateIndex, oppIndex) : evalStore.oppPWin);
   let gameFinished = $derived(game?.phase === 7);
   // "Opponent is thinking" indicator gate: a live game where I'm playing and the
   // top (opponent) seat is a (possibly slow) agent. ThinkingIndicator applies
@@ -1046,6 +1051,7 @@
           {replayMode}
           {showEvalBar}
           evalPWin={evalBarPWin}
+          evalOppPWin={evalBarOppPWin}
           evalMyName={bottomPlayer?.name ?? 'You'}
           evalOpponentName={topPlayer?.name ?? 'Opponent'}
         />

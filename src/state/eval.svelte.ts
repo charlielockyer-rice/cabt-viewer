@@ -13,6 +13,9 @@ class EvalStore {
   // P(the tracked seat wins) at the current live position, or null when the
   // sidecar can't answer (down, or the settled observation isn't this seat's).
   pWin = $state<number | null>(null);
+  // The OPPONENT's self-view P(opponent wins) at their most recent decision —
+  // the layered bar maps this to 1 - oppPWin (their read of my win chance).
+  oppPWin = $state<number | null>(null);
   // Whether the sidecar answered at all this game (used to hide the bar when
   // the evaluator isn't running, rather than showing a stale/blank rail).
   live = $state(false);
@@ -30,6 +33,7 @@ class EvalStore {
   reset(): void {
     this.liveToken += 1;
     this.pWin = null;
+    this.oppPWin = null;
     this.live = false;
   }
 
@@ -39,23 +43,30 @@ class EvalStore {
     this.replayLoading = false;
   }
 
-  // Refresh the live bar for `seat`. Out-of-order responses are dropped via a
-  // monotonic token so a slow eval can never overwrite a newer position.
-  async refreshLive(seat: number): Promise<void> {
+  // Refresh the live bar for BOTH perspectives — my seat's self-view and the
+  // opponent's. Out-of-order responses are dropped via a monotonic token so a
+  // slow eval can never overwrite a newer position.
+  async refreshLive(mySeat: number, oppSeat: number): Promise<void> {
     const token = ++this.liveToken;
-    const result = await postJson<LiveEvalResponse>('/local-engine/eval', { seat });
+    const [mine, opp] = await Promise.all([
+      postJson<LiveEvalResponse>('/local-engine/eval', { seat: mySeat }),
+      postJson<LiveEvalResponse>('/local-engine/eval', { seat: oppSeat }),
+    ]);
     if (token !== this.liveToken) {
       return;
     }
-    if (!result) {
+    if (!mine && !opp) {
       this.live = false;
       return;
     }
-    this.live = result.ready || this.live;
-    // Hold the last value across the opponent's turn (pWin=null) rather than
-    // dropping the bar to empty; only replace it with a fresh number.
-    if (typeof result.pWin === 'number') {
-      this.pWin = result.pWin;
+    this.live = mine?.ready || opp?.ready || this.live;
+    // Hold the last value across a turn where a seat isn't deciding (pWin=null)
+    // rather than dropping to empty; only replace with a fresh number.
+    if (typeof mine?.pWin === 'number') {
+      this.pWin = mine.pWin;
+    }
+    if (typeof opp?.pWin === 'number') {
+      this.oppPWin = opp.pWin;
     }
   }
 

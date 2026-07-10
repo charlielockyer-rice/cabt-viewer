@@ -1,29 +1,49 @@
 <script lang="ts">
-  // Chess.com-style win-probability rail. Fills from the bottom with P(my seat
-  // wins); the top remainder is the opponent's share. The value comes from
-  // copycat-v1-20m's value head, always from MY seat's own observation — an
-  // intentionally asymmetric read (it sees my hidden info, not the opponent's),
-  // which is why the two seats' probabilities need not sum to 100%.
+  // Chess.com-style win-probability rail, LAYERED with both perspectives on one
+  // axis (every reading is "my win chance"):
+  //   - the solid light fill = P(I win) from MY seat's own observation.
+  //   - a subordinate amber tick = the OPPONENT's view of my win chance, i.e.
+  //     1 - P(they win) from THEIR own observation.
+  // Each value head reads only its own seat's hidden info, so the two need not
+  // agree; the gap between the fill and the tick is the information asymmetry.
+  // "The true perspective is always between the two players" — the bracket.
+  // (A future omniscient value slots in as a third marker inside that bracket.)
 
   type Props = {
     pWin: number | null;
+    oppPWin?: number | null;
     myName?: string;
     opponentName?: string;
   };
 
-  let { pWin, myName = 'You', opponentName = 'Opponent' }: Props = $props();
+  let { pWin, oppPWin = null, myName = 'You', opponentName = 'Opponent' }: Props = $props();
 
   let known = $derived(typeof pWin === 'number');
   let clamped = $derived(known ? Math.min(1, Math.max(0, pWin as number)) : 0.5);
   let myPct = $derived(Math.round(clamped * 100));
   let fillPct = $derived(clamped * 100);
+
+  // Opponent's assessment of MY win chance = 1 - their P(they win).
+  let oppKnown = $derived(typeof oppPWin === 'number');
+  let oppMineView = $derived(oppKnown ? Math.min(1, Math.max(0, 1 - (oppPWin as number))) : null);
+  let oppPct = $derived(oppMineView === null ? null : Math.round(oppMineView * 100));
+
+  let tip = $derived(
+    `Win probability on one axis (your chance to win). Solid = ${myName}'s own read`
+    + `; amber tick = ${opponentName}'s read of your chances (1 − their self-estimate).`
+    + ` Each sees only its own hidden info, so they can disagree — the gap between them`
+    + ` brackets the true perspective.`,
+  );
 </script>
 
-<div class="eval-bar" class:unknown={!known} title={`Win probability from ${myName}'s view, by copycat-v1-20m's value head. It reads only what ${myName} can see, so the two seats' odds need not add to 100%.`}>
+<div class="eval-bar" class:unknown={!known} title={tip}>
   <span class="cap top" class:leading={known && myPct < 50}>{known ? 100 - myPct : '—'}%</span>
   <div class="track">
     <div class="fill" style={`height: ${fillPct}%`}></div>
     <div class="midline"></div>
+    {#if oppMineView !== null}
+      <div class="opp-mark" style={`bottom: ${oppMineView * 100}%`} title={`${opponentName} rates your win chance ${oppPct}%`}></div>
+    {/if}
   </div>
   <span class="cap bottom" class:leading={known && myPct >= 50}>{known ? myPct : '—'}%</span>
 </div>
@@ -68,6 +88,22 @@
     top: 50%;
     height: 1px;
     background: rgba(255, 255, 255, 0.42);
+    pointer-events: none;
+  }
+
+  /* The opponent's read of my win chance, mapped onto the same axis. Subordinate
+     to the solid fill: a thin amber tick spanning the rail, so the gap to the
+     fill top reads directly as the disagreement. Room stays for a third
+     (omniscient) marker later. */
+  .opp-mark {
+    position: absolute;
+    left: -2px;
+    right: -2px;
+    height: 0;
+    border-top: 2px solid #d9772e;
+    box-shadow: 0 0 3px rgba(217, 119, 46, 0.7);
+    transform: translateY(1px);
+    transition: bottom 420ms cubic-bezier(0.22, 1, 0.36, 1);
     pointer-events: none;
   }
 

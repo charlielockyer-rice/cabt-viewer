@@ -124,6 +124,10 @@ export class LocalEngineController {
   // eval graph can score BOTH seats' own-view lines (the seat-1 line needs
   // seat 1's hand, absent from the concealed playback frames).
   private rawFrames: CabtObservation[] = [];
+  // Each seat's LAST raw decision observation (with its own hand), so the live
+  // eval bar can score BOTH perspectives — the tracked seat's current decision
+  // and the opponent's most recent one.
+  private rawObservationBySeat: [CabtObservation | null, CabtObservation | null] = [null, null];
   private replayPlayerLabels: [string, string] = ['Player 1', 'Player 2'];
   private replayModeLabel = 'Self vs Agent';
   private playerControls: [PlayerControl, PlayerControl] = ['self', 'agent'];
@@ -207,13 +211,18 @@ export class LocalEngineController {
   // player of the settled observation — otherwise pWin is null and the caller
   // holds the last value. The raw observation and deck never leave this process.
   async evaluate(seat: number): Promise<EvalResult> {
-    const current = this.observation?.current;
+    // Use the seat's own LAST decision observation (raw, with its hand). For the
+    // tracked seat that's the current interactive decision; for the opponent
+    // it's its last turn's decision — so both perspectives are scorable live,
+    // each from what only it can see. The raw observation and deck never leave
+    // this process, and this path is read-only.
+    const obs = this.rawObservationBySeat[seat];
     const deck = this.decks[seat];
-    if (!this.observation || !current || current.yourIndex !== seat || !this.observation.select || !deck?.length) {
+    if (!obs?.current || !obs.select || !deck?.length) {
       return { ok: true, pWin: null, seat, ready: false };
     }
     const result = await evalSidecar<{ ok: boolean; pWin: number | null }>('/evaluate', {
-      observation: { current, select: this.observation.select },
+      observation: { current: obs.current, select: obs.select },
       deck,
     });
     return { ok: true, pWin: result?.pWin ?? null, seat, ready: !!result };
@@ -280,6 +289,7 @@ export class LocalEngineController {
     this.pendingSequence = [];
     this.replayFrames = [];
     this.rawFrames = [];
+    this.rawObservationBySeat = [null, null];
     this.playerControls = playerControls;
     this.replayModeLabel = `${controlLabel(playerControls[0])} vs ${controlLabel(playerControls[1])}`;
     this.replayPlayerLabels = [
@@ -393,7 +403,13 @@ export class LocalEngineController {
       this.lastNewLogs = newLogs;
       this.observation = observation;
       this.replayFrames.push(observation);
-      this.rawFrames.push(observations[index]);
+      const rawObs = observations[index];
+      this.rawFrames.push(rawObs);
+      // Remember each seat's most recent decision (raw, with its hand) for the
+      // live both-perspective bar.
+      if (rawObs?.select && rawObs.current && (rawObs.current.yourIndex === 0 || rawObs.current.yourIndex === 1)) {
+        this.rawObservationBySeat[rawObs.current.yourIndex] = rawObs;
+      }
       if (!stepLogs.length) {
         continue;
       }
@@ -464,6 +480,7 @@ export class LocalEngineController {
     this.pendingSequence = [];
     this.replayFrames = [];
     this.rawFrames = [];
+    this.rawObservationBySeat = [null, null];
     this.decks = [[], []];
     this.logs = [...this.logs, { id: this.logId++, message }];
   }

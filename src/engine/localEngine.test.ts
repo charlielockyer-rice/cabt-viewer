@@ -832,9 +832,14 @@ describe('LocalEngineController.evaluate (eval bar)', () => {
     vi.unstubAllGlobals();
   });
 
-  function evalEngine(observation: unknown, decks: [number[], number[]]) {
+  // Seed the seat's last-decision observation the way appendSteps would: keyed
+  // by the observation's acting seat. evaluate(seat) scores rawObservationBySeat[seat].
+  function evalEngine(observation: any, decks: [number[], number[]]) {
     const engine = new LocalEngineController() as any;
-    engine.observation = observation;
+    engine.rawObservationBySeat = [null, null];
+    if (observation?.current) {
+      engine.rawObservationBySeat[observation.current.yourIndex] = observation;
+    }
     engine.decks = decks;
     return engine;
   }
@@ -859,20 +864,26 @@ describe('LocalEngineController.evaluate (eval bar)', () => {
     expect(Object.keys(sidecarBody.observation).sort()).toEqual(['current', 'select']);
   });
 
-  it('returns null without calling the sidecar when the seat is not the acting player', async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
+  it('scores EACH seat from its own last decision (both perspectives)', async () => {
+    const seats: number[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: any) => {
+      seats.push(JSON.parse(init.body).deck[0]); // deck fill encodes the seat
+      return { ok: true, json: async () => ({ ok: true, pWin: 0.6 }) } as Response;
+    }));
 
-    // Observation is seat 1's decision; asking for seat 0 must not flip 1-p
-    // (the value head is asymmetric), so it declines rather than lie.
+    // Only seat 1 has a stored decision here.
     const engine = evalEngine(
       { select: yesNoSelect(), logs: [], current: currentState({ yourIndex: 1 }) },
       [Array(60).fill(3), Array(60).fill(4)],
     );
-    const result = await engine.evaluate(0);
-
-    expect(result).toEqual({ ok: true, pWin: null, seat: 0, ready: false });
-    expect(fetchMock).not.toHaveBeenCalled();
+    // The opponent seat IS scorable from its own observation (asymmetric — never
+    // a 1-p flip; each perspective comes from that seat's own hand).
+    expect((await engine.evaluate(1)).pWin).toBe(0.6);
+    expect(seats).toEqual([4]); // seat 1's deck was sent
+    // A seat with no stored decision declines without calling the sidecar.
+    seats.length = 0;
+    expect((await engine.evaluate(0))).toEqual({ ok: true, pWin: null, seat: 0, ready: false });
+    expect(seats).toEqual([]);
   });
 
   it('returns null without calling the sidecar when the seat has no deck', async () => {
