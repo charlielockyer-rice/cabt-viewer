@@ -108,22 +108,42 @@
   let seatFadeMode = $derived(viewSettingsStore.seatTransition === 'fade');
   let planeElement = $state<HTMLElement>();
   let lastTopIndex = topPlayer?.index;
+  // Guards re-entrancy: a second flip inside the ~300ms fade window bumps the
+  // token so the first fade's finish handler won't lift the gate early.
+  let fadeToken = 0;
   $effect(() => {
     const topIndex = topPlayer?.index;
     if (topIndex === lastTopIndex) {
       return;
     }
     lastTopIndex = topIndex;
-    // Drive the fade imperatively via the Web Animations API: element.animate
-    // restarts cleanly on every flip (a reactive class toggled off→on gets
-    // batched by Svelte and never restarts the CSS animation). The reposition
-    // itself is instant (card transitions zeroed in fade mode below), so the dim
-    // masks it.
+    // Fade mode: the whole point is that the ONLY motion is the opacity dim —
+    // the reposition must be instant with zero flip/rotation anywhere. Card
+    // rotations are only one of many transform transitions a seat flip triggers
+    // (CenterPiles pile-count reposition, the rotated energy/status/tool/damage
+    // decorations on the top slot, bench decorations…). Zeroing just .card-tile
+    // left all of those animating their rotate/slide UNDER the dim — the "fade
+    // on top of the flip" bug. So gate EVERY transition on the plane for the
+    // fade window (mirrors the scrub gate), driven imperatively off the same
+    // flip detection: set data-seat-fading BEFORE paint so the class-driven
+    // transform change lands with transition-duration 0 (no transition fires),
+    // then lift it when the dim finishes. element.animate also restarts cleanly
+    // on every flip (a reactive class toggled off→on gets batched by Svelte and
+    // never restarts).
     if (seatFadeMode && !scrubbing && planeElement && typeof planeElement.animate === 'function') {
-      planeElement.animate(
+      const el = planeElement;
+      el.setAttribute('data-seat-fading', '');
+      const token = ++fadeToken;
+      const lift = () => {
+        if (fadeToken === token) {
+          el.removeAttribute('data-seat-fading');
+        }
+      };
+      const dim = el.animate(
         [{ opacity: 1 }, { opacity: 0.06, offset: 0.42 }, { opacity: 0.06, offset: 0.58 }, { opacity: 1 }],
         { duration: 300, easing: 'ease' },
       );
+      dim.finished.then(lift, lift);
     }
   });
 
@@ -242,7 +262,6 @@
     class="game-board-plane"
     class:can-play-on-board={canPlayOnBoard}
     class:has-eval-bar={showEvalBar}
-    class:seat-fade-mode={seatFadeMode}
     data-scrubbing={scrubbing ? '' : undefined}
     role="presentation"
     ondragover={allowBoardPlayDrop}
@@ -375,12 +394,21 @@
     transition-duration: 0s !important;
   }
 
-  /* Fade seat-transition (opt-in): the flip's card rotations + pile repositions
-     snap instantly (no rotate transition), and the whole board dims out then
-     fades back in the new perspective instead — the reposition hides under the
-     dim. The fade is restarted per seat flip from the script (reflow trick). */
-  .game-board-plane.seat-fade-mode :global(.card-tile) {
-    transition-duration: 0s;
+  /* Fade seat-transition (opt-in): the ONLY motion is the opacity dim. For the
+     ~300ms fade window the script sets data-seat-fading, and — exactly like the
+     scrub gate above — every transition on the plane snaps to 0s so the seat
+     flip's rotate/reposition (card tiles, the rotated top-slot decorations, the
+     CenterPiles pile-count slide, bench decorations) lands instantly under the
+     dim with zero flip/rotation. Attribute lifts when the dim finishes so normal
+     transitions (hover, card-play flights) resume untouched.
+
+     Fully :global — data-seat-fading is toggled imperatively (setAttribute, not
+     a template binding), so Svelte's scoped-CSS pruner can't see it and would
+     drop the rule as "unused", making the gate a no-op. .game-board-plane is
+     unique to this component, so global scope matches only our board. */
+  :global(.game-board-plane[data-seat-fading]),
+  :global(.game-board-plane[data-seat-fading] *) {
+    transition-duration: 0s !important;
   }
 
   .game-board-plane {
