@@ -24,6 +24,12 @@ class GameStore {
   busy = $state(false);
   resolvingPrompt = $state(false);
   playingSequence = $state(false);
+  // When the current gameplay request was dispatched (null when idle). The
+  // opponent's agent runs inside this in-flight request, so its age is the
+  // honest, agent-agnostic "awaiting the opponent's reply" signal the thinking
+  // indicator reads — a slow (search-backed) agent simply keeps it pending
+  // longer. Not tied to any specific agent.
+  commandInFlightSince = $state<number | null>(null);
   private generation = 0;
   // Sequence playbacks from overlapping commands must not interleave their
   // view updates; each apply waits for the previous one to finish.
@@ -52,11 +58,13 @@ class GameStore {
     this.busy = false;
     this.resolvingPrompt = false;
     this.playingSequence = false;
+    this.commandInFlightSince = null;
   }
 
   // `busy` covers only the request round-trip; playback is `playingSequence`.
   async run(command: () => Promise<EngineResponse>) {
     const generation = this.generation;
+    this.commandInFlightSince ??= Date.now();
     this.busy = true;
     let response: EngineResponse;
     try {
@@ -64,6 +72,9 @@ class GameStore {
     } finally {
       if (generation === this.generation) {
         this.busy = false;
+        if (!this.resolvingPrompt) {
+          this.commandInFlightSince = null;
+        }
       }
     }
     return await this.apply(response, generation);
@@ -71,6 +82,7 @@ class GameStore {
 
   async resolve(command: () => Promise<EngineResponse>) {
     const generation = this.generation;
+    this.commandInFlightSince ??= Date.now();
     this.resolvingPrompt = true;
     let response: EngineResponse;
     try {
@@ -78,6 +90,9 @@ class GameStore {
     } finally {
       if (generation === this.generation) {
         this.resolvingPrompt = false;
+        if (!this.busy) {
+          this.commandInFlightSince = null;
+        }
       }
     }
     return await this.apply(response, generation);

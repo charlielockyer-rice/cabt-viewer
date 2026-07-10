@@ -19,6 +19,7 @@
   import PromptHost from './lib/components/prompts/PromptHost.svelte';
   import ReplayTimeline from './lib/components/ReplayTimeline.svelte';
   import TableShell from './lib/components/TableShell.svelte';
+  import ThinkingIndicator from './lib/components/ThinkingIndicator.svelte';
   import Toolbar from './lib/components/Toolbar.svelte';
   import ZoneViewer from './lib/components/ZoneViewer.svelte';
   import { localGameApi, type PlayerControl } from './lib/game/httpClient';
@@ -321,6 +322,12 @@
   let showEvalBar = $derived(replayMode ? evalStore.replayCurve.length > 0 : evalStore.live);
   let evalBarPWin = $derived(replayMode ? evalStore.pWinAtState(replayStateIndex) : evalStore.pWin);
   let gameFinished = $derived(game?.phase === 7);
+  // "Opponent is thinking" indicator gate: a live game where I'm playing and the
+  // top (opponent) seat is a (possibly slow) agent. ThinkingIndicator applies
+  // its own time threshold, so fast turnarounds never show it.
+  let opponentIsAgent = $derived(!!topPlayer && game?.seats?.[topPlayer.index]?.control === 'agent');
+  let selfIsPlaying = $derived(!!game?.seats?.some((seat) => seat.control === 'self'));
+  let showThinking = $derived(!replayMode && !gameFinished && selfIsPlaying && opponentIsAgent);
   let winnerName = $derived(
     game?.winner === 0 || game?.winner === 1
       ? game.players[game.winner]?.name
@@ -880,6 +887,13 @@
         modeLabel={replayMode ? '' : modeLabel}
         {gameFinished}
       />
+
+      {#if showThinking}
+        <ThinkingIndicator
+          name={topPlayer?.name ?? 'Opponent'}
+          since={gameStore.commandInFlightSince}
+        />
+      {/if}
 
       <Toolbar
         bind:boardTilt={viewSettingsStore.boardTilt}
