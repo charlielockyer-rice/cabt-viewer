@@ -5,6 +5,7 @@
   import CenterPiles from './CenterPiles.svelte';
   import EvalBar from './EvalBar.svelte';
   import { replayStore } from '../../state/replay.svelte';
+  import { viewSettingsStore } from '../../state/viewSettings.svelte';
   import type { ActionTimelineEvent, PlayerView, PokemonSlotView } from '../game/types';
 
   type ZoneName = 'discard' | 'lostZone' | 'stadium' | 'playZone';
@@ -94,6 +95,31 @@
   // scrub those transitions stack and interrupt mid-rotation — the smear. Gate
   // them off so the flip snaps instantly, matching scrub mode's settled views.
   let scrubbing = $derived(replayMode && replayStore.scrubbing);
+
+  // Seat-transition style (Charlie's compare-both preference): 'flip' rotates the
+  // cards into the new perspective; 'fade' snaps the reposition instantly and
+  // dims the board out/in instead. The fade is a one-shot animation restarted on
+  // each seat flip (detected via which player is on top) — not a scrub concern,
+  // so it plays during normal stepping/playback, and scrub-gating still wins.
+  let seatFadeMode = $derived(viewSettingsStore.seatTransition === 'fade');
+  let seatFading = $state(false);
+  let lastTopIndex = topPlayer?.index;
+  $effect(() => {
+    const topIndex = topPlayer?.index;
+    if (topIndex === lastTopIndex) {
+      return;
+    }
+    lastTopIndex = topIndex;
+    if (seatFadeMode && !scrubbing) {
+      // Restart the one-shot fade: clear the class this frame, re-add next frame
+      // so the browser sees a fresh animation start. `class:seat-fading` keeps
+      // the rule reachable (an imperative class would be pruned as unused CSS).
+      seatFading = false;
+      requestAnimationFrame(() => {
+        seatFading = true;
+      });
+    }
+  });
 
   let topLostPileElement = $state<HTMLButtonElement>();
   let topDiscardPileElement = $state<HTMLButtonElement>();
@@ -209,6 +235,8 @@
     class="game-board-plane"
     class:can-play-on-board={canPlayOnBoard}
     class:has-eval-bar={showEvalBar}
+    class:seat-fade-mode={seatFadeMode}
+    class:seat-fading={seatFading}
     data-scrubbing={scrubbing ? '' : undefined}
     role="presentation"
     ondragover={allowBoardPlayDrop}
@@ -339,6 +367,24 @@
   .game-board-plane[data-scrubbing],
   .game-board-plane[data-scrubbing] :global(*) {
     transition-duration: 0s !important;
+  }
+
+  /* Fade seat-transition (opt-in): the flip's card rotations + pile repositions
+     snap instantly (no rotate transition), and the whole board dims out then
+     fades back in the new perspective instead — the reposition hides under the
+     dim. The fade is restarted per seat flip from the script (reflow trick). */
+  .game-board-plane.seat-fade-mode :global(.card-tile) {
+    transition-duration: 0s;
+  }
+
+  .game-board-plane.seat-fade-mode.seat-fading {
+    animation: seat-fade 320ms ease;
+  }
+
+  @keyframes seat-fade {
+    0% { opacity: 1; }
+    38%, 58% { opacity: 0.08; }
+    100% { opacity: 1; }
   }
 
   .game-board-plane {

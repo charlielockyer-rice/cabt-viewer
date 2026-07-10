@@ -49,6 +49,11 @@ class ViewSettingsStore {
   boardPerspective = $state(DEFAULT_BOARD_PERSPECTIVE);
   boardScaleY = $state(DEFAULT_BOARD_SCALE_Y);
   boardLift = $state(DEFAULT_BOARD_LIFT);
+  // How the board transitions when the follow-active seat flips top<->bottom.
+  // 'flip' = the cards rotate/reposition into the new perspective (default);
+  // 'fade' = the board dims out and fades back in the new perspective, with the
+  // reposition happening instantly under the dim. A compare-both preference.
+  seatTransition = $state<'flip' | 'fade'>('flip');
   _themePreference = $state<ThemePreference>(readStoredThemePreference());
   systemTheme = $state<ResolvedTheme>(readSystemTheme());
 

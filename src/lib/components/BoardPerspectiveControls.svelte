@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { viewSettingsStore } from '../../state/viewSettings.svelte';
+
   type Props = {
     boardTilt: number;
     boardPerspective: number;
@@ -39,6 +41,23 @@
       Lift
       <input type="range" min="-48" max="48" step="2" bind:value={boardLift} />
       <span>{boardLift}px</span>
+    </label>
+    <label class="seat-transition">
+      Side switch
+      <span class="seat-transition-toggle" role="group" aria-label="Side switch transition">
+        <button
+          type="button"
+          class:active={viewSettingsStore.seatTransition === 'flip'}
+          aria-pressed={viewSettingsStore.seatTransition === 'flip'}
+          onclick={() => (viewSettingsStore.seatTransition = 'flip')}
+        >Flip</button>
+        <button
+          type="button"
+          class:active={viewSettingsStore.seatTransition === 'fade'}
+          aria-pressed={viewSettingsStore.seatTransition === 'fade'}
+          onclick={() => (viewSettingsStore.seatTransition = 'fade')}
+        >Fade</button>
+      </span>
     </label>
     <button type="button" onclick={() => resetPerspective()}>Reset</button>
   </div>
@@ -124,5 +143,28 @@
     background: var(--button-bg);
     color: var(--button-text);
     font-size: 11px;
+  }
+
+  .seat-transition {
+    margin-top: 2px;
+  }
+
+  .seat-transition-toggle {
+    display: inline-flex;
+    gap: 4px;
+    justify-self: end;
+  }
+
+  .seat-transition-toggle button {
+    width: auto;
+    margin-top: 0;
+    padding: 3px 10px;
+    font-weight: 700;
+  }
+
+  .seat-transition-toggle button.active {
+    border-color: var(--accent-base, #52bca8);
+    background: var(--selection-bg, rgba(82, 188, 168, 0.18));
+    color: var(--text-primary);
   }
 </style>
