@@ -59,23 +59,28 @@ class EvalStore {
     }
   }
 
-  // Score BOTH seats' own-view lines over the episode (each seat's frames are
-  // filtered server-side to that seat's decisions). Two batch calls in parallel.
+  // Score the HONEST seats' own-view lines over the episode (each seat's frames
+  // are filtered server-side to that seat's decisions). A seat whose hand the
+  // replay concealed is skipped, so we never draw a degraded line for it.
   async loadReplayCurve(
     frames: Array<{ current: unknown; select: unknown; stateIndex: number }>,
     decks: number[][],
+    honestSeats: [boolean, boolean],
   ): Promise<void> {
     const token = ++this.replayToken;
     this.replayLoading = true;
     this.replayCurves = [[], []];
-    const [a, b] = await Promise.all([
-      postJson<ReplayEvalResponse>('/local-engine/eval-replay', { frames, seat: 0, deck: decks[0] ?? [] }),
-      postJson<ReplayEvalResponse>('/local-engine/eval-replay', { frames, seat: 1, deck: decks[1] ?? [] }),
-    ]);
+    const seats = [0, 1].filter((seat) => honestSeats[seat]);
+    const results = await Promise.all(
+      seats.map((seat) =>
+        postJson<ReplayEvalResponse>('/local-engine/eval-replay', { frames, seat, deck: decks[seat] ?? [] })),
+    );
     if (token !== this.replayToken) {
       return;
     }
-    this.replayCurves = [a?.points ?? [], b?.points ?? []];
+    const next: [EvalPoint[], EvalPoint[]] = [[], []];
+    seats.forEach((seat, i) => { next[seat] = results[i]?.points ?? []; });
+    this.replayCurves = next;
     this.replayLoading = false;
   }
 

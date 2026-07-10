@@ -316,7 +316,9 @@
       return;
     }
     const frames = replayStore.observationFrames;
-    void evalStore.loadReplayCurve(frames, replayStore.decks);
+    // Only score seats the replay can score honestly; a legacy save's concealed
+    // seat is skipped (labelled unavailable), never drawn as a degraded line.
+    void evalStore.loadReplayCurve(frames, replayStore.decks, replayStore.honestSeats);
   });
   let replayStateIndex = $derived(replayStore.currentStep?.stateIndex ?? 0);
   let oppIndex = $derived(topPlayer?.index ?? (viewIndex === 0 ? 1 : 0));
@@ -945,6 +947,8 @@
             seek={(index) => replayStore.setStateIndex(index)}
             myName={bottomPlayer?.name ?? 'You'}
             oppName={topPlayer?.name ?? 'Opponent'}
+            myAvailable={replayStore.honestSeats[viewIndex]}
+            oppAvailable={replayStore.honestSeats[oppIndex]}
             loading={evalStore.replayLoading}
           />
         </div>

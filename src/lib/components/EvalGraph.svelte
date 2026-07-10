@@ -14,12 +14,14 @@
     seek: (stateIndex: number) => void;
     myName?: string;
     oppName?: string;
+    myAvailable?: boolean;
+    oppAvailable?: boolean;
     loading?: boolean;
   };
 
   let {
     myPoints, oppPoints, stateCount, currentStateIndex, seek,
-    myName = 'You', oppName = 'Opponent', loading = false,
+    myName = 'You', oppName = 'Opponent', myAvailable = true, oppAvailable = true, loading = false,
   }: Props = $props();
 
   const W = 1000;
@@ -70,8 +72,16 @@
 <div class="eval-graph" class:empty={!hasAny}>
   {#if hasAny}
     <div class="legend">
-      <span class="key mine"><i></i>{myName} {pct(myAt)}</span>
-      <span class="key opp"><i></i>{oppName} {pct(oppAt)}</span>
+      {#if myAvailable}
+        <span class="key mine"><i></i>{myName} {pct(myAt)}</span>
+      {:else}
+        <span class="key unavailable">{myName} perspective unavailable — older replay</span>
+      {/if}
+      {#if oppAvailable}
+        <span class="key opp"><i></i>{oppName} {pct(oppAt)}</span>
+      {:else}
+        <span class="key unavailable">{oppName} perspective unavailable — older replay</span>
+      {/if}
     </div>
     <svg
       viewBox={`0 0 ${W} ${H}`}
@@ -87,12 +97,12 @@
       onpointerup={(e) => { dragging = false; (e.currentTarget as SVGSVGElement).releasePointerCapture(e.pointerId); }}
     >
       <line class="mid" x1="0" y1={H / 2} x2={W} y2={H / 2} />
-      <path class="area" d={myArea} />
-      <path class="line mine" d={myLine} />
-      <path class="line opp" d={oppLine} />
+      {#if myAvailable}<path class="area" d={myArea} />{/if}
+      {#if myAvailable}<path class="line mine" d={myLine} />{/if}
+      {#if oppAvailable}<path class="line opp" d={oppLine} />{/if}
       <line class="cursor" x1={cursorX} y1="0" x2={cursorX} y2={H} />
-      {#if myAt}<circle class="dot mine" cx={x(myAt.stateIndex)} cy={y(myAt.pWin)} r="6" />{/if}
-      {#if oppAt}<circle class="dot opp" cx={x(oppAt.stateIndex)} cy={y(oppAt.pWin)} r="6" />{/if}
+      {#if myAvailable && myAt}<circle class="dot mine" cx={x(myAt.stateIndex)} cy={y(myAt.pWin)} r="6" />{/if}
+      {#if oppAvailable && oppAt}<circle class="dot opp" cx={x(oppAt.stateIndex)} cy={y(oppAt.pWin)} r="6" />{/if}
     </svg>
   {:else}
     <span class="hint">{loading ? 'Evaluating…' : 'No eval curve (evaluator off or decks unavailable for this replay).'}</span>
@@ -124,6 +134,7 @@
   .key i { width: 10px; height: 2.5px; border-radius: 2px; display: inline-block; }
   .key.mine i { background: var(--accent-base); }
   .key.opp i { background: #d9772e; }
+  .key.unavailable { color: var(--text-muted); font-weight: 600; font-style: italic; }
 
   svg { width: 100%; height: 100%; display: block; cursor: pointer; touch-action: none; overflow: visible; }
 

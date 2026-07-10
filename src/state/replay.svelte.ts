@@ -20,6 +20,13 @@ class ReplayStore {
   // degrades rather than lying (see evalStore).
   observationFrames = $state<ReplayObservationFrame[]>([]);
   decks = $state<number[][]>([]);
+  // Which seats this replay can honestly score (index = seat): a seat is honest
+  // when ITS OWN decision frames carry its hand. True for both when the replay
+  // has raw (pre-conceal) frames (`rawVisualize`, saved games from now on) or is
+  // an already-omniscient spectator/Kaggle record; a legacy save that concealed
+  // the opponent's hand leaves that seat false, so the graph shows the honest
+  // seat only with an explicit "perspective unavailable" label, never a lie.
+  honestSeats = $state<[boolean, boolean]>([false, false]);
   // True while the timeline is being navigated faster than animations can play
   // (scrub-bar drag, key-repeat stepping). The animation layers suppress all
   // choreography and render settled views directly while this is set; otherwise
@@ -104,6 +111,7 @@ class ReplayStore {
       this.replay = loaded.snapshot;
       this.observationFrames = loaded.frames;
       this.decks = loaded.decks;
+      this.honestSeats = loaded.honestSeats;
       this.stepIndex = 0;
       this.animationPhaseIndex = 0;
       this.scheduleAnimationPhase();
@@ -112,6 +120,7 @@ class ReplayStore {
       this.replay = null;
       this.observationFrames = [];
       this.decks = [];
+      this.honestSeats = [false, false];
       this.stepIndex = 0;
       this.animationPhaseIndex = 0;
     } finally {
@@ -127,6 +136,7 @@ class ReplayStore {
     this.replay = null;
     this.observationFrames = [];
     this.decks = [];
+    this.honestSeats = [false, false];
     this.stepIndex = 0;
     this.animationPhaseIndex = 0;
     this.loading = false;
@@ -309,6 +319,7 @@ type LoadedReplay = {
   snapshot: ReplaySnapshot;
   frames: ReplayObservationFrame[];
   decks: number[][];
+  honestSeats: [boolean, boolean];
 };
 
 async function loadCabtReplay(candidates: string[]): Promise<LoadedReplay> {
@@ -325,12 +336,40 @@ async function loadCabtReplay(candidates: string[]): Promise<LoadedReplay> {
         snapshot: cabtReplayToSnapshot(json),
         frames: observationFramesFrom(json),
         decks: Array.isArray(json?.decks) ? json.decks : [],
+        honestSeats: honestSeatsFrom(json),
       };
     } catch (error) {
       failures.push(`${url}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
   throw new Error(`Unable to load CABT replay. Tried ${failures.join('; ')}`);
+}
+
+// Per-seat honesty: a seat is scorable when ITS OWN hand is present. Raw
+// pre-conceal frames carry every acting seat's hand, so both seats are honest.
+// Otherwise inspect the concealed frames: for each seat, its own decision frames
+// (yourIndex === seat) must show that seat's hand (omniscient records show both
+// on every frame; a legacy save hid the opponent's).
+function honestSeatsFrom(json: unknown): [boolean, boolean] {
+  const source = json as { rawVisualize?: unknown; visualize?: unknown };
+  if (Array.isArray(source?.rawVisualize) && source.rawVisualize.length > 0) {
+    return [true, true];
+  }
+  const visualize = source?.visualize;
+  if (!Array.isArray(visualize) || !visualize.length) {
+    return [false, false];
+  }
+  const handVisibleForOwnDecisions = (seat: number): boolean => {
+    const own = visualize.filter((frame) => (frame as { current?: { yourIndex?: number } })?.current?.yourIndex === seat);
+    if (!own.length) {
+      return false;
+    }
+    return own.every((frame) => {
+      const players = (frame as { current?: { players?: unknown[] } })?.current?.players;
+      return Array.isArray(players) && (players[seat] as { hand?: unknown })?.hand != null;
+    });
+  };
+  return [handVisibleForOwnDecisions(0), handVisibleForOwnDecisions(1)];
 }
 
 function observationFramesFrom(json: unknown): ReplayObservationFrame[] {

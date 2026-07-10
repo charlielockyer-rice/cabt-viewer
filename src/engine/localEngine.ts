@@ -80,13 +80,13 @@ const EVAL_TIMEOUT_MS = Math.max(500, Number(process.env.CABT_EVAL_TIMEOUT_MS ??
 
 export type EvalResult = { ok: true; pWin: number | null; seat: number; ready: boolean };
 
-async function evalSidecar<T>(path: string, body: unknown): Promise<T | null> {
+async function evalSidecar<T>(path: string, body: unknown, timeoutMs = EVAL_TIMEOUT_MS): Promise<T | null> {
   try {
     const response = await fetch(`${EVAL_BASE_URL}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(EVAL_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) {
       return null;
@@ -231,12 +231,19 @@ export class LocalEngineController {
     const scored = frames.filter(
       (frame) => frame.current && frame.select && frame.current.yourIndex === seat && (frame.current.result ?? -1) < 0,
     );
-    if (!scored.length || !deck.length) {
+    // A deck sharpens the deck-conditioned encoding but isn't required — replays
+    // without persisted decks (Kaggle/spectator, legacy saves) still get a
+    // slightly-degraded curve rather than nothing (the sidecar pads a neutral
+    // deck). Only bail when the seat never acts.
+    if (!scored.length) {
       return { ok: true, points: [], ready: false };
     }
+    // A whole-episode batch scored one-at-a-time through the model lock takes
+    // seconds (and both seats' batches serialize there), so allow far longer
+    // than the latency-sensitive live path's timeout.
     const result = await evalSidecar<{ ok: boolean; pWins: Array<number | null> }>('/evaluate-batch', {
       items: scored.map((frame) => ({ observation: { current: frame.current, select: frame.select }, deck })),
-    });
+    }, 120_000);
     if (!result?.pWins) {
       return { ok: true, points: [], ready: false };
     }
