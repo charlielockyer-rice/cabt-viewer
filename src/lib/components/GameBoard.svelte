@@ -4,6 +4,7 @@
   import BoardAnimationLayer from './BoardAnimationLayer.svelte';
   import CenterPiles from './CenterPiles.svelte';
   import EvalBar from './EvalBar.svelte';
+  import { replayStore } from '../../state/replay.svelte';
   import type { ActionTimelineEvent, PlayerView, PokemonSlotView } from '../game/types';
 
   type ZoneName = 'discard' | 'lostZone' | 'stadium' | 'playZone';
@@ -87,6 +88,12 @@
     evalMyName = 'You',
     evalOpponentName = 'Opponent',
   }: Props = $props();
+
+  // Scrub mode (replay only): the follow-active seat flip is a CSS transition on
+  // card/pile transforms (rotate 180 + reposition). Under a fast back-and-forth
+  // scrub those transitions stack and interrupt mid-rotation — the smear. Gate
+  // them off so the flip snaps instantly, matching scrub mode's settled views.
+  let scrubbing = $derived(replayMode && replayStore.scrubbing);
 
   let topLostPileElement = $state<HTMLButtonElement>();
   let topDiscardPileElement = $state<HTMLButtonElement>();
@@ -202,6 +209,7 @@
     class="game-board-plane"
     class:can-play-on-board={canPlayOnBoard}
     class:has-eval-bar={showEvalBar}
+    data-scrubbing={scrubbing ? '' : undefined}
     role="presentation"
     ondragover={allowBoardPlayDrop}
     ondrop={dropToBoardPlay}
@@ -321,6 +329,16 @@
     outline: 2px solid rgba(37, 99, 235, 0.9);
     outline-offset: -2px;
     background: rgba(37, 99, 235, 0.05);
+  }
+
+  /* Scrub mode: snap every board transition instantly so the follow-active seat
+     flip (card rotate + pile reposition, CardTile/CenterPiles transform
+     transitions) can't stack/smear under a fast back-and-forth scrub. Matches
+     scrub mode's instant settled views; transitions resume the moment nav
+     settles and the attribute drops. */
+  .game-board-plane[data-scrubbing],
+  .game-board-plane[data-scrubbing] :global(*) {
+    transition-duration: 0s !important;
   }
 
   .game-board-plane {
