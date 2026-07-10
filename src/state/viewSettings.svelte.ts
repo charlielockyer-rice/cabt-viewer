@@ -3,6 +3,10 @@ const DEFAULT_BOARD_PERSPECTIVE = 1250;
 const DEFAULT_BOARD_SCALE_Y = 94;
 const DEFAULT_BOARD_LIFT = 0;
 
+// How long the fade-mode side-switch holds its "no motion" gate. Slightly longer
+// than the 300ms opacity dim so the freeze outlasts the dim on every path.
+const SEAT_FADE_MS = 320;
+
 export type ResolvedTheme = 'light' | 'dark';
 export type ThemePreference = ResolvedTheme | 'system';
 
@@ -54,6 +58,15 @@ class ViewSettingsStore {
   // 'fade' = the board dims out and fades back in the new perspective, with the
   // reposition happening instantly under the dim. A compare-both preference.
   seatTransition = $state<'flip' | 'fade'>('flip');
+  // True for the brief window around a fade-mode side switch. It is the single
+  // gate every side-switch motion consults so the ONLY thing that moves is the
+  // opacity dim: BoardLayer freezes all CSS transitions while it is set, and
+  // Hand/BenchZone run their Svelte animate:flip / in / out at duration 0 (a CSS
+  // freeze cannot stop those Web-Animations flips — the "hands flying across the
+  // screen" bug). Set at the SOURCE of the flip (followPlayer/switchToPlayer) so
+  // it is live BEFORE the seat reposition renders, then auto-cleared.
+  seatFadeActive = $state(false);
+  seatFadeTimer: ReturnType<typeof setTimeout> | undefined = undefined;
   _themePreference = $state<ThemePreference>(readStoredThemePreference());
   systemTheme = $state<ResolvedTheme>(readSystemTheme());
 
@@ -120,11 +133,32 @@ class ViewSettingsStore {
     this.boardLift = DEFAULT_BOARD_LIFT;
   }
 
+  // Arm the fade-mode gate for one side switch. Called synchronously BEFORE the
+  // viewIndex change so the flag is already set when the seat reposition renders
+  // (Svelte flushes both together), which is what lets the animate:flip on the
+  // hands read duration 0 on the very flush that would otherwise slide them.
+  beginSeatFade() {
+    this.seatFadeActive = true;
+    if (this.seatFadeTimer !== undefined) {
+      clearTimeout(this.seatFadeTimer);
+    }
+    this.seatFadeTimer = setTimeout(() => {
+      this.seatFadeActive = false;
+      this.seatFadeTimer = undefined;
+    }, SEAT_FADE_MS);
+  }
+
   followPlayer(playerIndex: number) {
+    if (playerIndex !== this.viewIndex && this.seatTransition === 'fade') {
+      this.beginSeatFade();
+    }
     this.viewIndex = playerIndex;
   }
 
   switchToPlayer(playerIndex: number) {
+    if (playerIndex !== this.viewIndex && this.seatTransition === 'fade') {
+      this.beginSeatFade();
+    }
     this.followActive = false;
     this.viewIndex = playerIndex;
   }

@@ -3,6 +3,7 @@
   import type { TransitionConfig } from 'svelte/transition';
   import CardTile from './CardTile.svelte';
   import type { PlayerView } from '../game/types';
+  import { viewSettingsStore } from '../../state/viewSettings.svelte';
 
   type Props = {
     player: PlayerView;
@@ -104,12 +105,12 @@
       class="hand-card-frame"
       data-hand-card-slot={`player:${player.index}:hand:${index}`}
       data-card-serial={card.serial ?? undefined}
-      animate:flip={{ duration: 180 }}
+      animate:flip={{ duration: viewSettingsStore.seatFadeActive ? 0 : 180 }}
     >
       <div
         class="hand-card-content"
-        in:handCardTransition={{ duration: 140 }}
-        out:handCardTransition={{ duration: 110 }}
+        in:handCardTransition={{ duration: viewSettingsStore.seatFadeActive ? 0 : 140 }}
+        out:handCardTransition={{ duration: viewSettingsStore.seatFadeActive ? 0 : 110 }}
       >
         <CardTile
           {card}

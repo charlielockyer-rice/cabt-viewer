@@ -1,12 +1,13 @@
 // @vitest-environment happy-dom
 //
 // Guards the fade-only side-switch (#46 / #58): when "Side switch: Fade" is
-// selected, a follow-active seat flip must select the FADE path — the board
-// plane gets data-seat-fading, under which every transition is frozen so the
-// reposition snaps with zero flip/rotation and only the opacity dim moves. In
-// Flip mode the same flip must NOT set the attribute (the rotate/reposition
-// transitions run normally). happy-dom runs no CSS transitions, so this asserts
-// the PATH SELECTION (the attribute the CSS gate keys off), not pixels.
+// selected, a follow-active seat flip must arm the no-motion gate —
+// viewSettingsStore.seatFadeActive goes true and the board layer carries
+// .seat-fade-active, which freezes every CSS transition across the board plane
+// AND the hand panels, while Hand/BenchZone read the same flag to zero their
+// Svelte animate:flip/in/out (the "hands flying across the screen"). In Flip
+// mode the same flip must NOT arm it (motion runs normally). happy-dom runs no
+// CSS transitions, so this asserts the PATH/FLAG the gate keys off, not pixels.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
@@ -40,13 +41,15 @@ function settledViews(snapshot: ReturnType<typeof cabtReplayToSnapshot>): GameVi
 function boardLayer(): HTMLElement | null {
   return document.querySelector('.board');
 }
-// A hand panel covered by the fade gate (proves the freeze reaches the hands,
-// which live OUTSIDE the board plane as siblings in .board).
+// A hand panel under the armed fade gate. The freeze anchors on the board layer,
+// which contains BOTH the board plane and the hand panels — so this proves the
+// gate reaches the hands (which slide via Svelte animate:flip, read off the same
+// seatFadeActive flag in Hand/BenchZone).
 function gatedHandPanel(): Element | null {
-  return document.querySelector('.board[data-seat-fading] .player-panel');
+  return document.querySelector('.board.seat-fade-active .player-panel');
 }
 
-describe('fade side-switch selects the fade path', () => {
+describe('fade side-switch arms the no-motion gate', () => {
   let app: Record<string, unknown> | undefined;
 
   afterEach(() => {
@@ -56,6 +59,11 @@ describe('fade side-switch selects the fade path', () => {
     }
     gameStore.reset();
     viewSettingsStore.seatTransition = 'flip';
+    if (viewSettingsStore.seatFadeTimer !== undefined) {
+      clearTimeout(viewSettingsStore.seatFadeTimer);
+      viewSettingsStore.seatFadeTimer = undefined;
+    }
+    viewSettingsStore.seatFadeActive = false;
     vi.restoreAllMocks();
     document.body.innerHTML = '';
   });
@@ -84,7 +92,7 @@ describe('fade side-switch selects the fade path', () => {
     return -1;
   }
 
-  it('sets data-seat-fading on a seat flip in Fade mode, but not in Flip mode', () => {
+  it('arms seatFadeActive (board + hands) on a seat flip in Fade mode, but not in Flip mode', () => {
     const snapshot = cabtReplayToSnapshot(JSON.parse(readFileSync(logPath, 'utf8')));
     const views = settledViews(snapshot);
     expect(views.length).toBeGreaterThan(4);
@@ -94,19 +102,19 @@ describe('fade side-switch selects the fade path', () => {
     mountAtFrame0(views);
     const flipFrame = firstFlipFrame(views);
     expect(flipFrame, 'fixture must contain at least one follow-active seat flip').toBeGreaterThan(0);
-    // Asserted synchronously after the flip's flushSync: the WAAPI stub resolves
-    // .finished on a microtask, so the lift hasn't run yet either way — in Flip
-    // mode the attribute is never set to begin with.
-    expect(boardLayer()?.hasAttribute('data-seat-fading')).toBe(false);
+    expect(viewSettingsStore.seatFadeActive, 'flip mode must not arm the fade gate').toBe(false);
+    expect(boardLayer()?.classList.contains('seat-fade-active')).toBe(false);
 
     unmount(app!);
     app = undefined;
     gameStore.reset();
+    viewSettingsStore.seatFadeActive = false;
 
-    // ---- Fade mode: the same seat flip must arm the fade gate. ----
+    // ---- Fade mode: the same seat flip must arm the gate for the whole board. ----
     viewSettingsStore.seatTransition = 'fade';
     mountAtFrame0(views);
     let armed = false;
+    let classArmed = false;
     let handCovered = false;
     let prev = viewSettingsStore.viewIndex;
     for (let i = 1; i <= flipFrame; i += 1) {
@@ -115,14 +123,17 @@ describe('fade side-switch selects the fade path', () => {
       const flipped = viewSettingsStore.viewIndex !== prev;
       prev = viewSettingsStore.viewIndex;
       if (flipped) {
-        // Must be armed at the instant of the flip, before any microtask lifts it.
-        armed = boardLayer()?.hasAttribute('data-seat-fading') ?? false;
-        // And the gate must reach the hand panels, not just the board plane.
+        // Armed at the instant of the flip — the ~320ms auto-clear timer has not
+        // fired synchronously, and (critically) it was set at the SOURCE so it is
+        // live on the same flush that repositions the seats.
+        armed = viewSettingsStore.seatFadeActive;
+        classArmed = boardLayer()?.classList.contains('seat-fade-active') ?? false;
         handCovered = gatedHandPanel() !== null;
         break;
       }
     }
-    expect(armed, 'fade mode must set data-seat-fading on the board layer at the seat flip').toBe(true);
-    expect(handCovered, 'the fade gate must cover the hand panels (outside the board plane)').toBe(true);
+    expect(armed, 'fade mode must arm seatFadeActive at the seat flip').toBe(true);
+    expect(classArmed, 'the board layer must carry .seat-fade-active (freezes all board CSS transitions)').toBe(true);
+    expect(handCovered, 'the gate must reach the hand panels (Hand/BenchZone read the same flag)').toBe(true);
   });
 });

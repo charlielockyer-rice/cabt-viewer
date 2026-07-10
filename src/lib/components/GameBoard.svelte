@@ -108,56 +108,32 @@
   let seatFadeMode = $derived(viewSettingsStore.seatTransition === 'fade');
   let planeElement = $state<HTMLElement>();
   let lastTopIndex = topPlayer?.index;
-  // Guards re-entrancy: a second flip inside the ~300ms fade window bumps the
-  // token so the first fade's finish handler won't lift the gate early.
-  let fadeToken = 0;
   $effect(() => {
     const topIndex = topPlayer?.index;
     if (topIndex === lastTopIndex) {
       return;
     }
     lastTopIndex = topIndex;
-    // Fade mode: the whole point is that the ONLY motion is the opacity dim —
-    // the reposition must be instant with zero flip/rotation ANYWHERE that
-    // switches sides. Two families of motion a seat flip triggers:
-    //  1. In the board plane: card-tile rotations, CenterPiles pile-count
-    //     reposition, the rotated energy/status/tool/damage decorations, bench.
-    //  2. In the HAND PANELS — which live OUTSIDE the plane, as siblings in the
-    //     board layer: on a side switch a hand becomes the (concealed) top hand
-    //     and its card-tiles rotate 180deg via a CSS transition. The plane-only
-    //     gate never touched those, so the hand cards kept flipping under the dim.
-    // Fix: set data-seat-fading on the whole board layer (.board, the common
-    // ancestor of the plane AND both panels) so a single :global rule freezes
-    // every transition across both families for the fade window; and dim the
-    // plane AND the panels together so they fade in unison (overlays like the log
-    // panel / zone viewer, also in .board, are deliberately NOT dimmed). Driven
-    // imperatively off the same flip detection: the attribute lands BEFORE paint,
-    // so each class-driven transform change (board + hands) settles with
-    // transition-duration 0 and no transition fires; lifted when the dim finishes.
-    // element.animate also restarts cleanly on every flip.
+    // Fade mode: the ONLY motion a side switch may show is this opacity dim. The
+    // "no motion" freeze is NOT done here — it is gated by viewSettingsStore
+    // .seatFadeActive, armed at the SOURCE of the flip (followPlayer) so it is
+    // already set on the flush that repositions the seats. That one flag freezes
+    // every CSS transition in the board layer (BoardLayer .seat-fade-active) AND
+    // zeroes the Svelte animate:flip / in / out durations on the hands and bench
+    // (Hand/BenchZone) — the Web-Animations flips a CSS freeze can't touch (the
+    // "hands flying across the screen"). All this effect does is dim the board
+    // plane and the hand panels together, so they fade in unison while the switch
+    // happens instantly underneath. element.animate restarts cleanly per flip.
     if (seatFadeMode && !scrubbing && planeElement && typeof planeElement.animate === 'function') {
       const board = planeElement.closest('.board') as HTMLElement | null;
-      // Gate host: the board layer if present (covers plane + hands), else the
-      // plane alone (fallback — the plane rule still freezes in-plane motion).
-      const gateHost = board ?? planeElement;
-      gateHost.setAttribute('data-seat-fading', '');
-      const token = ++fadeToken;
-      const lift = () => {
-        if (fadeToken === token) {
-          gateHost.removeAttribute('data-seat-fading');
-        }
-      };
       const frames = [{ opacity: 1 }, { opacity: 0.06, offset: 0.42 }, { opacity: 0.06, offset: 0.58 }, { opacity: 1 }];
       const opts = { duration: 300, easing: 'ease' } as const;
-      // Plane always animates (guarded above) and drives the lift; the hand
-      // panels dim in parallel on the same clock.
-      const dim = planeElement.animate(frames, opts);
+      planeElement.animate(frames, opts);
       for (const panel of board?.querySelectorAll<HTMLElement>('.player-panel') ?? []) {
         if (typeof panel.animate === 'function') {
           panel.animate(frames, opts);
         }
       }
-      dim.finished.then(lift, lift);
     }
   });
 
@@ -408,27 +384,9 @@
     transition-duration: 0s !important;
   }
 
-  /* Fade seat-transition (opt-in): the ONLY motion is the opacity dim. For the
-     ~300ms fade window the script sets data-seat-fading on the board layer
-     (.board), and — like the scrub gate above — every transition under it snaps
-     to 0s so the whole side-switch lands instantly with zero flip/rotation:
-     the board plane's card-tile rotations, CenterPiles pile-count slide and
-     rotated top-slot decorations, AND the hand panels' concealed-card 180deg
-     flip (the panels are siblings of the plane in .board — the earlier
-     plane-only gate never froze them, so the hand cards kept flipping under the
-     dim). Attribute lifts when the dim finishes so normal transitions (hover,
-     card-play flights) resume untouched.
-
-     Fully :global — data-seat-fading is toggled imperatively (setAttribute, not
-     a template binding), so Svelte's scoped-CSS pruner can't see it and would
-     drop the rule as "unused", making the gate a no-op. Last two selectors are
-     the fallback for a mount with no .board ancestor (attr lands on the plane). */
-  :global(.board[data-seat-fading]),
-  :global(.board[data-seat-fading] *),
-  :global(.game-board-plane[data-seat-fading]),
-  :global(.game-board-plane[data-seat-fading] *) {
-    transition-duration: 0s !important;
-  }
+  /* The fade-mode side-switch freeze lives in BoardLayer (.board.seat-fade-active),
+     which spans the board plane AND the hand panels; this component only runs the
+     opacity dim (see the effect above). */
 
   .game-board-plane {
     position: absolute;

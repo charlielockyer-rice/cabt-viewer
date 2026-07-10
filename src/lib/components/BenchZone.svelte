@@ -2,6 +2,7 @@
   import { flip } from 'svelte/animate';
   import BoardSlot from './BoardSlot.svelte';
   import type { PlayerView, PokemonSlotView } from '../game/types';
+  import { viewSettingsStore } from '../../state/viewSettings.svelte';
 
   type Props = {
     player: PlayerView;
@@ -98,7 +99,7 @@
   <div class="bench-row" class:opponent>
     {#each benchEntries as entry (entry.key)}
       {@const slot = entry.slot}
-      <div class="bench-slot-frame" animate:flip={{ duration: 180 }}>
+      <div class="bench-slot-frame" animate:flip={{ duration: viewSettingsStore.seatFadeActive ? 0 : 180 }}>
         <BoardSlot
           {slot}
           canDrop={isPlayableTarget(slot)}
