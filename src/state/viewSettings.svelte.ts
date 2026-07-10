@@ -1,3 +1,5 @@
+import { replayStore } from './replay.svelte';
+
 const DEFAULT_BOARD_TILT = 8;
 const DEFAULT_BOARD_PERSPECTIVE = 1250;
 const DEFAULT_BOARD_SCALE_Y = 94;
@@ -54,10 +56,12 @@ class ViewSettingsStore {
   boardScaleY = $state(DEFAULT_BOARD_SCALE_Y);
   boardLift = $state(DEFAULT_BOARD_LIFT);
   // How the board transitions when the follow-active seat flips top<->bottom.
-  // 'flip' = the cards rotate/reposition into the new perspective (default);
-  // 'fade' = the board dims out and fades back in the new perspective, with the
-  // reposition happening instantly under the dim. A compare-both preference.
-  seatTransition = $state<'flip' | 'fade'>('flip');
+  // 'flip' = the cards rotate/reposition into the new perspective;
+  // 'fade' = the board dims out and the switch happens motionless underneath;
+  // 'auto' (default) = flip for normal stepping / auto-play / clicking, but the
+  //   motionless fade path while the scrub bar is driving fast navigation — that
+  //   is exactly when a flip tears — including the debounced drag-release settle.
+  seatTransition = $state<'flip' | 'fade' | 'auto'>('auto');
   // True for the brief window around a fade-mode side switch. It is the single
   // gate every side-switch motion consults so the ONLY thing that moves is the
   // opacity dim: BoardLayer freezes all CSS transitions while it is set, and
@@ -133,6 +137,23 @@ class ViewSettingsStore {
     this.boardLift = DEFAULT_BOARD_LIFT;
   }
 
+  // Whether the NEXT seat switch should take the motionless fade path.
+  // 'fade' always; 'flip' never; 'auto' only while the scrub bar is driving fast
+  // navigation. replayStore.scrubbing is a debounced "navigation outpaces
+  // animation" flag, so it stays true through the drag-release settle (the flip
+  // that lands on the final active seat) — exactly the boundary that must fade —
+  // and it is false during normal stepping, auto-play, keyboard nav, and all live
+  // play, so those take the flip path.
+  shouldFadeSeatSwitch(): boolean {
+    if (this.seatTransition === 'fade') {
+      return true;
+    }
+    if (this.seatTransition === 'flip') {
+      return false;
+    }
+    return replayStore.scrubbing;
+  }
+
   // Arm the fade-mode gate for one side switch. Called synchronously BEFORE the
   // viewIndex change so the flag is already set when the seat reposition renders
   // (Svelte flushes both together), which is what lets the animate:flip on the
@@ -149,14 +170,14 @@ class ViewSettingsStore {
   }
 
   followPlayer(playerIndex: number) {
-    if (playerIndex !== this.viewIndex && this.seatTransition === 'fade') {
+    if (playerIndex !== this.viewIndex && this.shouldFadeSeatSwitch()) {
       this.beginSeatFade();
     }
     this.viewIndex = playerIndex;
   }
 
   switchToPlayer(playerIndex: number) {
-    if (playerIndex !== this.viewIndex && this.seatTransition === 'fade') {
+    if (playerIndex !== this.viewIndex && this.shouldFadeSeatSwitch()) {
       this.beginSeatFade();
     }
     this.followActive = false;

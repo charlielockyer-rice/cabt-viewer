@@ -17,6 +17,7 @@ import { cabtReplayToSnapshot } from '../lib/cabt/cabtReplay';
 import type { GameView } from '../lib/game/types';
 import { gameStore } from '../state/game.svelte';
 import { viewSettingsStore } from '../state/viewSettings.svelte';
+import { replayStore } from '../state/replay.svelte';
 
 vi.mock('../lib/home/catalog', () => ({
   loadAgentOptions: async () => [],
@@ -64,6 +65,7 @@ describe('fade side-switch arms the no-motion gate', () => {
       viewSettingsStore.seatFadeTimer = undefined;
     }
     viewSettingsStore.seatFadeActive = false;
+    replayStore.scrubbing = false;
     vi.restoreAllMocks();
     document.body.innerHTML = '';
   });
@@ -135,5 +137,37 @@ describe('fade side-switch arms the no-motion gate', () => {
     expect(armed, 'fade mode must arm seatFadeActive at the seat flip').toBe(true);
     expect(classArmed, 'the board layer must carry .seat-fade-active (freezes all board CSS transitions)').toBe(true);
     expect(handCovered, 'the gate must reach the hand panels (Hand/BenchZone read the same flag)').toBe(true);
+  });
+
+  it('AUTO mode fades a side switch only while scrubbing (incl. the debounced settle), else flips', () => {
+    // Decision matrix — auto tracks replayStore.scrubbing; flip/fade are absolute.
+    viewSettingsStore.seatTransition = 'auto';
+    replayStore.scrubbing = false;
+    expect(viewSettingsStore.shouldFadeSeatSwitch(), 'auto + not scrubbing = flip path').toBe(false);
+    replayStore.scrubbing = true;
+    expect(viewSettingsStore.shouldFadeSeatSwitch(), 'auto + scrubbing = fade path').toBe(true);
+
+    viewSettingsStore.seatTransition = 'flip';
+    expect(viewSettingsStore.shouldFadeSeatSwitch(), 'flip never fades, even while scrubbing').toBe(false);
+
+    viewSettingsStore.seatTransition = 'fade';
+    replayStore.scrubbing = false;
+    expect(viewSettingsStore.shouldFadeSeatSwitch(), 'fade always fades, even when not scrubbing').toBe(true);
+
+    // Arming at the source: followPlayer must arm the gate for an auto seat change
+    // ONLY while scrubbing. (replayStore.scrubbing stays true through the debounced
+    // drag-release, so the settle flip onto the final seat also fades.)
+    viewSettingsStore.seatTransition = 'auto';
+    replayStore.scrubbing = true;
+    viewSettingsStore.viewIndex = 0;
+    viewSettingsStore.seatFadeActive = false;
+    viewSettingsStore.followPlayer(1);
+    expect(viewSettingsStore.seatFadeActive, 'auto + scrubbing seat change arms the gate').toBe(true);
+
+    replayStore.scrubbing = false;
+    viewSettingsStore.viewIndex = 0;
+    viewSettingsStore.seatFadeActive = false;
+    viewSettingsStore.followPlayer(1);
+    expect(viewSettingsStore.seatFadeActive, 'auto + not scrubbing seat change flips (no gate)').toBe(false);
   });
 });

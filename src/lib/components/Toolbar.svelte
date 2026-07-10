@@ -68,6 +68,13 @@
     Side switch:
     <button
       type="button"
+      class:active={viewSettingsStore.seatTransition === 'auto'}
+      aria-pressed={viewSettingsStore.seatTransition === 'auto'}
+      title="Flip normally; fade while scrubbing"
+      onclick={() => (viewSettingsStore.seatTransition = 'auto')}
+    >Auto</button>
+    <button
+      type="button"
       class:active={viewSettingsStore.seatTransition === 'flip'}
       aria-pressed={viewSettingsStore.seatTransition === 'flip'}
       onclick={() => (viewSettingsStore.seatTransition = 'flip')}
@@ -170,12 +177,12 @@
   .seat-switch {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 4px;
     padding: 2px 1px 5px;
     color: var(--text-secondary);
     font-size: 10px;
     line-height: 1.2;
-    white-space: nowrap;
   }
 
   .seat-switch button {
