@@ -328,6 +328,12 @@
   let opponentIsAgent = $derived(!!topPlayer && game?.seats?.[topPlayer.index]?.control === 'agent');
   let selfIsPlaying = $derived(!!game?.seats?.some((seat) => seat.control === 'self'));
   let showThinking = $derived(!replayMode && !gameFinished && selfIsPlaying && opponentIsAgent);
+  // Prefer the opponent agent's display name ("Copycat v1 (thinking — exchange)")
+  // over the bare seat name; the indicator falls back to "Player N" for agents
+  // with no display name.
+  let opponentAgentName = $derived(
+    topPlayer?.index === 0 ? selectedPlayer1Agent?.name : selectedPlayer2Agent?.name,
+  );
   let winnerName = $derived(
     game?.winner === 0 || game?.winner === 1
       ? game.players[game.winner]?.name
@@ -890,7 +896,7 @@
 
       {#if showThinking}
         <ThinkingIndicator
-          name={topPlayer?.name ?? 'Opponent'}
+          name={opponentAgentName ?? topPlayer?.name ?? 'Opponent'}
           since={gameStore.commandInFlightSince}
         />
       {/if}
