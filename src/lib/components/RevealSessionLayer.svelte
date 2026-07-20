@@ -5,6 +5,7 @@
   import { AnimationEventGate } from '../anim/gate';
   import { animationActivity, scheduledEndMs } from '../anim/activity';
   import { handSlots, resolveAnchor } from '../anim/anchors';
+  import { AnimAttr, attr } from '../anim/domContract';
   import { choreograph, groupMotionsByPlayer, type CardMotion, type TargetEffect } from '../anim/motions';
   import { fallbackHandTarget, handCardVisualRect, revealLayout, settledHandLandingWidth } from '../anim/revealLayout';
   import { animVisibility, type ReleaseClaim } from '../anim/visibility';
@@ -494,7 +495,7 @@
 
   function attachedEnergyElement(target: HTMLElement, serial: number): HTMLElement | null {
     if (Number.isFinite(serial)) {
-      const bySerial = target.querySelector(`[data-energy-serial="${serial}"]`);
+      const bySerial = target.querySelector(attr(AnimAttr.energySerial, serial));
       if (bySerial instanceof HTMLElement) {
         return bySerial;
       }

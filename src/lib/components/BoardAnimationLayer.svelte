@@ -6,6 +6,7 @@
   import { AnimationEventGate, scopeEnded } from '../anim/gate';
   import { animationActivity, scheduledEndMs } from '../anim/activity';
   import { resolveAnchor } from '../anim/anchors';
+  import { AnimAttr } from '../anim/domContract';
   import { choreograph, type CardMotion } from '../anim/motions';
   import { animVisibility, type ReleaseClaim } from '../anim/visibility';
   import { claimSignature, boardClaimIsAuthoritative } from '../anim/settleClaim';
@@ -106,7 +107,7 @@
       return;
     }
     const rects = new Map<number, LocalRect>();
-    for (const element of document.querySelectorAll('[data-energy-serial], [data-tool-serial]')) {
+    for (const element of document.querySelectorAll(`[${AnimAttr.energySerial}], [${AnimAttr.toolSerial}]`)) {
       if (!(element instanceof HTMLElement) || element.closest('[data-anim-layer]')) {
         continue;
       }
@@ -124,7 +125,7 @@
       attachedRects = rects;
     }
     const slotRects = new Map<number, LocalRect>();
-    for (const slot of document.querySelectorAll('.board-slot[data-pokemon-serial]')) {
+    for (const slot of document.querySelectorAll(`.board-slot[${AnimAttr.pokemonSerial}]`)) {
       if (!(slot instanceof HTMLElement) || slot.closest('[data-anim-layer]')) {
         continue;
       }

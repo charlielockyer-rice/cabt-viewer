@@ -5,6 +5,7 @@
   import { animationActivity, scheduledEndMs } from '../anim/activity';
   import { applyTargetEffect } from '../anim/effects';
   import { handSlots, resolveAnchor, type Anchor, type ResolvedAnchor } from '../anim/anchors';
+  import { AnimAttr, attr, cardAnchorValue } from '../anim/domContract';
   import { choreograph, groupMotionsByPlayer, type CardMotion, type TargetEffect } from '../anim/motions';
   import { cardVisual, fallbackHandTarget, handCardVisualRect, revealLayout, settledHandLandingWidth } from '../anim/revealLayout';
   import { animVisibility, type HideMode, type ReleaseClaim } from '../anim/visibility';
@@ -126,7 +127,7 @@
   $effect.pre(() => {
     void events;
     const snapshots = new Map<number, HandSnapshot>();
-    for (const handElement of document.querySelectorAll('[data-card-anchor$=":hand"]')) {
+    for (const handElement of document.querySelectorAll(`[${AnimAttr.cardAnchor}$=":hand"]`)) {
       if (!(handElement instanceof HTMLElement) || handElement.closest('[data-anim-layer]')) {
         continue;
       }
@@ -136,7 +137,7 @@
         continue;
       }
       const cards = new Map<number, HandCardSnapshot>();
-      for (const frame of handElement.querySelectorAll('.hand-card-frame[data-card-serial]')) {
+      for (const frame of handElement.querySelectorAll(`.hand-card-frame[${AnimAttr.cardSerial}]`)) {
         if (!(frame instanceof HTMLElement) || frame.dataset.animHidden) {
           continue;
         }
@@ -1007,7 +1008,7 @@
   }
 
   function prizeSlotElements(player: number): HTMLElement[] {
-    return [...document.querySelectorAll(`[data-card-anchor^="player:${player}:prize:"]`)]
+    return [...document.querySelectorAll(`[${AnimAttr.cardAnchor}^="${cardAnchorValue.prizePrefix(player)}"]`)]
       .filter((element): element is HTMLElement => element instanceof HTMLElement && !element.closest('[data-anim-layer]'))
       .sort((a, b) => prizeIndex(a) - prizeIndex(b));
   }
@@ -1062,7 +1063,7 @@
   }
 
   function prizeGridForPlayer(player: number): HTMLElement | null {
-    const deckAnchor = document.querySelector(`[data-card-anchor="player:${player}:deck"]`);
+    const deckAnchor = document.querySelector(attr(AnimAttr.cardAnchor, cardAnchorValue.deck(player)));
     const grid = deckAnchor?.closest('.field-piles')?.querySelector('.prize-grid');
     return grid instanceof HTMLElement ? grid : null;
   }

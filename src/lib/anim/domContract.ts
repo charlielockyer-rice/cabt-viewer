@@ -35,6 +35,8 @@ export const cardAnchorValue = {
   slot: (player: number, slot: string, index: number) => `player:${player}:${slot}:${index}`,
   // The per-card hand-slot marker (data-hand-card-slot value prefix).
   handSlotPrefix: (player: number) => `player:${player}:hand:`,
+  // A player's prize anchors as a value prefix (for a `^=` match over all prizes).
+  prizePrefix: (player: number) => `player:${player}:prize:`,
 } as const;
 
 // Attribute-selector helper: `attr(AnimAttr.cardSerial, 5)` -> [data-card-serial="5"].
