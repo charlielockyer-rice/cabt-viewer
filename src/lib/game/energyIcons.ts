@@ -72,20 +72,25 @@ export function normalizedTypeName(cardType: string | number | undefined): strin
     return undefined;
   }
   if (typeof cardType === 'number') {
+    // Indexed by CabtEnergyType (cabt/types.ts): 0 Colorless .. 9 Dragon,
+    // 10 Rainbow, 11 Team Rocket. Fairy is NOT a CABT energy type — the engine
+    // never emits it as a number — so no numeric slot maps to 'fairy'; a legacy
+    // Fairy Energy reaches its pip through the card-name path above. Rainbow and
+    // Team Rocket have no dedicated pip and resolve to the neutral colorless one.
     return (
       [
-        undefined,
-        'grass',
-        'fire',
-        'water',
-        'lightning',
-        'psychic',
-        'fighting',
-        'darkness',
-        'metal',
-        'colorless',
-        'fairy',
-        'dragon',
+        undefined,   // 0 Colorless (→ colorless downstream)
+        'grass',     // 1
+        'fire',      // 2
+        'water',     // 3
+        'lightning', // 4
+        'psychic',   // 5
+        'fighting',  // 6
+        'darkness',  // 7
+        'metal',     // 8
+        'dragon',    // 9
+        'colorless', // 10 Rainbow
+        'colorless', // 11 Team Rocket
       ][cardType] ?? undefined
     );
   }
