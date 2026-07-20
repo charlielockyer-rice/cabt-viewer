@@ -2978,18 +2978,18 @@ function attackLogSummary(logs: Array<Record<string, unknown>>): string {
 
 function areaName(area: unknown): string {
   const areaMap: Record<number, string> = {
-    1: 'deck',
-    2: 'hand',
-    3: 'discard',
-    4: 'active',
-    5: 'bench',
-    6: 'prize',
-    7: 'stadium',
-    8: 'energy',
-    9: 'tool',
-    10: 'evolution stack',
-    11: 'player',
-    12: 'selection',
+    [CabtAreaType.DECK]: 'deck',
+    [CabtAreaType.HAND]: 'hand',
+    [CabtAreaType.DISCARD]: 'discard',
+    [CabtAreaType.ACTIVE]: 'active',
+    [CabtAreaType.BENCH]: 'bench',
+    [CabtAreaType.PRIZE]: 'prize',
+    [CabtAreaType.STADIUM]: 'stadium',
+    [CabtAreaType.ENERGY]: 'energy',
+    [CabtAreaType.TOOL]: 'tool',
+    [CabtAreaType.PRE_EVOLUTION]: 'evolution stack',
+    [CabtAreaType.PLAYER]: 'player',
+    [CabtAreaType.LOOKING]: 'looking',
   };
   return areaMap[Number(area)] ?? 'zone';
 }

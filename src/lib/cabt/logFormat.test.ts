@@ -264,6 +264,16 @@ describe('formatCabtLog branch coverage', () => {
         toArea: CabtAreaType.ACTIVE,
       })).toBe('Player 1 moved Card 999999 from bench to active.');
     });
+
+    it('uses the engine name for the looking area', () => {
+      expect(formatCabtLog({
+        type: CabtLogType.MOVE_CARD,
+        playerIndex: 0,
+        cardId: 999999,
+        fromArea: CabtAreaType.DECK,
+        toArea: CabtAreaType.LOOKING,
+      })).toBe('Player 1 moved Card 999999 from deck to looking.');
+    });
   });
 
   describe('MoveCardReverse / areaName unknown fallback', () => {

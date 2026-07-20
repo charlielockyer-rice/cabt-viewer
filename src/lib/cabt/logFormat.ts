@@ -195,7 +195,7 @@ function areaName(area: unknown): string {
     [CabtAreaType.TOOL]: 'tool',
     [CabtAreaType.PRE_EVOLUTION]: 'evolution stack',
     [CabtAreaType.PLAYER]: 'player',
-    [CabtAreaType.LOOKING]: 'selection',
+    [CabtAreaType.LOOKING]: 'looking',
     [CabtAreaType.PLAYING]: 'the play zone',
     [CabtAreaType.DECK_BOTTOM]: 'the bottom of the deck',
   };

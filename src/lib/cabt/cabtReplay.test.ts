@@ -751,6 +751,43 @@ describe('cabtReplayToSnapshot', () => {
     expect(snapshot.steps[0].actionTimeline?.[0].message).toBe('Player 1 set a Prize card.');
   });
 
+  it('uses the engine name for the looking area in replay logs', () => {
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{
+        logs: [{
+          type: 'MoveCard',
+          playerIndex: 0,
+          cardId: 3,
+          fromArea: CabtAreaType.DECK,
+          toArea: CabtAreaType.LOOKING,
+        }],
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 59,
+            prize: [],
+          }, {
+            active: [],
+            bench: [],
+            benchMax: 5,
+            handCount: 0,
+            deckCount: 60,
+            prize: [],
+          }],
+        },
+      }],
+    });
+
+    expect(snapshot.steps[0].actionTimeline?.[0].message)
+      .toBe('Player 1 moved Basic Water Energy from deck to looking.');
+  });
+
   it('does not show setup Prize cards before the setup-prize replay step', () => {
     const snapshot = cabtReplayToSnapshot({
       visualize: [{
