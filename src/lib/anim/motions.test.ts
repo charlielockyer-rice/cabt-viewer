@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CabtAreaType } from '../cabt/types';
 import type { ActionTimelineEvent, CardView, PlayerView, PokemonSlotView } from '../game/types';
-import { choreograph } from './motions';
+import { choreograph, groupMotionsByPlayer, type CardMotion } from './motions';
 import { actionAnimationTiming } from './timing';
 
 function choreographBoardMotions(events: ActionTimelineEvent[], players: PlayerView[]) {
@@ -565,5 +565,26 @@ describe('pass announce', () => {
       { id: 904, message: 'Player 2 ended their turn.', playerIndex: 1, kind: 'TurnEnd', params: {} },
     ], [player(0), player(1)]);
     expect(effects).toHaveLength(0);
+  });
+});
+
+describe('groupMotionsByPlayer', () => {
+  const motion = (id: string, player: number): CardMotion => ({ id, player } as CardMotion);
+
+  it('buckets motions by owning player, preserving order within each bucket', () => {
+    const groups = groupMotionsByPlayer([
+      motion('a', 0),
+      motion('b', 1),
+      motion('c', 0),
+      motion('d', 1),
+      motion('e', 0),
+    ]);
+    expect([...groups.keys()]).toEqual([0, 1]);
+    expect(groups.get(0)!.map((m) => m.id)).toEqual(['a', 'c', 'e']);
+    expect(groups.get(1)!.map((m) => m.id)).toEqual(['b', 'd']);
+  });
+
+  it('returns an empty map for no motions', () => {
+    expect(groupMotionsByPlayer([]).size).toBe(0);
   });
 });

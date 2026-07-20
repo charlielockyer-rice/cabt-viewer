@@ -5,7 +5,7 @@
   import { AnimationEventGate } from '../anim/gate';
   import { animationActivity, scheduledEndMs } from '../anim/activity';
   import { handSlots, resolveAnchor } from '../anim/anchors';
-  import { choreograph, type CardMotion, type TargetEffect } from '../anim/motions';
+  import { choreograph, groupMotionsByPlayer, type CardMotion, type TargetEffect } from '../anim/motions';
   import { fallbackHandTarget, handCardVisualRect, revealLayout, settledHandLandingWidth } from '../anim/revealLayout';
   import { animVisibility, type ReleaseClaim } from '../anim/visibility';
   import { replayStore } from '../../state/replay.svelte';
@@ -213,7 +213,7 @@
 
   function startReveal(motions: CardMotion[]) {
     clearSession();
-    const sprites = [...groupByPlayer(motions).entries()].flatMap(([playerIndex, playerMotions]) =>
+    const sprites = [...groupMotionsByPlayer(motions).entries()].flatMap(([playerIndex, playerMotions]) =>
       spritesForPlayer(playerIndex, playerMotions),
     );
     if (!sprites.length) {
@@ -352,7 +352,7 @@
       return;
     }
     const startedGeneration = generation;
-    const byPlayer = groupByPlayer(motions);
+    const byPlayer = groupMotionsByPlayer(motions);
     for (const [playerIndex, playerMotions] of byPlayer.entries()) {
       const deck = resolveAnchor({ kind: 'deck', player: playerIndex });
       const deckRect = deck?.geometry.getBoundingClientRect();
@@ -651,16 +651,6 @@
       exitScale: 1,
       rotation: 0,
     };
-  }
-
-  function groupByPlayer(motions: CardMotion[]): Map<number, CardMotion[]> {
-    const groups = new Map<number, CardMotion[]>();
-    for (const motion of motions) {
-      const group = groups.get(motion.player) ?? [];
-      group.push(motion);
-      groups.set(motion.player, group);
-    }
-    return groups;
   }
 
   function spriteStyle(sprite: RevealSprite): string {

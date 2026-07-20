@@ -102,6 +102,19 @@ export type Choreography = {
   effects: TargetEffect[];
 };
 
+// Buckets motions by their owning player, preserving order within each bucket.
+// The render layers group per player so each seat's sprites are laid out against
+// that seat's board; sharing one implementation keeps the layers in lock-step.
+export function groupMotionsByPlayer(motions: CardMotion[]): Map<number, CardMotion[]> {
+  const groups = new Map<number, CardMotion[]>();
+  for (const motion of motions) {
+    const group = groups.get(motion.player) ?? [];
+    group.push(motion);
+    groups.set(motion.player, group);
+  }
+  return groups;
+}
+
 // Turns one batch of timeline events into motions and target effects. This is
 // a pure function of (events, players) so replay phases and live frames share
 // one classification. `context` is the whole step's timeline, used to find

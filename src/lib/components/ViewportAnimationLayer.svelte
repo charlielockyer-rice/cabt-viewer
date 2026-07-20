@@ -5,7 +5,7 @@
   import { animationActivity, scheduledEndMs } from '../anim/activity';
   import { applyTargetEffect } from '../anim/effects';
   import { handSlots, resolveAnchor, type Anchor, type ResolvedAnchor } from '../anim/anchors';
-  import { choreograph, type CardMotion, type TargetEffect } from '../anim/motions';
+  import { choreograph, groupMotionsByPlayer, type CardMotion, type TargetEffect } from '../anim/motions';
   import { cardVisual, fallbackHandTarget, handCardVisualRect, revealLayout, settledHandLandingWidth } from '../anim/revealLayout';
   import { animVisibility, type HideMode, type ReleaseClaim } from '../anim/visibility';
   import { replayStore } from '../../state/replay.svelte';
@@ -607,7 +607,7 @@
   }
 
   function startDraws(motions: CardMotion[], startedGeneration: number) {
-    const byPlayer = groupByPlayer(motions);
+    const byPlayer = groupMotionsByPlayer(motions);
     for (const [player, playerMotions] of byPlayer) {
       const deck = resolveAnchor({ kind: 'deck', player });
       const hand = resolveAnchor({ kind: 'hand', player });
@@ -771,7 +771,7 @@
   }
 
   function startPrizeTakes(motions: CardMotion[], startedGeneration: number) {
-    const byPlayer = groupByPlayer(motions);
+    const byPlayer = groupMotionsByPlayer(motions);
     for (const [player, playerMotions] of byPlayer) {
       const hand = resolveAnchor({ kind: 'hand', player });
       if (!hand) {
@@ -1079,16 +1079,6 @@
   function boardPlane(): HTMLElement | null {
     const plane = document.querySelector('.game-board-plane');
     return plane instanceof HTMLElement ? plane : null;
-  }
-
-  function groupByPlayer(motions: CardMotion[]): Map<number, CardMotion[]> {
-    const groups = new Map<number, CardMotion[]>();
-    for (const motion of motions) {
-      const group = groups.get(motion.player) ?? [];
-      group.push(motion);
-      groups.set(motion.player, group);
-    }
-    return groups;
   }
 
   function clamp(value: number, min: number, max: number): number {
