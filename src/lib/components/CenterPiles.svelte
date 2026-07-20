@@ -3,6 +3,7 @@
   import CardTile from './CardTile.svelte';
   import { cardBackCssVar } from '../game/cardAssets';
   import { cardIdentityKey } from '../game/cardIdentity';
+  import { AnimAttr, attr, cardAnchorValue } from '../anim/domContract';
   import type { CardView, PlayerView } from '../game/types';
 
   type Props = {
@@ -168,7 +169,7 @@
   }
 
   function resolvingSnapshotFor(playerIndex: number, card: CardView, opponent: boolean): ResolvingCardSnapshot | undefined {
-    const zone = document.querySelector(`[data-card-anchor="player:${playerIndex}:playZone"] .card-tile`);
+    const zone = document.querySelector(`${attr(AnimAttr.cardAnchor, cardAnchorValue.playZone(playerIndex))} .card-tile`);
     const box = elementBoxInBoardPlane(zone);
     if (!box) {
       return undefined;
@@ -183,7 +184,7 @@
 
   function startResolvingDiscardAnimation(snapshot: ResolvingCardSnapshot) {
     const target = discardCardElement(snapshot.playerIndex, snapshot.card)
-      ?? document.querySelector(`[data-card-anchor="player:${snapshot.playerIndex}:discard"]`);
+      ?? document.querySelector(attr(AnimAttr.cardAnchor, cardAnchorValue.discard(snapshot.playerIndex)));
     const targetBox = elementBoxInBoardPlane(target);
     if (!targetBox) {
       return;
@@ -204,10 +205,10 @@
 
   function discardCardElement(playerIndex: number, card: CardView): Element | null {
     if (card.serial !== undefined) {
-      return document.querySelector(`[data-card-anchor="player:${playerIndex}:discard"] [data-card-serial="${card.serial}"]`);
+      return document.querySelector(`${attr(AnimAttr.cardAnchor, cardAnchorValue.discard(playerIndex))} ${attr(AnimAttr.cardSerial, card.serial)}`);
     }
     if (card.id !== undefined) {
-      return document.querySelector(`[data-card-anchor="player:${playerIndex}:discard"] [data-card-id="${card.id}"]`);
+      return document.querySelector(`${attr(AnimAttr.cardAnchor, cardAnchorValue.discard(playerIndex))} ${attr(AnimAttr.cardId, card.id)}`);
     }
     return null;
   }
