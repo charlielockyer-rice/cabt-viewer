@@ -1,5 +1,15 @@
 import type { GameView } from '../lib/game/types';
 import { replayAnimationPhaseGapMs, replayStepPlaybackDelayMs, type ReplaySnapshot, type ReplayStep } from '../lib/game/replay';
+import {
+  nextReplayDisagreement,
+  replayDecisionAnalyses,
+  type ReplayDecisionAnalysis,
+} from '../lib/game/replayAnalysis';
+import {
+  replayPositionFromSearch,
+  replayStepForState,
+  replayUrlAtState,
+} from '../lib/game/replayLocation';
 import { cabtReplayToSnapshot } from '../lib/cabt/cabtReplay';
 
 // The raw per-state observation ({current, select}) the value head needs, kept
@@ -19,6 +29,7 @@ export type ReplayObservationFrame = {
 class ReplayStore {
   replay = $state<ReplaySnapshot | null>(null);
   stepIndex = $state(0);
+  stateIndex = $state(0);
   animationPhaseIndex = $state(0);
   loading = $state(false);
   error = $state('');
@@ -36,6 +47,7 @@ class ReplayStore {
   // the opponent's hand leaves that seat false, so the graph shows the honest
   // seat only with an explicit "perspective unavailable" label, never a lie.
   honestSeats = $state<[boolean, boolean]>([false, false]);
+  decisionAnalyses = $state<ReplayDecisionAnalysis[]>([]);
   // True while the timeline is being navigated faster than animations can play
   // (scrub-bar drag, key-repeat stepping). The animation layers suppress all
   // choreography and render settled views directly while this is set; otherwise
@@ -65,6 +77,9 @@ class ReplayStore {
     if (!step) {
       return '';
     }
+    if (this.stateIndex !== step.stateIndex) {
+      return `State ${this.stateIndex}`;
+    }
     return step.animationPhases?.[this.animationPhaseIndex]?.label ?? step.label;
   }
 
@@ -73,6 +88,9 @@ class ReplayStore {
     const step = this.currentStep;
     if (!replay || !step) {
       return null;
+    }
+    if (this.stateIndex !== step.stateIndex) {
+      return replay.views[this.stateIndex] ?? null;
     }
     const phase = step.animationPhases?.[this.animationPhaseIndex];
     if (phase) {
@@ -98,6 +116,23 @@ class ReplayStore {
     return Math.max(0, (this.replay?.steps.length ?? 1) - 1);
   }
 
+  get currentDecisionAnalysis(): ReplayDecisionAnalysis | null {
+    return this.decisionAnalyses.find((analysis) =>
+      analysis.stateIndex === this.stateIndex
+    ) ?? null;
+  }
+
+  get nextDisagreementStateIndex(): number | null {
+    return nextReplayDisagreement(
+      this.decisionAnalyses,
+      this.stateIndex,
+    )?.stateIndex ?? null;
+  }
+
+  get isTimelinePosition(): boolean {
+    return this.currentStep?.stateIndex === this.stateIndex;
+  }
+
   async loadSaved(id = 'kaggle-context.json'): Promise<void> {
     await this.loadCandidates(replayCandidates(id));
   }
@@ -121,8 +156,17 @@ class ReplayStore {
       this.observationFrames = loaded.frames;
       this.decks = loaded.decks;
       this.honestSeats = loaded.honestSeats;
-      this.stepIndex = 0;
+      this.decisionAnalyses = loaded.decisionAnalyses;
+      const search = typeof window === 'undefined' ? '' : window.location.search;
+      const position = replayPositionFromSearch(
+        search,
+        loaded.snapshot.steps,
+        loaded.snapshot.stateCount,
+      );
+      this.stepIndex = position.stepIndex;
+      this.stateIndex = position.stateIndex;
       this.animationPhaseIndex = 0;
+      this.syncPositionUrl();
       this.scheduleAnimationPhase();
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error);
@@ -130,7 +174,9 @@ class ReplayStore {
       this.observationFrames = [];
       this.decks = [];
       this.honestSeats = [false, false];
+      this.decisionAnalyses = [];
       this.stepIndex = 0;
+      this.stateIndex = 0;
       this.animationPhaseIndex = 0;
     } finally {
       this.loading = false;
@@ -146,7 +192,9 @@ class ReplayStore {
     this.observationFrames = [];
     this.decks = [];
     this.honestSeats = [false, false];
+    this.decisionAnalyses = [];
     this.stepIndex = 0;
+    this.stateIndex = 0;
     this.animationPhaseIndex = 0;
     this.loading = false;
     this.error = '';
@@ -181,8 +229,10 @@ class ReplayStore {
   setStep(index: number): void {
     this.markNavigation();
     this.stepIndex = clampIndex(index, this.maxStepIndex);
+    this.stateIndex = this.currentStep?.stateIndex ?? 0;
     this.animationPhaseIndex = 0;
     this.copiedForkPoint = false;
+    this.syncPositionUrl();
     this.scheduleAnimationPhase();
     if (this.stepIndex >= this.maxStepIndex) {
       this.pause();
@@ -215,6 +265,7 @@ class ReplayStore {
     }
     if (this.stepIndex >= this.maxStepIndex) {
       this.stepIndex = 0;
+      this.stateIndex = this.currentStep?.stateIndex ?? 0;
       this.animationPhaseIndex = 0;
       this.scheduleAnimationPhase();
     }
@@ -242,38 +293,40 @@ class ReplayStore {
       return;
     }
     const clampedState = clampIndex(stateIndex, Math.max(0, replay.stateCount - 1));
-    const exact = replay.steps.findIndex((step) => step.stateIndex === clampedState);
-    if (exact !== -1) {
-      this.setStep(exact);
-      return;
-    }
+    this.setStep(replayStepForState(replay.steps, clampedState));
+    this.stateIndex = clampedState;
+    this.animationPhaseIndex = 0;
+    this.clearAnimationPhaseTimer();
+    this.syncPositionUrl();
+  }
 
-    let bestIndex = 0;
-    for (let index = 0; index < replay.steps.length; index += 1) {
-      if (replay.steps[index].stateIndex <= clampedState) {
-        bestIndex = index;
-      }
+  nextDisagreement(): void {
+    const stateIndex = this.nextDisagreementStateIndex;
+    if (stateIndex !== null) {
+      this.setStateIndex(stateIndex);
     }
-    this.setStep(bestIndex);
   }
 
   async copyForkPoint(): Promise<void> {
     const replay = this.replay;
-    const step = this.currentStep;
-    if (!replay || !step || typeof navigator === 'undefined' || !navigator.clipboard) {
+    if (!replay || typeof navigator === 'undefined' || !navigator.clipboard) {
       return;
     }
 
-    await navigator.clipboard.writeText(JSON.stringify({
-      replayId: replay.id,
-      replayName: replay.name,
-      stepIndex: step.index,
-      stateIndex: step.stateIndex,
-      actionIndex: step.actionIndex,
-      actionType: step.type,
-      turn: step.turn,
-    }));
+    const url = replayUrlAtState(window.location.href, this.stateIndex, this.stepIndex);
+    await navigator.clipboard.writeText(url);
     this.copiedForkPoint = true;
+  }
+
+  private syncPositionUrl(): void {
+    if (typeof window === 'undefined' || !this.replay) {
+      return;
+    }
+    window.history.replaceState(
+      {},
+      '',
+      replayUrlAtState(window.location.href, this.stateIndex, this.stepIndex),
+    );
   }
 
   private clearPlaybackTimer(): void {
@@ -299,6 +352,9 @@ class ReplayStore {
 
   private scheduleAnimationPhase(): void {
     this.clearAnimationPhaseTimer();
+    if (!this.isTimelinePosition) {
+      return;
+    }
     const phase = this.currentStep?.animationPhases?.[this.animationPhaseIndex];
     if (!phase) {
       return;
@@ -329,6 +385,7 @@ type LoadedReplay = {
   frames: ReplayObservationFrame[];
   decks: number[][];
   honestSeats: [boolean, boolean];
+  decisionAnalyses: ReplayDecisionAnalysis[];
 };
 
 async function loadCabtReplay(candidates: string[]): Promise<LoadedReplay> {
@@ -346,6 +403,7 @@ async function loadCabtReplay(candidates: string[]): Promise<LoadedReplay> {
         frames: observationFramesFrom(json),
         decks: Array.isArray(json?.decks) ? json.decks : [],
         honestSeats: honestSeatsFrom(json),
+        decisionAnalyses: replayDecisionAnalyses(json),
       };
     } catch (error) {
       failures.push(`${url}: ${error instanceof Error ? error.message : String(error)}`);

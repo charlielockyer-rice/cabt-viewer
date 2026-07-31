@@ -40,6 +40,10 @@ also pass a replay URL:
 http://localhost:5173/?view=replay&replayUrl=https://example.com/cabt-replay.json
 ```
 
+Add `state=<frame>` or `step=<timeline-step>` to open an exact position. The
+viewer keeps the URL synchronized while you scrub, and **Copy position link**
+copies a link that reopens the same timeline step.
+
 Replay viewing does not require Python, Docker, Kaggle native libraries, or a
 local agent.
 
@@ -249,6 +253,12 @@ understands:
   CABT `visualize` frames.
 - Lower-level local runner JSON with a top-level `visualize` array.
 - Live CABT observations from `cg.game.battle_start` / `battle_select`.
+
+Replay frames may also carry an optional `analysis` object. Recorded search
+games use it for the compact decision comparison panel: the played move, bare
+policy move, searched move, agreement/change flag, simulations, evaluations,
+and stop reason. **Next search change** jumps to the next position where search
+overruled policy. Replays without annotations render exactly as before.
 
 The local engine bridge follows the official agent interaction shape:
 

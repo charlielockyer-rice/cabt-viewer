@@ -1,12 +1,16 @@
 <script lang="ts">
   import type { ReplaySnapshot, ReplayStep } from '../game/replay';
+  import type { ReplayDecisionAnalysis } from '../game/replayAnalysis';
 
   type Props = {
     replay: ReplaySnapshot;
     step: ReplayStep;
+    stateIndex: number;
     displayLabel?: string;
     stepIndex: number;
     copiedForkPoint?: boolean;
+    analysis?: ReplayDecisionAnalysis | null;
+    nextDisagreementStateIndex?: number | null;
     isPlaying?: boolean;
     setStep: (index: number) => void;
     setStateIndex: (index: number) => void;
@@ -17,14 +21,18 @@
     togglePlayback: () => void;
     backToReplayHome: () => void;
     copyForkPoint: () => void;
+    nextDisagreement: () => void;
   };
 
   let {
     replay,
     step,
+    stateIndex,
     displayLabel,
     stepIndex,
     copiedForkPoint = false,
+    analysis = null,
+    nextDisagreementStateIndex = null,
     isPlaying = false,
     setStep,
     setStateIndex,
@@ -35,12 +43,13 @@
     togglePlayback,
     backToReplayHome,
     copyForkPoint,
+    nextDisagreement,
   }: Props = $props();
 
   let maxStepIndex = $derived(Math.max(0, replay.steps.length - 1));
   let maxStateIndex = $derived(Math.max(0, replay.stateCount - 1));
   let actionValue = $derived(step.actionIndex === null ? 'Initial' : `${step.actionIndex + 1} / ${replay.actionCount}`);
-  let stateValue = $derived(`${step.stateIndex} / ${maxStateIndex}`);
+  let stateValue = $derived(`${stateIndex} / ${maxStateIndex}`);
   let timelineLabel = $derived(displayLabel || step.label);
   let payloadPreview = $derived(formatPayload(step.payload));
   let createdLabel = $derived(Number.isFinite(replay.created) ? new Date(replay.created).toLocaleString() : '');
@@ -60,6 +69,28 @@
     }
     const json = JSON.stringify(payload);
     return json.length > 180 ? `${json.slice(0, 177)}...` : json;
+  }
+
+  function selectionLabel(selection: number[] | undefined): string {
+    if (!selection?.length) {
+      return '—';
+    }
+    return selection.map((index) =>
+      analysis?.legalActions?.[index]?.label || `Option ${index}`,
+    ).join(' + ');
+  }
+
+  function analysisTitle(value: ReplayDecisionAnalysis): string {
+    if (value.error) {
+      return 'Analysis unavailable';
+    }
+    if (value.searched) {
+      return value.changed ? 'Search changed the move' : 'Search agreed with policy';
+    }
+    if (value.mode === 'line-continuation') {
+      return 'Search line continued';
+    }
+    return value.mode ? `${value.mode} move` : 'Recorded decision';
   }
 </script>
 
@@ -120,12 +151,46 @@
         type="number"
         min="0"
         max={maxStateIndex}
-        value={step.stateIndex}
+        value={stateIndex}
         oninput={onStateInput}
       />
     </label>
-    <button onclick={copyForkPoint}>{copiedForkPoint ? 'Fork point copied' : 'Copy fork point'}</button>
+    <button onclick={copyForkPoint}>{copiedForkPoint ? 'Position link copied' : 'Copy position link'}</button>
+    {#if nextDisagreementStateIndex !== null}
+      <button onclick={nextDisagreement}>Next search change · state {nextDisagreementStateIndex}</button>
+    {/if}
   </div>
+
+  {#if analysis}
+    <section class:changed={analysis.changed} class="decision-analysis" aria-label="Decision comparison">
+      <strong>{analysisTitle(analysis)}</strong>
+      {#if analysis.error}
+        <span>{analysis.error}</span>
+      {:else}
+        <span>Played <b>{selectionLabel(analysis.playedSelection)}</b></span>
+        {#if analysis.policySelection}
+          <span>Policy <b>{selectionLabel(analysis.policySelection)}</b></span>
+        {/if}
+        {#if analysis.searchSelection}
+          <span>Search <b>{selectionLabel(analysis.searchSelection)}</b></span>
+        {/if}
+        {#if analysis.completedTraversals !== undefined}
+          <small>
+            {analysis.completedTraversals} sims
+            {#if analysis.distinctEvaluations !== undefined}
+              · {analysis.distinctEvaluations} evals
+            {/if}
+            {#if analysis.stopReason}
+              · {analysis.stopReason}
+            {/if}
+          </small>
+        {/if}
+        {#if analysis.rationale}
+          <small>{analysis.rationale}</small>
+        {/if}
+      {/if}
+    </section>
+  {/if}
 
   {#if payloadPreview}
     <pre>{payloadPreview}</pre>
@@ -222,6 +287,31 @@
     min-width: 0;
     font-size: 11px;
     line-height: 1.2;
+  }
+
+  .decision-analysis {
+    display: grid;
+    gap: 5px;
+    padding: 7px;
+    border: 1px solid var(--surface-inset-border);
+    border-radius: 5px;
+    background: var(--surface-inset-bg);
+    font-size: 10px;
+    line-height: 1.25;
+  }
+
+  .decision-analysis.changed {
+    border-color: var(--warning-border, var(--surface-inset-border));
+  }
+
+  .decision-analysis span,
+  .decision-analysis small {
+    color: var(--text-secondary);
+    overflow-wrap: anywhere;
+  }
+
+  .decision-analysis b {
+    color: var(--text-primary);
   }
 
   .replay-meta span,

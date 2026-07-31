@@ -83,7 +83,7 @@
   let replayMode = $derived(homeMode === 'logs' && !!replayStore.replay);
   let game = $derived(replayMode ? replayStore.currentView : gameStore.game);
   let animationScopeKey = $derived(replayMode
-    ? `replay-${replayStore.stepIndex}-${replayStore.animationPhaseIndex}`
+    ? `replay-${replayStore.stepIndex}-${replayStore.stateIndex}-${replayStore.animationPhaseIndex}`
     : `live-${game?.actionTimeline?.at(-1)?.id ?? 0}`);
   // Live playback steps carry exactly their own events; the interactive view
   // that lands afterwards carries the cumulative timeline for the log panel,
@@ -92,7 +92,7 @@
     ? (game?.actionTimeline ?? [])
     : []);
   let animationStepEvents = $derived(replayMode
-    ? (replayStore.currentStep?.actionTimeline ?? [])
+    ? (replayStore.isTimelinePosition ? replayStore.currentStep?.actionTimeline ?? [] : [])
     : animationEvents);
   // Live turn boundary for the animation layers: stale claims/sprites are
   // released when the turn counter advances. Constant in replay.
@@ -321,7 +321,7 @@
     // seat is skipped (labelled unavailable), never drawn as a degraded line.
     void evalStore.loadReplayCurve(frames, replayStore.decks, replayStore.honestSeats);
   });
-  let replayStateIndex = $derived(replayStore.currentStep?.stateIndex ?? 0);
+  let replayStateIndex = $derived(replayStore.stateIndex);
   let oppIndex = $derived(topPlayer?.index ?? (viewIndex === 0 ? 1 : 0));
   let showEvalBar = $derived(replayMode ? evalStore.curveForSeat(viewIndex).length > 0 : evalStore.live);
   let evalBarPWin = $derived(replayMode ? evalStore.pWinAtState(replayStateIndex, viewIndex) : evalStore.pWin);
@@ -836,6 +836,8 @@
     params.set('kaggleEpisode', episode.episodeId);
     params.set('replayUrl', replayUrl);
     params.delete('replay');
+    params.delete('state');
+    params.delete('step');
     window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}${window.location.hash}`);
   }
 
@@ -849,6 +851,8 @@
     params.delete('replayUrl');
     params.delete('kaggleDay');
     params.delete('kaggleEpisode');
+    params.delete('state');
+    params.delete('step');
     window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}${window.location.hash}`);
   }
 </script>
@@ -948,9 +952,12 @@
         <ReplayTimeline
           replay={replayStore.replay}
           step={replayStore.currentStep}
+          stateIndex={replayStore.stateIndex}
           displayLabel={replayStore.currentDisplayLabel}
           stepIndex={replayStore.stepIndex}
           copiedForkPoint={replayStore.copiedForkPoint}
+          analysis={replayStore.currentDecisionAnalysis}
+          nextDisagreementStateIndex={replayStore.nextDisagreementStateIndex}
           isPlaying={replayStore.isPlaying}
           setStep={(index) => replayStore.setStep(index)}
           setStateIndex={(index) => replayStore.setStateIndex(index)}
@@ -961,6 +968,7 @@
           togglePlayback={() => replayStore.togglePlayback()}
           backToReplayHome={resetGame}
           copyForkPoint={() => void replayStore.copyForkPoint()}
+          nextDisagreement={() => replayStore.nextDisagreement()}
         />
         <div class="eval-graph-dock">
           <EvalGraph
