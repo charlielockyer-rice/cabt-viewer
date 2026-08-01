@@ -12,6 +12,7 @@ import {
 } from './cabtProjection';
 import { displayName } from './cardView';
 import { classifyCard } from './cardClassify';
+import { CanonicalCabtLogStream } from './canonicalLogs';
 import { synthesizeAnnounceLogs, stampAttachSourceZones, type AnnounceContext, type AnnounceLog } from './announceSynthesis';
 import { cabtLogsToTimeline } from './logFormat';
 import { CabtAreaType, CabtOptionType } from './types';
@@ -255,9 +256,22 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
   let timelineId = 1;
 
   const frameEntries: ReplayFrameEntry[] = [];
+  const canonicalLogs = replayUsesPerSeatLogDelivery(input)
+    ? new CanonicalCabtLogStream<Record<string, unknown>>()
+    : null;
+  let previousNewLogs: Array<Record<string, unknown>> = [];
 
   visualFrames.forEach((frame, index) => {
-    const frameLogs = logsWithSynthesizedAbility(visualFrames[index - 1], frame);
+    const deliveredLogs = frame.logs ?? [];
+    const newLogs = canonicalLogs
+      ? canonicalLogs.push(frame.current.yourIndex, deliveredLogs)
+      : deliveredLogs;
+    const frameLogs = logsWithSynthesizedAbility(
+      visualFrames[index - 1],
+      frame,
+      previousNewLogs,
+      newLogs,
+    );
     const timeline = cabtLogsToTimeline(frameLogs, { nextId: timelineId });
     timelineId = timeline.nextId;
     for (const entry of frameLogs) {
@@ -266,7 +280,8 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
     const view = frameToGameView(frame, players, logs, timeline.events);
     views.push(view);
     const groups = replayActionGroups(timeline.events, frame.current.turn);
-    frameEntries.push({ frame, view, groups });
+    frameEntries.push({ frame, view, groups, newLogs });
+    previousNewLogs = newLogs;
   });
 
   // Flag pass-ending TurnEnds BEFORE buildDecisionSteps so the gated `Pass:`
@@ -309,6 +324,28 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
   };
 }
 
+// Raw engine observations deliver every log since that seat's previous
+// observation. Normal viewer replay files instead store only the events for
+// each frame. Keep the distinction explicit: positional normalization is
+// correct for the former and destructive for the latter.
+function replayUsesPerSeatLogDelivery(input: unknown): boolean {
+  if (!input || typeof input !== 'object') {
+    return false;
+  }
+  const source = (input as { source?: unknown }).source;
+  if (!source || typeof source !== 'object') {
+    return false;
+  }
+  const typed = source as { format?: unknown; logDelivery?: unknown };
+  if (typed.logDelivery === 'per-seat-since-last-observation') {
+    return true;
+  }
+  return typed.format === 'raw-kaggle-envelope'
+    || typed.format === 'cabt-match-result'
+    || typed.format === 'cabt-service-game-jsonl'
+    || typed.format === 'cabt-live-observations';
+}
+
 type ReplayActionGroup = {
   label: string;
   type: string;
@@ -320,17 +357,19 @@ type ReplayFrameEntry = {
   frame: CabtVisualizeFrame;
   view: GameView;
   groups: ReplayActionGroup[];
+  newLogs: Array<Record<string, unknown>>;
 };
 
 function logsWithSynthesizedAbility(
   previousFrame: CabtVisualizeFrame | undefined,
   frame: CabtVisualizeFrame,
+  previousLogs: Array<Record<string, unknown>>,
+  newLogs: Array<Record<string, unknown>>,
 ): Array<Record<string, unknown>> {
-  const logs = frame.logs ?? [];
   if (!previousFrame) {
-    return logs;
+    return newLogs;
   }
-  const context = replayAnnounceContext(previousFrame, frame, logs);
+  const context = replayAnnounceContext(previousFrame, frame, previousLogs, newLogs);
   stampAttachSourceZones(context);
   return synthesizeAnnounceLogs(context);
 }
@@ -339,7 +378,8 @@ function logsWithSynthesizedAbility(
 function replayAnnounceContext(
   previousFrame: CabtVisualizeFrame,
   frame: CabtVisualizeFrame,
-  logs: Array<Record<string, unknown>>,
+  previousLogs: Array<Record<string, unknown>>,
+  newLogs: Array<Record<string, unknown>>,
 ): AnnounceContext {
   const selected = selectedOptionFromAction(previousFrame.select, frame.action);
   const current = previousFrame.current;
@@ -348,8 +388,8 @@ function replayAnnounceContext(
     selectedPlayerIndex: selected?.playerIndex,
     select: (previousFrame.select as AnnounceLog | null) ?? null,
     isYesNoSelect: String((previousFrame.select as Record<string, unknown> | null | undefined)?.type) === 'YesNo',
-    previousLogs: previousFrame.logs ?? [],
-    newLogs: logs,
+    previousLogs,
+    newLogs,
     logTypeName: (log) => normalizedFrameLogType(log.type),
     players: (current.players ?? []).map((player) => ({
       active: player.active ?? [],
@@ -847,7 +887,7 @@ function fallbackStepForFrame(entry: ReplayFrameEntry, index: number): ReplaySte
   return replayStepForFrame({
     view: entry.view,
     stateIndex: index,
-    label: stepLabel(entry.frame, index),
+    label: stepLabel(entry.frame, entry.newLogs, index),
     type: String(entry.frame.select?.type ?? 'frame'),
     payload: {
       select: entry.frame.select,
@@ -2893,18 +2933,22 @@ function playerNames(input: unknown): string[] {
   return names?.length ? names : ['Player 1', 'Player 2'];
 }
 
-function stepLabel(frame: CabtVisualizeFrame, index: number): string {
-  const prizeSummary = prizeMoveSummary(frame.logs ?? []);
+function stepLabel(
+  frame: CabtVisualizeFrame,
+  newLogs: Array<Record<string, unknown>>,
+  index: number,
+): string {
+  const prizeSummary = prizeMoveSummary(newLogs);
   if (prizeSummary) {
     return prizeSummary;
   }
 
-  const attackSummary = attackLogSummary(frame.logs ?? []);
+  const attackSummary = attackLogSummary(newLogs);
   if (attackSummary) {
     return attackSummary;
   }
 
-  const latestLog = frame.logs?.at(-1);
+  const latestLog = newLogs.at(-1);
   if (latestLog) {
     return formatLog(latestLog);
   }

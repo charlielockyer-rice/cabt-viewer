@@ -52,6 +52,52 @@ describe('cabtReplayToSnapshot', () => {
     expect(snapshot.views).toHaveLength(1);
   });
 
+  it('drops log events re-delivered through the other seat stream', () => {
+    const current = (yourIndex: number) => ({
+      turn: 1,
+      yourIndex,
+      result: -1,
+      players: [{
+        active: [],
+        bench: [],
+        handCount: 0,
+        deckCount: 60,
+        prize: [],
+      }, {
+        active: [],
+        bench: [],
+        handCount: 0,
+        deckCount: 60,
+        prize: [],
+      }],
+    });
+    const ownDraw = { type: 'Draw', playerIndex: 0, cardId: 1, serial: 10 };
+    const hiddenDraw = { type: 'DrawReverse', playerIndex: 0 };
+    const turnStart = { type: 'TurnStart', playerIndex: 1 };
+
+    const snapshot = cabtReplayToSnapshot({
+      source: {
+        format: 'raw-kaggle-envelope',
+        logDelivery: 'per-seat-since-last-observation',
+      },
+      visualize: [{
+        current: current(0),
+        logs: [ownDraw],
+      }, {
+        current: current(1),
+        // Seat 1 receives the already-seen draw plus the new TurnStart.
+        logs: [hiddenDraw, turnStart],
+      }, {
+        current: current(0),
+        // Seat 0 then receives that same TurnStart at its next observation.
+        logs: [turnStart],
+      }],
+    });
+
+    expect(snapshot.views.map((view) => view.logs.length)).toEqual([1, 2, 2]);
+    expect(snapshot.views.at(-1)?.logs.map((log) => log.params?.type)).toEqual(['Draw', 'TurnStart']);
+  });
+
   it('renders physical attached energy cards instead of provided energy units', () => {
     const snapshot = cabtReplayToSnapshot({
       visualize: [{

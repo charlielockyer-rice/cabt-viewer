@@ -1,5 +1,6 @@
 import { type CabtDataMaps } from '../lib/cabt/cabtProjection';
 import { displayName } from '../lib/cabt/cardView';
+import { CanonicalCabtLogStream } from '../lib/cabt/canonicalLogs';
 import { synthesizeAnnounceLogs, stampAttachSourceZones, type AnnounceContext, type AnnounceLog } from '../lib/cabt/announceSynthesis';
 import {
   CabtAreaType,
@@ -36,8 +37,7 @@ export type NormalizedObservation = {
 // see docs/audit-2026-07-07-viewer-play-pipeline.md (F4) and the env-gated
 // bridge integration test.
 export class LiveObservationNormalizer {
-  private delivered = [0, 0];
-  private canonicalCount = 0;
+  private readonly canonicalLogs = new CanonicalCabtLogStream<BridgeLog>();
   private hands: [CabtCard[], CabtCard[]] = [[], []];
   private nextSyntheticSerial = -1;
 
@@ -50,11 +50,7 @@ export class LiveObservationNormalizer {
     }
 
     const logs = observation.logs ?? [];
-    const streamStart = this.delivered[seat];
-    this.delivered[seat] = streamStart + logs.length;
-    const freshFrom = Math.max(0, this.canonicalCount - streamStart);
-    this.canonicalCount = Math.max(this.canonicalCount, streamStart + logs.length);
-    const rawNewLogs = logs.slice(freshFrom);
+    const rawNewLogs = this.canonicalLogs.push(seat, logs);
 
     // Event-source hands from the raw (pre-downgrade) canonical events, so
     // both hands stay concrete wherever the stream has delivered the cards.

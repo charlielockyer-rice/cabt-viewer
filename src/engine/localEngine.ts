@@ -181,6 +181,10 @@ export class LocalEngineController {
     const name = `Local ${this.replayModeLabel} ${created.toLocaleString()}`;
     const replay = {
       visualize: this.replayFrames,
+      source: {
+        format: 'cabt-live-observations',
+        logDelivery: 'per-seat-since-last-observation',
+      },
       // Raw (pre-conceal) frames for both-seat eval — playback still uses the
       // concealed `visualize`; this only feeds the value head.
       rawVisualize: this.rawFrames,

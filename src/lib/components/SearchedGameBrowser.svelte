@@ -254,7 +254,7 @@
         <option value="newest">Newest</option>
         <option value="depth">Deepest</option>
         <option value="longest">Longest games</option>
-        <option value="changes">Most search changes</option>
+        <option value="changes">Most plan mismatches</option>
         <option value="random">Random</option>
       </select>
     </label>
@@ -285,7 +285,7 @@
         <span>Matchup</span>
         <span>Winner</span>
         <span>Steps</span>
-        <span>Changed</span>
+        <span>Plan mismatch</span>
         <span>Time</span>
         <span>Source</span>
         <span>Game</span>
@@ -302,7 +302,7 @@
           <span class="matchup"><strong>{matchup(game)}</strong><small>{game.model_name}</small></span>
           <span><strong>{winner(game)}</strong><small>{game.is_mirror ? 'Mirror' : game.status === 'complete' ? 'Healthy' : game.status}</small></span>
           <span><strong>{game.steps.toLocaleString()}</strong><small>engine steps</small></span>
-          <span><strong>{game.changed_decisions}</strong><small>of {game.searched_decisions}</small></span>
+          <span><strong>{game.changed_decisions}</strong><small>actual ≠ planned</small></span>
           <span><strong>{formatDuration(game.wall_s)}</strong><small>{formatBytes(game.episode_bytes)}</small></span>
           <span><strong>{game.source}</strong><small>{game.created_utc.slice(0, 10)}</small></span>
           <span><strong>{shortId(game.game_uid)}</strong><small>Open replay</small></span>
