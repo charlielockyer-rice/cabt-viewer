@@ -1,11 +1,13 @@
 <script lang="ts">
   import KaggleEpisodeBrowser from './KaggleEpisodeBrowser.svelte';
+  import SearchedGameBrowser from './SearchedGameBrowser.svelte';
   import type { AgentOption, DeckOption, GameLogEntry } from '../home/catalog';
+  import type { SearchedGame } from '../gameBank/searchedGames';
   import type { PlayerControl } from '../game/httpClient';
   import type { KaggleEpisodeDay, KaggleEpisodeSummary } from '../kaggle/episodes';
 
   type HomeMode = 'play' | 'logs';
-  type LogSource = 'local' | 'kaggle';
+  type LogSource = 'searched' | 'local' | 'kaggle';
 
   type Props = {
     homeMode: HomeMode;
@@ -28,10 +30,12 @@
     catalogError?: string;
     kaggleSelectedEpisodeId?: string;
     kaggleSelectedSlug?: string;
+    gameBankSelectedGameId?: string;
     setHomeMode: (mode: HomeMode) => void;
     startGame: () => void;
     loadGameLog: (log: GameLogEntry) => void;
     loadKaggleEpisode: (day: KaggleEpisodeDay, episode: KaggleEpisodeSummary) => void;
+    loadSearchedGame: (game: SearchedGame) => void;
     refreshCatalog: () => void;
   };
 
@@ -56,14 +60,16 @@
     catalogError = '',
     kaggleSelectedEpisodeId = '',
     kaggleSelectedSlug = '',
+    gameBankSelectedGameId = '',
     setHomeMode,
     startGame,
     loadGameLog,
     loadKaggleEpisode,
+    loadSearchedGame,
     refreshCatalog,
   }: Props = $props();
 
-  let logSource = $state<LogSource>('kaggle');
+  let logSource = $state<LogSource>('searched');
   let startDisabled = $derived(
     busy
       || (player1Control === 'agent' && !player1AgentId)
@@ -223,6 +229,15 @@
         <button
           type="button"
           role="tab"
+          aria-selected={logSource === 'searched'}
+          class:active={logSource === 'searched'}
+          onclick={() => {
+            logSource = 'searched';
+          }}
+        >Searched games</button>
+        <button
+          type="button"
+          role="tab"
           aria-selected={logSource === 'kaggle'}
           class:active={logSource === 'kaggle'}
           onclick={() => {
@@ -241,7 +256,13 @@
       </span>
     </div>
 
-    {#if logSource === 'kaggle'}
+    {#if logSource === 'searched'}
+      <SearchedGameBrowser
+        busy={busy}
+        initialSelectedGameId={gameBankSelectedGameId}
+        openGame={loadSearchedGame}
+      />
+    {:else if logSource === 'kaggle'}
       <KaggleEpisodeBrowser
         busy={busy}
         initialSelectedEpisodeId={kaggleSelectedEpisodeId}
@@ -329,7 +350,7 @@
 
   .source-tabs {
     display: inline-grid;
-    grid-template-columns: repeat(2, minmax(112px, 1fr));
+    grid-template-columns: repeat(3, minmax(112px, 1fr));
     gap: 4px;
     padding: 4px;
     border-radius: 8px;

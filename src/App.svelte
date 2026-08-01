@@ -43,6 +43,7 @@
   } from './lib/game/decisions';
   import { commitPick, observeDecision, pickTally, runProgress, type EffectRun } from './lib/game/effectSelector';
   import { loadAgentOptions, loadDeckOptions, loadGameLogs, type AgentOption, type DeckOption, type GameLogEntry } from './lib/home/catalog';
+  import { searchedGameReplayUrl, type SearchedGame } from './lib/gameBank/searchedGames';
   import { kaggleEpisodeReplayUrl, type KaggleEpisodeDay, type KaggleEpisodeSummary } from './lib/kaggle/episodes';
   import type { ActionTimelineEvent, BoardSlotRef, DecisionOptionView, PokemonSlotView, PlayerView } from './lib/game/types';
   import { deckImportStore } from './state/deckImport.svelte';
@@ -60,6 +61,7 @@
   let showPromptGallery = initialSearchParam('view') === 'prompt-gallery';
   const initialReplayMode = initialSearchParam('view') === 'replay';
   let homeMode = $state<HomeMode>(initialReplayMode ? 'logs' : 'play');
+  let lastGameBankGameId = $state(initialSearchParam('gameBank'));
   let lastKaggleDaySlug = $state(initialSearchParam('kaggleDay'));
   let lastKaggleEpisodeId = $state(initialSearchParam('kaggleEpisode'));
   let agents = $state<AgentOption[]>([]);
@@ -504,6 +506,7 @@
     viewSettingsStore.resetView();
     lastKaggleDaySlug = '';
     lastKaggleEpisodeId = '';
+    lastGameBankGameId = '';
     homeMode = 'logs';
     replaceReplayUrl(log.file || log.id);
     await replayStore.loadSaved(log.file || log.id);
@@ -517,8 +520,23 @@
     viewSettingsStore.resetView();
     lastKaggleDaySlug = day.slug;
     lastKaggleEpisodeId = episode.episodeId;
+    lastGameBankGameId = '';
     homeMode = 'logs';
     replaceKaggleReplayUrl(day, episode, replayUrl);
+    await replayStore.loadUrl(replayUrl);
+  }
+
+  async function loadSearchedGame(game: SearchedGame) {
+    const replayUrl = searchedGameReplayUrl(game);
+    gameSessionStore.reset();
+    resetSaveReplayStatus();
+    zoneViewerStore.close();
+    viewSettingsStore.resetView();
+    lastKaggleDaySlug = '';
+    lastKaggleEpisodeId = '';
+    lastGameBankGameId = game.id;
+    homeMode = 'logs';
+    replaceSearchedGameReplayUrl(game, replayUrl);
     await replayStore.loadUrl(replayUrl);
   }
 
@@ -836,6 +854,23 @@
     params.set('kaggleEpisode', episode.episodeId);
     params.set('replayUrl', replayUrl);
     params.delete('replay');
+    params.delete('gameBank');
+    params.delete('state');
+    params.delete('step');
+    window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}${window.location.hash}`);
+  }
+
+  function replaceSearchedGameReplayUrl(game: SearchedGame, replayUrl: string) {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    params.set('view', 'replay');
+    params.set('gameBank', game.id);
+    params.set('replayUrl', replayUrl);
+    params.delete('replay');
+    params.delete('kaggleDay');
+    params.delete('kaggleEpisode');
     params.delete('state');
     params.delete('step');
     window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}${window.location.hash}`);
@@ -851,6 +886,7 @@
     params.delete('replayUrl');
     params.delete('kaggleDay');
     params.delete('kaggleEpisode');
+    params.delete('gameBank');
     params.delete('state');
     params.delete('step');
     window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}${window.location.hash}`);
@@ -893,6 +929,7 @@
         {catalogError}
         kaggleSelectedSlug={lastKaggleDaySlug}
         kaggleSelectedEpisodeId={lastKaggleEpisodeId}
+        gameBankSelectedGameId={lastGameBankGameId}
         setHomeMode={(nextMode) => {
           homeMode = nextMode;
           if (nextMode === 'logs') {
@@ -904,6 +941,7 @@
         startGame={startGame}
         {loadGameLog}
         {loadKaggleEpisode}
+        {loadSearchedGame}
         refreshCatalog={() => void refreshCatalog()}
       />
   {:else if bottomPlayer && topPlayer}
