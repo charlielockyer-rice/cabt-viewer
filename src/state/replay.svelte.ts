@@ -120,7 +120,10 @@ class ReplayStore {
       return null;
     }
     if (!this.animationsEnabled) {
-      return replay.views[this.stateIndex] ?? null;
+      // A recorded selection on state N produces state N+1. Exact-decision
+      // mode keeps the decision metadata at N but renders its resulting board,
+      // so the named action and visible card movement share one timeline step.
+      return replay.views[Math.min(this.stateIndex + 1, replay.stateCount - 1)] ?? null;
     }
     if (this.stateIndex !== step.stateIndex) {
       return replay.views[this.stateIndex] ?? null;
@@ -147,6 +150,10 @@ class ReplayStore {
 
   get maxStepIndex(): number {
     return Math.max(0, (this.replay?.steps.length ?? 1) - 1);
+  }
+
+  get maxDecisionStateIndex(): number {
+    return Math.max(0, ...this.decisionAnalyses.map((analysis) => analysis.stateIndex));
   }
 
   get currentDecisionAnalysis(): ReplayDecisionAnalysis | null {
@@ -204,7 +211,9 @@ class ReplayStore {
         loaded.snapshot.stateCount,
       );
       this.stepIndex = position.stepIndex;
-      this.stateIndex = position.stateIndex;
+      this.stateIndex = this.animationsEnabled
+        ? position.stateIndex
+        : Math.min(position.stateIndex, this.maxDecisionStateIndex);
       this.animationPhaseIndex = 0;
       this.syncPositionUrl();
       this.scheduleAnimationPhase();
@@ -313,7 +322,7 @@ class ReplayStore {
 
   lastStep(): void {
     if (!this.animationsEnabled) {
-      this.setStateIndex(Math.max(0, (this.replay?.stateCount ?? 1) - 1));
+      this.setStateIndex(this.maxDecisionStateIndex);
       return;
     }
     this.setStep(this.maxStepIndex);
@@ -357,7 +366,10 @@ class ReplayStore {
     if (!replay) {
       return;
     }
-    const clampedState = clampIndex(stateIndex, Math.max(0, replay.stateCount - 1));
+    const clampedState = clampIndex(
+      stateIndex,
+      this.animationsEnabled ? Math.max(0, replay.stateCount - 1) : this.maxDecisionStateIndex,
+    );
     if (!this.animationsEnabled) {
       this.markNavigation();
       this.stateIndex = clampedState;
@@ -396,6 +408,9 @@ class ReplayStore {
     this.animationsEnabled = enabled;
     this.animationPhaseIndex = 0;
     if (this.replay) {
+      if (!enabled) {
+        this.stateIndex = Math.min(this.stateIndex, this.maxDecisionStateIndex);
+      }
       this.stepIndex = replayStepForState(this.replay.steps, this.stateIndex);
       if (enabled) {
         this.stateIndex = this.currentStep?.stateIndex ?? this.stateIndex;
@@ -415,10 +430,13 @@ class ReplayStore {
     const step = this.currentStep;
     const context = this.gameContext;
     const analysis = this.currentDecisionAnalysis;
+    const position = this.animationsEnabled
+      ? `state ${this.stateIndex}`
+      : `decision state ${this.stateIndex} → result state ${Math.min(this.stateIndex + 1, replay.stateCount - 1)}`;
     const lines = [
       'CABT game checkpoint',
       `Game: ${context?.game_uid ?? replay.name}`,
-      `Position: state ${this.stateIndex}, step ${this.stepIndex}${this.currentView ? `, turn ${this.currentView.turn}` : ''}`,
+      `Position: ${position}, step ${this.stepIndex}${this.currentView ? `, turn ${this.currentView.turn}` : ''}`,
       `Event: ${this.currentDisplayLabel || step?.label || 'Recorded position'}`,
     ];
     if (context) {
@@ -508,7 +526,7 @@ class ReplayStore {
   private get maxNavigationIndex(): number {
     return this.animationsEnabled
       ? this.maxStepIndex
-      : Math.max(0, (this.replay?.stateCount ?? 1) - 1);
+      : this.maxDecisionStateIndex;
   }
 
   private get atEnd(): boolean {

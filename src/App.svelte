@@ -1000,6 +1000,7 @@
         bind:showCardImages={viewSettingsStore.showCardImages}
         bind:actionStepDelayMs={viewSettingsStore.actionStepDelayMs}
         bind:themePreference={viewSettingsStore.themePreference}
+        {replayMode}
         {analysisMode}
         analysisAnimationsEnabled={replayAnimationsEnabled}
         setAnalysisAnimationsEnabled={(enabled) => replayStore.setAnimationsEnabled(enabled)}
@@ -1024,6 +1025,7 @@
           stepIndex={replayStore.stepIndex}
           copiedForkPoint={replayStore.copiedForkPoint}
           exactDecisions={!replayAnimationsEnabled}
+          exactMaxStateIndex={replayStore.maxDecisionStateIndex}
           analysisWarning={replayStore.analysisVisibility.warning}
           analysis={replayStore.currentDecisionAnalysis}
           nextDisagreementStateIndex={replayStore.nextDisagreementStateIndex}

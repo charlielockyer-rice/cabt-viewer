@@ -1,7 +1,7 @@
 <script lang="ts">
-  import BoardPerspectiveControls from './BoardPerspectiveControls.svelte';
+  import ViewerSettings from './ViewerSettings.svelte';
   import { labelFor } from '../game/labels';
-  import { viewSettingsStore, type ThemePreference } from '../../state/viewSettings.svelte';
+  import type { ThemePreference } from '../../state/viewSettings.svelte';
 
   type Props = {
     boardTilt: number;
@@ -15,6 +15,7 @@
     showCardImages: boolean;
     actionStepDelayMs: number;
     themePreference: ThemePreference;
+    replayMode?: boolean;
     analysisMode?: boolean;
     analysisAnimationsEnabled?: boolean;
     setAnalysisAnimationsEnabled?: (enabled: boolean) => void;
@@ -42,6 +43,7 @@
     showCardImages = $bindable(),
     actionStepDelayMs = $bindable(),
     themePreference = $bindable(),
+    replayMode = false,
     analysisMode = false,
     analysisAnimationsEnabled = true,
     setAnalysisAnimationsEnabled = () => {},
@@ -59,96 +61,35 @@
 </script>
 
 <div class="table-toolbar">
-  <BoardPerspectiveControls
-    bind:boardTilt
-    bind:boardPerspective
-    bind:boardScaleY
-    bind:boardLift
-    {resetPerspective}
-  />
-  {#if analysisMode}
-    <span class="analysis-badge">Analysis view · fixed seats</span>
-  {:else}
-    <label>
-      <input type="checkbox" bind:checked={followActive} />
-      Follow active player
-    </label>
-    <span class="seat-switch" role="group" aria-label="Side switch transition">
-      Side switch:
-      <button
-        type="button"
-        class:active={viewSettingsStore.seatTransition === 'auto'}
-        aria-pressed={viewSettingsStore.seatTransition === 'auto'}
-        title="Flip normally; fade while scrubbing"
-        onclick={() => (viewSettingsStore.seatTransition = 'auto')}
-      >Auto</button>
-      <button
-        type="button"
-        class:active={viewSettingsStore.seatTransition === 'flip'}
-        aria-pressed={viewSettingsStore.seatTransition === 'flip'}
-        onclick={() => (viewSettingsStore.seatTransition = 'flip')}
-      >Flip</button>
-      <button
-        type="button"
-        class:active={viewSettingsStore.seatTransition === 'fade'}
-        aria-pressed={viewSettingsStore.seatTransition === 'fade'}
-        onclick={() => (viewSettingsStore.seatTransition = 'fade')}
-      >Fade</button>
-    </span>
-  {/if}
-  <label>
-    <input type="checkbox" bind:checked={debugZones} />
-    Debug zones
-  </label>
-  <label>
-    <input type="checkbox" bind:checked={showLogs} />
-    Show logs
-  </label>
-  {#if analysisMode}
-    <label>
-      <input
-        type="checkbox"
-        checked={analysisAnimationsEnabled}
-        onchange={(event) => setAnalysisAnimationsEnabled((event.currentTarget as HTMLInputElement).checked)}
-      />
-      Animations
-    </label>
-  {:else}
-    <label>
-      <input type="checkbox" bind:checked={animateActions} />
-      Step playback
-    </label>
-  {/if}
-  <label>
-    <input type="checkbox" bind:checked={showCardImages} />
-    Card images
-  </label>
-  {#if !analysisMode}
-    <label>
-      Step ms
-      <input
-        class="compact-number"
-        type="number"
-        min="50"
-        max="2500"
-        step="50"
-        bind:value={actionStepDelayMs}
-        disabled={!animateActions}
-      />
-    </label>
-  {/if}
-  <label>
-    Theme
-    <select bind:value={themePreference} aria-label="Theme preference">
-      <option value="system">System</option>
-      <option value="light">Light</option>
-      <option value="dark">Dark</option>
-    </select>
-  </label>
-  <div class="sidebar-turn-actions">
-    <button disabled={busy || promptActive || gameFinished} onclick={passTurn}>Pass turn</button>
+  <div class="toolbar-heading" class:settings-only={!analysisMode}>
+    {#if analysisMode}
+      <span class="analysis-badge">Fixed seats</span>
+    {/if}
+    <ViewerSettings
+      bind:boardTilt
+      bind:boardPerspective
+      bind:boardScaleY
+      bind:boardLift
+      bind:followActive
+      bind:debugZones
+      bind:showLogs
+      bind:animateActions
+      bind:showCardImages
+      bind:actionStepDelayMs
+      bind:themePreference
+      {analysisMode}
+      {analysisAnimationsEnabled}
+      {setAnalysisAnimationsEnabled}
+      {resetPerspective}
+    />
   </div>
-  <button disabled={switchDisabled} onclick={switchSides}>Switch sides</button>
+
+  {#if !replayMode}
+    <button disabled={busy || promptActive || gameFinished} onclick={passTurn}>Pass turn</button>
+  {/if}
+  {#if !analysisMode}
+    <button disabled={switchDisabled} onclick={switchSides}>Switch sides</button>
+  {/if}
   <button onclick={resetGame}>{resetLabel}</button>
   {#if error}
     <span class="inline-error">{labelFor(error)}</span>
@@ -157,15 +98,16 @@
 
 <style>
   .table-toolbar {
+    --viewer-settings-menu-offset: 148px;
     position: absolute;
     top: 54px;
     right: 14px;
-    z-index: 8;
+    z-index: 18;
     width: 148px;
     min-height: 0;
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 6px;
     padding: 7px;
     border: 1px solid var(--surface-toolbar-border);
     background: var(--surface-toolbar-bg);
@@ -176,18 +118,23 @@
     align-items: stretch;
   }
 
-  .table-toolbar label {
+  .toolbar-heading {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 6px;
-    padding: 2px 1px 5px;
-    color: var(--text-secondary);
-    font-size: 10px;
-    line-height: 1.2;
+  }
+
+  .toolbar-heading.settings-only {
+    justify-content: flex-end;
   }
 
   .analysis-badge {
-    padding: 7px 8px;
+    flex: 1;
+    display: grid;
+    place-items: center;
+    min-height: 34px;
+    padding: 5px 7px;
     border: 1px solid var(--surface-toolbar-border);
     border-radius: 5px;
     color: var(--text-primary);
@@ -204,57 +151,6 @@
     background: var(--button-bg);
     color: var(--button-text);
     font-size: 10px;
-    font-weight: 700;
-  }
-
-  .seat-switch {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 4px;
-    padding: 2px 1px 5px;
-    color: var(--text-secondary);
-    font-size: 10px;
-    line-height: 1.2;
-  }
-
-  .seat-switch button {
-    width: auto;
-    padding: 3px 8px;
-  }
-
-  .seat-switch button.active {
-    border-color: var(--accent-base, #52bca8);
-    background: var(--selection-bg, rgba(82, 188, 168, 0.18));
-    color: var(--text-primary);
-  }
-
-  .table-toolbar input.compact-number {
-    min-width: 0;
-    width: 58px;
-    padding: 2px 4px;
-    border: 1px solid var(--input-border);
-    border-radius: 4px;
-    background: var(--input-bg);
-    color: var(--input-text);
-    font: inherit;
-  }
-
-  .sidebar-turn-actions {
-    display: grid;
-    gap: 6px;
-    padding-bottom: 5px;
-    border-bottom: 1px solid var(--surface-inset-border);
-  }
-
-  .table-toolbar select {
-    min-width: 0;
-    width: 100%;
-    border: 1px solid var(--input-border);
-    border-radius: var(--radius-sm);
-    background: var(--input-bg);
-    color: var(--input-text);
-    font: inherit;
     font-weight: 700;
   }
 

@@ -9,6 +9,7 @@
     displayLabel?: string;
     stepIndex: number;
     exactDecisions?: boolean;
+    exactMaxStateIndex?: number;
     copiedForkPoint?: boolean;
     analysisWarning?: string;
     analysis?: ReplayDecisionAnalysis | null;
@@ -33,6 +34,7 @@
     displayLabel,
     stepIndex,
     exactDecisions = false,
+    exactMaxStateIndex = 0,
     copiedForkPoint = false,
     analysisWarning = '',
     analysis = null,
@@ -52,16 +54,20 @@
 
   let maxStepIndex = $derived(Math.max(0, replay.steps.length - 1));
   let maxStateIndex = $derived(Math.max(0, replay.stateCount - 1));
-  let maxTimelineIndex = $derived(exactDecisions ? maxStateIndex : maxStepIndex);
+  let maxTimelineIndex = $derived(exactDecisions ? exactMaxStateIndex : maxStepIndex);
   let timelinePosition = $derived(exactDecisions ? stateIndex : stepIndex);
   let actionName = $derived(exactDecisions ? 'Decision' : 'Action');
   let actionValue = $derived(exactDecisions
-    ? (analysis ? `${stateIndex + 1} / ${maxStateIndex}` : 'Final position')
+    ? `${stateIndex + 1} / ${exactMaxStateIndex + 1}`
     : (step.actionIndex === null ? 'Initial' : `${step.actionIndex + 1} / ${replay.actionCount}`));
-  let stateValue = $derived(`${stateIndex} / ${maxStateIndex}`);
+  let stateValue = $derived(exactDecisions
+    ? `${stateIndex} → ${Math.min(stateIndex + 1, maxStateIndex)} / ${maxStateIndex}`
+    : `${stateIndex} / ${maxStateIndex}`);
   let timelineLabel = $derived(displayLabel || step.label);
   let payloadPreview = $derived(exactDecisions ? '' : formatPayload(step.payload));
-  let turnValue = $derived(exactDecisions ? replay.views[stateIndex]?.turn ?? step.turn : step.turn);
+  let turnValue = $derived(exactDecisions
+    ? replay.views[Math.min(stateIndex + 1, maxStateIndex)]?.turn ?? step.turn
+    : step.turn);
   let createdLabel = $derived(Number.isFinite(replay.created) ? new Date(replay.created).toLocaleString() : '');
   let playerLabel = $derived(replay.players.map((player) => player.name).join(' vs '));
 
@@ -163,12 +169,12 @@
 
   <div class="state-controls">
     <label>
-      State
+      {exactDecisions ? 'Decision state' : 'State'}
       <input
         aria-label="State index"
         type="number"
         min="0"
-        max={maxStateIndex}
+        max={exactDecisions ? exactMaxStateIndex : maxStateIndex}
         value={stateIndex}
         oninput={onStateInput}
       />
@@ -286,7 +292,7 @@
 
   .replay-details {
     position: absolute;
-    top: 414px;
+    top: 176px;
     right: 14px;
     z-index: 9;
     width: 148px;
