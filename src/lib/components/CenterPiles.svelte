@@ -15,6 +15,7 @@
     topDiscardPileElement?: HTMLButtonElement;
     bottomLostPileElement?: HTMLButtonElement;
     bottomDiscardPileElement?: HTMLButtonElement;
+    openInformation?: boolean;
     showLostZone: (player: PlayerView) => void;
     showDiscard: (player: PlayerView) => void;
   };
@@ -28,6 +29,7 @@
     topDiscardPileElement = $bindable(),
     bottomLostPileElement = $bindable(),
     bottomDiscardPileElement = $bindable(),
+    openInformation = false,
     showLostZone,
     showDiscard,
   }: Props = $props();
@@ -103,6 +105,11 @@
   function visiblePrizeCards(prizesLeft: number) {
     const count = Math.min(6, Math.max(0, Math.round(prizesLeft)));
     return Array.from({ length: count }, (_, index) => index);
+  }
+
+  function identifiedPrizeCard(player: PlayerView, index: number): CardView | undefined {
+    const card = player.prizes?.[index];
+    return openInformation && card?.id !== undefined ? card : undefined;
   }
 
   // Keyed by the CARD, never the layer: when a new top lands, the covered
@@ -292,10 +299,17 @@
         </button>
         <div class="prize-grid" title={`${player.name} prizes`} aria-label={`${player.name} prizes`}>
           {#each visiblePrizeCards(player.prizesLeft) as index}
+            {@const prizeCard = identifiedPrizeCard(player, index)}
             <span
+              class:revealed={!!prizeCard}
               data-card-anchor={`player:${player.index}:prize:${index}`}
               style={`--row: ${Math.floor(index / 2)}; --col: ${index % 2}; ${cardBackCssVar()}`}
-            ></span>
+              title={prizeCard?.fullName ?? 'Prize card'}
+            >
+              {#if prizeCard}
+                <CardTile card={prizeCard} compact />
+              {/if}
+            </span>
           {/each}
         </div>
       </div>
@@ -768,6 +782,17 @@
       linear-gradient(145deg, #203654, #111a2c);
     background-size: cover, auto, auto, auto;
     background-position: center;
+    box-shadow: 0 3px 8px rgba(23, 30, 38, 0.16);
+  }
+
+  .prize-grid span.revealed {
+    border: 0;
+    background: none;
+  }
+
+  .prize-grid span.revealed :global(.card-tile) {
+    width: 100%;
+    height: 100%;
     box-shadow: 0 3px 8px rgba(23, 30, 38, 0.16);
   }
 

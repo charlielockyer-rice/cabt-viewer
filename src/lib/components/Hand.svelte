@@ -120,7 +120,7 @@
           draggable={!cardDisabled && !concealed}
           disabled={cardDisabled}
           interactive={!cardDisabled && !concealed}
-          faceDown={concealed}
+          faceDown={concealed || card.id === undefined}
           testId={`hand-card-${player.index}-${index}`}
           onclick={() => onSelect(player.index, index)}
           ondragstart={(event) => onDrag(player.index, index, event)}

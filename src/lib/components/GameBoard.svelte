@@ -44,6 +44,7 @@
     animationApplySignal?: number;
     evolutionChromeEvents?: ActionTimelineEvent[];
     replayMode?: boolean;
+    openInformation?: boolean;
     showEvalBar?: boolean;
     evalPWin?: number | null;
     evalOppPWin?: number | null;
@@ -86,6 +87,7 @@
     animationApplySignal = 0,
     evolutionChromeEvents = [],
     replayMode = false,
+    openInformation = false,
     showEvalBar = false,
     evalPWin = null,
     evalOppPWin = null,
@@ -296,6 +298,7 @@
       {topPlayer}
       {bottomPlayer}
       {boardTilt}
+      {openInformation}
       {projectedHoverPile}
       bind:topLostPileElement
       bind:topDiscardPileElement

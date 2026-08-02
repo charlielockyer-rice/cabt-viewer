@@ -83,6 +83,11 @@
   let saveReplayMessage = $state('');
   let saveReplayError = $state('');
   let replayMode = $derived(homeMode === 'logs' && !!replayStore.replay);
+  let analysisMode = $derived(replayMode && replayStore.analysisVisibility.mode === 'analysis');
+  let analysisModeLabel = $derived(analysisMode
+    ? (replayStore.analysisVisibility.prizes === 'full' ? 'Analysis · open information' : 'Analysis · partial recording')
+    : '');
+  let configuredAnalysisReplay = $state('');
   let game = $derived(replayMode ? replayStore.currentView : gameStore.game);
   let animationScopeKey = $derived(replayMode
     ? `replay-${replayStore.stepIndex}-${replayStore.stateIndex}-${replayStore.animationPhaseIndex}`
@@ -123,6 +128,20 @@
   let showLogs = $derived(viewSettingsStore.showLogs);
   let theme = $derived(viewSettingsStore.theme);
   let themePreference = $derived(viewSettingsStore.themePreference);
+
+  $effect(() => {
+    const replayId = analysisMode ? replayStore.replay?.id ?? '' : '';
+    if (!replayId) {
+      configuredAnalysisReplay = '';
+      return;
+    }
+    if (configuredAnalysisReplay === replayId) {
+      return;
+    }
+    configuredAnalysisReplay = replayId;
+    viewSettingsStore.followActive = false;
+    viewSettingsStore.viewIndex = 0;
+  });
   let selectedPlayer1Agent = $derived(agents.find((agent) => agent.id === player1AgentId));
   let selectedPlayer2Agent = $derived(agents.find((agent) => agent.id === player2AgentId));
   let selectedPlayer1Deck = $derived(decks.find((deck) => deck.id === player1DeckSource));
@@ -951,7 +970,7 @@
         turn={game.turn}
         activePlayerName={game.players[actingPlayerIndex]?.name}
         resultLabel={gameResultLabel}
-        modeLabel={replayMode ? '' : modeLabel}
+        modeLabel={replayMode ? analysisModeLabel : modeLabel}
         {gameFinished}
       />
 
@@ -974,6 +993,7 @@
         bind:showCardImages={viewSettingsStore.showCardImages}
         bind:actionStepDelayMs={viewSettingsStore.actionStepDelayMs}
         bind:themePreference={viewSettingsStore.themePreference}
+        {analysisMode}
         busy={commandBusy}
         promptActive={replayMode || !!dialogDecision || boardAnswerable}
         {gameFinished}
@@ -994,6 +1014,7 @@
           displayLabel={replayStore.currentDisplayLabel}
           stepIndex={replayStore.stepIndex}
           copiedForkPoint={replayStore.copiedForkPoint}
+          analysisWarning={replayStore.analysisVisibility.warning}
           analysis={replayStore.currentDecisionAnalysis}
           nextDisagreementStateIndex={replayStore.nextDisagreementStateIndex}
           isPlaying={replayStore.isPlaying}
@@ -1076,7 +1097,7 @@
               selectedHand={selectedHand}
               disabled={!canAct(panelPlayer.index)}
               playableIndexes={playableIndexesFor(panelPlayer)}
-              concealed={isBottom ? (!replayMode && !isSelfControlled(panelPlayer.index)) : true}
+              concealed={analysisMode ? false : (isBottom ? (!replayMode && !isSelfControlled(panelPlayer.index)) : true)}
               onSelect={selectHandCard}
               onDrag={onHandDrag}
               onDragEnd={clearDragState}
@@ -1118,6 +1139,7 @@
           animationApplySignal={animationApplySignal}
           evolutionChromeEvents={finalEvolutionEvents}
           {replayMode}
+          openInformation={analysisMode}
           {showEvalBar}
           evalPWin={evalBarPWin}
           evalOppPWin={evalBarOppPWin}

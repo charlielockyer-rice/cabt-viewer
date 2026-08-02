@@ -112,6 +112,9 @@ export type PlayerView = {
   lostZone: CardView[];
   stadium: CardView[];
   playZone: CardView[];
+  // Present when a replay carries identified Prize cards. Perspective-only
+  // observations still expose only prizesLeft.
+  prizes?: CardView[];
   prizesLeft: number;
   active: PokemonSlotView;
   bench: PokemonSlotView[];

@@ -9,6 +9,7 @@
     displayLabel?: string;
     stepIndex: number;
     copiedForkPoint?: boolean;
+    analysisWarning?: string;
     analysis?: ReplayDecisionAnalysis | null;
     nextDisagreementStateIndex?: number | null;
     isPlaying?: boolean;
@@ -31,6 +32,7 @@
     displayLabel,
     stepIndex,
     copiedForkPoint = false,
+    analysisWarning = '',
     analysis = null,
     nextDisagreementStateIndex = null,
     isPlaying = false,
@@ -155,11 +157,15 @@
         oninput={onStateInput}
       />
     </label>
-    <button onclick={copyForkPoint}>{copiedForkPoint ? 'Position link copied' : 'Copy position link'}</button>
+    <button onclick={copyForkPoint}>{copiedForkPoint ? 'Checkpoint copied' : 'Copy checkpoint'}</button>
     {#if nextDisagreementStateIndex !== null}
       <button onclick={nextDisagreement}>Next search change · state {nextDisagreementStateIndex}</button>
     {/if}
   </div>
+
+  {#if analysisWarning}
+    <small class="analysis-warning">{analysisWarning}</small>
+  {/if}
 
   {#if analysis}
     <section class:changed={analysis.changed} class="decision-analysis" aria-label="Decision comparison">
@@ -302,6 +308,15 @@
 
   .decision-analysis.changed {
     border-color: var(--warning-border, var(--surface-inset-border));
+  }
+
+  .analysis-warning {
+    padding: 6px;
+    border: 1px solid var(--warning-border, var(--surface-inset-border));
+    border-radius: 5px;
+    color: var(--text-secondary);
+    font-size: 10px;
+    line-height: 1.25;
   }
 
   .decision-analysis span,

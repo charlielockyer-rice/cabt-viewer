@@ -15,6 +15,7 @@
     showCardImages: boolean;
     actionStepDelayMs: number;
     themePreference: ThemePreference;
+    analysisMode?: boolean;
     busy?: boolean;
     promptActive?: boolean;
     gameFinished?: boolean;
@@ -39,6 +40,7 @@
     showCardImages = $bindable(),
     actionStepDelayMs = $bindable(),
     themePreference = $bindable(),
+    analysisMode = false,
     busy = false,
     promptActive = false,
     gameFinished = false,
@@ -60,32 +62,36 @@
     bind:boardLift
     {resetPerspective}
   />
-  <label>
-    <input type="checkbox" bind:checked={followActive} />
-    Follow active player
-  </label>
-  <span class="seat-switch" role="group" aria-label="Side switch transition">
-    Side switch:
-    <button
-      type="button"
-      class:active={viewSettingsStore.seatTransition === 'auto'}
-      aria-pressed={viewSettingsStore.seatTransition === 'auto'}
-      title="Flip normally; fade while scrubbing"
-      onclick={() => (viewSettingsStore.seatTransition = 'auto')}
-    >Auto</button>
-    <button
-      type="button"
-      class:active={viewSettingsStore.seatTransition === 'flip'}
-      aria-pressed={viewSettingsStore.seatTransition === 'flip'}
-      onclick={() => (viewSettingsStore.seatTransition = 'flip')}
-    >Flip</button>
-    <button
-      type="button"
-      class:active={viewSettingsStore.seatTransition === 'fade'}
-      aria-pressed={viewSettingsStore.seatTransition === 'fade'}
-      onclick={() => (viewSettingsStore.seatTransition = 'fade')}
-    >Fade</button>
-  </span>
+  {#if analysisMode}
+    <span class="analysis-badge">Analysis view · fixed seats</span>
+  {:else}
+    <label>
+      <input type="checkbox" bind:checked={followActive} />
+      Follow active player
+    </label>
+    <span class="seat-switch" role="group" aria-label="Side switch transition">
+      Side switch:
+      <button
+        type="button"
+        class:active={viewSettingsStore.seatTransition === 'auto'}
+        aria-pressed={viewSettingsStore.seatTransition === 'auto'}
+        title="Flip normally; fade while scrubbing"
+        onclick={() => (viewSettingsStore.seatTransition = 'auto')}
+      >Auto</button>
+      <button
+        type="button"
+        class:active={viewSettingsStore.seatTransition === 'flip'}
+        aria-pressed={viewSettingsStore.seatTransition === 'flip'}
+        onclick={() => (viewSettingsStore.seatTransition = 'flip')}
+      >Flip</button>
+      <button
+        type="button"
+        class:active={viewSettingsStore.seatTransition === 'fade'}
+        aria-pressed={viewSettingsStore.seatTransition === 'fade'}
+        onclick={() => (viewSettingsStore.seatTransition = 'fade')}
+      >Fade</button>
+    </span>
+  {/if}
   <label>
     <input type="checkbox" bind:checked={debugZones} />
     Debug zones
@@ -163,6 +169,16 @@
     line-height: 1.2;
   }
 
+  .analysis-badge {
+    padding: 7px 8px;
+    border: 1px solid var(--surface-toolbar-border);
+    border-radius: 5px;
+    color: var(--text-primary);
+    font-size: 10px;
+    font-weight: 800;
+    text-align: center;
+  }
+
   .table-toolbar button {
     width: 100%;
     border-radius: 5px;
@@ -212,10 +228,6 @@
     gap: 6px;
     padding-bottom: 5px;
     border-bottom: 1px solid var(--surface-inset-border);
-  }
-
-  .table-toolbar button.danger {
-    color: var(--danger-text);
   }
 
   .table-toolbar select {

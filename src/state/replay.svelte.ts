@@ -26,6 +26,30 @@ export type ReplayObservationFrame = {
   searchBeginInput: string | null;
 };
 
+export type ReplayAnalysisVisibility = {
+  mode: 'analysis' | 'perspective';
+  hands: 'full' | 'per-actor' | 'counts';
+  prizes: 'full' | 'counts';
+  warning?: string;
+};
+
+export type ReplayGameContext = {
+  id: string;
+  game_uid: string;
+  search_depth: number;
+  search_depths: number[];
+  model_name: string;
+  model_dtype: string;
+  source: string;
+  decks: Array<{ family_name: string; family_id: string; deck_id: string }>;
+};
+
+const perspectiveVisibility: ReplayAnalysisVisibility = {
+  mode: 'perspective',
+  hands: 'per-actor',
+  prizes: 'counts',
+};
+
 class ReplayStore {
   replay = $state<ReplaySnapshot | null>(null);
   stepIndex = $state(0);
@@ -47,6 +71,8 @@ class ReplayStore {
   // the opponent's hand leaves that seat false, so the graph shows the honest
   // seat only with an explicit "perspective unavailable" label, never a lie.
   honestSeats = $state<[boolean, boolean]>([false, false]);
+  analysisVisibility = $state<ReplayAnalysisVisibility>(perspectiveVisibility);
+  gameContext = $state<ReplayGameContext | null>(null);
   decisionAnalyses = $state<ReplayDecisionAnalysis[]>([]);
   // True while the timeline is being navigated faster than animations can play
   // (scrub-bar drag, key-repeat stepping). The animation layers suppress all
@@ -156,6 +182,8 @@ class ReplayStore {
       this.observationFrames = loaded.frames;
       this.decks = loaded.decks;
       this.honestSeats = loaded.honestSeats;
+      this.analysisVisibility = loaded.analysisVisibility;
+      this.gameContext = loaded.gameContext;
       this.decisionAnalyses = loaded.decisionAnalyses;
       const search = typeof window === 'undefined' ? '' : window.location.search;
       const position = replayPositionFromSearch(
@@ -174,6 +202,8 @@ class ReplayStore {
       this.observationFrames = [];
       this.decks = [];
       this.honestSeats = [false, false];
+      this.analysisVisibility = perspectiveVisibility;
+      this.gameContext = null;
       this.decisionAnalyses = [];
       this.stepIndex = 0;
       this.stateIndex = 0;
@@ -192,6 +222,8 @@ class ReplayStore {
     this.observationFrames = [];
     this.decks = [];
     this.honestSeats = [false, false];
+    this.analysisVisibility = perspectiveVisibility;
+    this.gameContext = null;
     this.decisionAnalyses = [];
     this.stepIndex = 0;
     this.stateIndex = 0;
@@ -314,7 +346,30 @@ class ReplayStore {
     }
 
     const url = replayUrlAtState(window.location.href, this.stateIndex, this.stepIndex);
-    await navigator.clipboard.writeText(url);
+    const step = this.currentStep;
+    const context = this.gameContext;
+    const analysis = this.currentDecisionAnalysis;
+    const lines = [
+      'CABT game checkpoint',
+      `Game: ${context?.game_uid ?? replay.name}`,
+      `Position: state ${this.stateIndex}, step ${this.stepIndex}${step ? `, turn ${step.turn}` : ''}`,
+      `Event: ${this.currentDisplayLabel || step?.label || 'Recorded position'}`,
+    ];
+    if (context) {
+      lines.push(
+        `Search: depth ${context.search_depth} · ${context.model_name}${context.model_dtype ? ` · ${context.model_dtype}` : ''}`,
+        `Decks: ${context.decks.map((deck) => deck.family_name).join(' vs ')}`,
+        `Bank ID: ${context.id} · ${context.source}`,
+      );
+    }
+    if (analysis) {
+      const verdict = analysis.searched
+        ? (analysis.changed ? 'search changed the move' : 'search agreed with policy')
+        : (analysis.mode || 'recorded decision');
+      lines.push(`Decision: ${verdict}${analysis.completedTraversals !== undefined ? ` · ${analysis.completedTraversals} sims` : ''}`);
+    }
+    lines.push(`Link: ${url}`);
+    await navigator.clipboard.writeText(lines.join('\n'));
     this.copiedForkPoint = true;
   }
 
@@ -385,6 +440,8 @@ type LoadedReplay = {
   frames: ReplayObservationFrame[];
   decks: number[][];
   honestSeats: [boolean, boolean];
+  analysisVisibility: ReplayAnalysisVisibility;
+  gameContext: ReplayGameContext | null;
   decisionAnalyses: ReplayDecisionAnalysis[];
 };
 
@@ -403,6 +460,8 @@ async function loadCabtReplay(candidates: string[]): Promise<LoadedReplay> {
         frames: observationFramesFrom(json),
         decks: Array.isArray(json?.decks) ? json.decks : [],
         honestSeats: honestSeatsFrom(json),
+        analysisVisibility: analysisVisibilityFrom(json),
+        gameContext: gameContextFrom(json),
         decisionAnalyses: replayDecisionAnalyses(json),
       };
     } catch (error) {
@@ -410,6 +469,44 @@ async function loadCabtReplay(candidates: string[]): Promise<LoadedReplay> {
     }
   }
   throw new Error(`Unable to load CABT replay. Tried ${failures.join('; ')}`);
+}
+
+function analysisVisibilityFrom(json: unknown): ReplayAnalysisVisibility {
+  const value = (json as { analysisVisibility?: Partial<ReplayAnalysisVisibility> })?.analysisVisibility;
+  if (value?.mode !== 'analysis') {
+    return perspectiveVisibility;
+  }
+  return {
+    mode: 'analysis',
+    hands: value.hands === 'full' || value.hands === 'counts' ? value.hands : 'per-actor',
+    prizes: value.prizes === 'full' ? 'full' : 'counts',
+    ...(typeof value.warning === 'string' ? { warning: value.warning } : {}),
+  };
+}
+
+function gameContextFrom(json: unknown): ReplayGameContext | null {
+  const value = (json as { gameBank?: Partial<ReplayGameContext> })?.gameBank;
+  if (!value || typeof value.id !== 'string' || typeof value.game_uid !== 'string') {
+    return null;
+  }
+  const decks = Array.isArray(value.decks)
+    ? value.decks.filter((deck): deck is ReplayGameContext['decks'][number] => (
+      !!deck
+      && typeof deck.family_name === 'string'
+      && typeof deck.family_id === 'string'
+      && typeof deck.deck_id === 'string'
+    ))
+    : [];
+  return {
+    id: value.id,
+    game_uid: value.game_uid,
+    search_depth: Number(value.search_depth) || 0,
+    search_depths: Array.isArray(value.search_depths) ? value.search_depths.map(Number) : [],
+    model_name: typeof value.model_name === 'string' ? value.model_name : 'unknown',
+    model_dtype: typeof value.model_dtype === 'string' ? value.model_dtype : '',
+    source: typeof value.source === 'string' ? value.source : '',
+    decks,
+  };
 }
 
 // Per-seat honesty: a seat is scorable when ITS OWN hand is present. Raw

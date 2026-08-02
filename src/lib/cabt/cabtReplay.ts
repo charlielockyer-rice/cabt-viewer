@@ -124,6 +124,7 @@ type KaggleContext = {
 
 type CabtRunnerJson = {
   visualize?: CabtVisualizeFrame[];
+  analysisVisualize?: CabtVisualizeFrame[];
   steps?: Array<{ index?: number; action?: unknown; observation?: unknown }>;
 };
 
@@ -2787,6 +2788,17 @@ function resizedHand(hand: CardView[], count: number): CardView[] {
 }
 
 function extractVisualizeFrames(input: unknown): CabtVisualizeFrame[] {
+  const analysisFrames = (input as CabtRunnerJson)?.analysisVisualize;
+  if (Array.isArray(analysisFrames)) {
+    const runnerFrames = (input as CabtRunnerJson)?.visualize;
+    if (Array.isArray(runnerFrames) && runnerFrames.length === analysisFrames.length) {
+      return analysisFrames.map((frame, index) => ({
+        ...runnerFrames[index],
+        current: frame.current,
+      })) as CabtVisualizeFrame[];
+    }
+    return analysisFrames as CabtVisualizeFrame[];
+  }
   const runnerFrames = (input as CabtRunnerJson)?.visualize;
   if (Array.isArray(runnerFrames)) {
     return runnerFrames as CabtVisualizeFrame[];
@@ -2871,6 +2883,7 @@ function buildPlayerView(
     lostZone: [],
     stadium: stadium.map(cardToView),
     playZone: [],
+    prizes: (player.prize ?? []).map((card) => card ? cardToView(card) : faceDownCard()),
     prizesLeft: player.prize?.length ?? 0,
     active: projectPokemonSlot(player.active?.[0] ?? null, index, 'active', 0, activePlayerIndex, conditions, replaySlotResolvers),
     bench: Array.from({ length: Math.max(player.benchMax ?? 5, player.bench?.length ?? 0) }, (_item, benchIndex) =>

@@ -8,6 +8,34 @@ import { CabtAreaType } from './types';
 const here = dirname(fileURLToPath(import.meta.url));
 
 describe('cabtReplayToSnapshot', () => {
+  it('uses a verified analysis stream for both hands and identified Prize cards', () => {
+    const player = (hand: Array<{ id: number; serial: number }>, prize: Array<{ id: number; serial: number }>) => ({
+      active: [],
+      bench: [],
+      benchMax: 5,
+      hand,
+      handCount: hand.length,
+      deckCount: 50,
+      prize,
+    });
+    const current = {
+      turn: 1,
+      yourIndex: 0,
+      result: -1,
+      players: [
+        player([{ id: 1, serial: 10 }], [{ id: 2, serial: 11 }]),
+        player([{ id: 3, serial: 70 }], [{ id: 4, serial: 71 }]),
+      ],
+    };
+    const snapshot = cabtReplayToSnapshot({
+      visualize: [{ current: { ...current, players: [current.players[0], { ...current.players[1], hand: undefined }] } }],
+      analysisVisualize: [{ current }],
+    });
+
+    expect(snapshot.views[0].players.map((value) => value.hand.map((card) => card.id))).toEqual([[1], [3]]);
+    expect(snapshot.views[0].players.map((value) => value.prizes?.map((card) => card.id))).toEqual([[2], [4]]);
+  });
+
   it('loads top-level Kaggle episode JSON from the public archive datasets', () => {
     const snapshot = cabtReplayToSnapshot({
       id: 'episode-env-id',
