@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { ReplaySnapshot, ReplayStep } from '../game/replay';
   import type { ReplayDecisionAnalysis } from '../game/replayAnalysis';
+  import SearchInspector from './SearchInspector.svelte';
 
   type Props = {
     replay: ReplaySnapshot;
@@ -13,6 +14,7 @@
     copiedForkPoint?: boolean;
     analysisWarning?: string;
     analysis?: ReplayDecisionAnalysis | null;
+    viewerEvalSeat0?: number | null;
     nextDisagreementStateIndex?: number | null;
     isPlaying?: boolean;
     setStep: (index: number) => void;
@@ -38,6 +40,7 @@
     copiedForkPoint = false,
     analysisWarning = '',
     analysis = null,
+    viewerEvalSeat0 = null,
     nextDisagreementStateIndex = null,
     isPlaying = false,
     setStep,
@@ -70,6 +73,7 @@
     : step.turn);
   let createdLabel = $derived(Number.isFinite(replay.created) ? new Date(replay.created).toLocaleString() : '');
   let playerLabel = $derived(replay.players.map((player) => player.name).join(' vs '));
+  let searchInspectorOpen = $state(false);
 
   function onTimelineInput(event: Event) {
     const index = Number((event.currentTarget as HTMLInputElement).value);
@@ -213,6 +217,9 @@
             {/if}
           </small>
         {/if}
+        {#if analysis.searched}
+          <button class="inspect-search" onclick={() => (searchInspectorOpen = true)}>Inspect search</button>
+        {/if}
         {#if analysis.rationale}
           <small>{analysis.rationale}</small>
         {/if}
@@ -224,6 +231,16 @@
     <pre>{payloadPreview}</pre>
   {/if}
 </aside>
+
+{#if searchInspectorOpen && analysis?.searched}
+  <SearchInspector
+    {analysis}
+    seat0Name={replay.players[0]?.name ?? 'Player 1'}
+    seat1Name={replay.players[1]?.name ?? 'Player 2'}
+    {viewerEvalSeat0}
+    close={() => (searchInspectorOpen = false)}
+  />
+{/if}
 
 <style>
   .replay-dock {
@@ -349,6 +366,18 @@
 
   .decision-analysis b {
     color: var(--text-primary);
+  }
+
+  .inspect-search {
+    width: 100%;
+    min-height: 28px;
+    padding: 5px 7px;
+    border: 1px solid var(--accent-base, var(--button-border));
+    border-radius: 5px;
+    background: var(--accent-soft, var(--button-bg));
+    color: var(--text-primary);
+    font-size: 10px;
+    font-weight: 800;
   }
 
   .replay-meta span,

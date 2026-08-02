@@ -1,3 +1,38 @@
+export type ReplaySearchAction = {
+  label?: string;
+  optionIndexes?: number[];
+  selected?: boolean;
+  prior?: number;
+  visits?: number;
+  expanded?: boolean;
+  qForActor?: number;
+  valueSeat0?: number | null;
+};
+
+export type ReplaySearchLineStep = {
+  depth?: number;
+  actorSeat?: number;
+  label?: string;
+  visits?: number;
+  qForActor?: number;
+  nodeValueSeat0?: number;
+  valueSeat0?: number | null;
+};
+
+export type ReplaySearchInspector = {
+  schemaVersion?: number;
+  actorSeat?: number;
+  rootNetworkValueSeat0?: number;
+  rootSearchValueSeat0?: number;
+  completedTraversals?: number;
+  distinctEvaluations?: number;
+  depthCutoffs?: number;
+  stopReason?: string;
+  actions?: ReplaySearchAction[];
+  principalLine?: ReplaySearchLineStep[];
+  beliefs?: Array<{ id?: number; weight?: number }>;
+};
+
 export type ReplayDecisionAnalysis = {
   stateIndex: number;
   mode?: string;
@@ -14,6 +49,7 @@ export type ReplayDecisionAnalysis = {
   stopReason?: string;
   rationale?: string;
   error?: string;
+  searchInspector?: ReplaySearchInspector;
 };
 
 export function replayDecisionAnalyses(input: unknown): ReplayDecisionAnalysis[] {

@@ -364,6 +364,11 @@
       ? evalStore.omniscientAt(replayStateIndex, viewIndex)
       : null,
   );
+  let inspectorSeat0Eval = $derived(
+    replayMode && evalStore.omniscientState === 'ready'
+      ? evalStore.omniscientAt(replayStateIndex, 0)
+      : replayMode ? evalStore.pWinAtState(replayStateIndex, 0) : null,
+  );
   // Whether the judge's line CAN be computed for this replay: a raw/omniscient
   // save (honest seats) whose frames carry the engine search seed. Kaggle/legacy
   // replays can't, so the affordance is hidden rather than offered-then-failing.
@@ -1028,6 +1033,7 @@
           exactMaxStateIndex={replayStore.maxDecisionStateIndex}
           analysisWarning={replayStore.analysisVisibility.warning}
           analysis={replayStore.currentDecisionAnalysis}
+          viewerEvalSeat0={inspectorSeat0Eval}
           nextDisagreementStateIndex={replayStore.nextDisagreementStateIndex}
           isPlaying={replayStore.isPlaying}
           setStep={(index) => replayStore.setStep(index)}
