@@ -1098,6 +1098,7 @@
               disabled={!canAct(panelPlayer.index)}
               playableIndexes={playableIndexesFor(panelPlayer)}
               concealed={analysisMode ? false : (isBottom ? (!replayMode && !isSelfControlled(panelPlayer.index)) : true)}
+              rotateCards={analysisMode && !isBottom}
               onSelect={selectHandCard}
               onDrag={onHandDrag}
               onDragEnd={clearDragState}

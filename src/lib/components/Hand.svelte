@@ -10,6 +10,7 @@
     selectedHand?: { playerIndex: number; handIndex: number } | null;
     disabled?: boolean;
     concealed?: boolean;
+    rotateCards?: boolean;
     // The engine's actual legality: these cards glow as selectable; everything
     // else stays full-color and quietly inert (no gray-out).
     playableIndexes?: number[];
@@ -23,6 +24,7 @@
     selectedHand = null,
     disabled = false,
     concealed = false,
+    rotateCards = false,
     playableIndexes = [],
     onSelect,
     onDrag,
@@ -112,20 +114,22 @@
         in:handCardTransition={{ duration: viewSettingsStore.seatFadeActive ? 0 : 140 }}
         out:handCardTransition={{ duration: viewSettingsStore.seatFadeActive ? 0 : 110 }}
       >
-        <CardTile
-          {card}
-          compact
-          selected={selectedHand?.playerIndex === player.index && selectedHand.handIndex === index}
-          playable={playableSet.has(index)}
-          draggable={!cardDisabled && !concealed}
-          disabled={cardDisabled}
-          interactive={!cardDisabled && !concealed}
-          faceDown={concealed || card.id === undefined}
-          testId={`hand-card-${player.index}-${index}`}
-          onclick={() => onSelect(player.index, index)}
-          ondragstart={(event) => onDrag(player.index, index, event)}
-          ondragend={onDragEnd}
-        />
+        <div class:rotated={rotateCards} class="hand-card-orientation">
+          <CardTile
+            {card}
+            compact
+            selected={selectedHand?.playerIndex === player.index && selectedHand.handIndex === index}
+            playable={playableSet.has(index)}
+            draggable={!cardDisabled && !concealed}
+            disabled={cardDisabled}
+            interactive={!cardDisabled && !concealed}
+            faceDown={concealed || card.id === undefined}
+            testId={`hand-card-${player.index}-${index}`}
+            onclick={() => onSelect(player.index, index)}
+            ondragstart={(event) => onDrag(player.index, index, event)}
+            ondragend={onDragEnd}
+          />
+        </div>
       </div>
     </div>
   {/each}
@@ -191,6 +195,15 @@
     display: grid;
     place-items: center;
     will-change: transform, opacity;
+  }
+
+  .hand-card-orientation {
+    display: grid;
+    place-items: center;
+  }
+
+  .hand-card-orientation.rotated {
+    transform: rotate(180deg);
   }
 
   .hand:not(.concealed) :global(.card-tile) {
