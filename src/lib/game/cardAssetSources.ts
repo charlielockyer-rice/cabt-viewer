@@ -52,9 +52,14 @@ export function energyImageSourceUrl(
 
 function bundledEnergyImageUrl(slug: string, type: string): string {
   if (slug === type) {
-    return `/assets/energy-icons/${type}.webp`;
+    return publicAssetUrl(`assets/energy-icons/${type}.webp`);
   }
-  return `/assets/energy/${slug}.${specialEnergyExtension(slug)}`;
+  return publicAssetUrl(`assets/energy/${slug}.${specialEnergyExtension(slug)}`);
+}
+
+export function publicAssetUrl(path: string, baseUrl = import.meta.env.BASE_URL): string {
+  const normalizedBase = `${(baseUrl || '/').replace(/\/+$/, '')}/`;
+  return `${normalizedBase}${path.replace(/^\/+/, '')}`;
 }
 
 function specialEnergyExtension(slug: string): string {

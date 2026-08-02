@@ -5,7 +5,7 @@ import {
   resolveCardImageUrl,
   resolveCardImageUrlFromManifest,
 } from './cardImages';
-import { energyImageSourceUrl } from './cardAssetSources';
+import { energyImageSourceUrl, publicAssetUrl } from './cardAssetSources';
 import cardRows from '../cabt/cardData.generated.json';
 
 describe('card image resolver', () => {
@@ -77,6 +77,15 @@ describe('card image resolver', () => {
   it('uses bundled energy symbols when no manifest or template overrides are configured', () => {
     expect(energyImageSourceUrl({ name: 'Basic Psychic Energy' })).toBe('/assets/energy-icons/psychic.webp');
     expect(energyImageSourceUrl({ name: 'Double Turbo Energy' })).toBe('/assets/energy/double-turbo.png');
+  });
+
+  it('keeps bundled visual assets under the configured viewer base path', () => {
+    expect(publicAssetUrl('assets/energy-icons/psychic.webp', '/viewer/')).toBe(
+      '/viewer/assets/energy-icons/psychic.webp',
+    );
+    expect(publicAssetUrl('/assets/energy/double-turbo.png', '/viewer')).toBe(
+      '/viewer/assets/energy/double-turbo.png',
+    );
   });
 
   it('keeps POR special-energy metadata aligned with external card art numbering', () => {
