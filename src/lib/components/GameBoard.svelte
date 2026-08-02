@@ -45,6 +45,7 @@
     evolutionChromeEvents?: ActionTimelineEvent[];
     replayMode?: boolean;
     openInformation?: boolean;
+    motionDisabled?: boolean;
     showEvalBar?: boolean;
     evalPWin?: number | null;
     evalOppPWin?: number | null;
@@ -88,6 +89,7 @@
     evolutionChromeEvents = [],
     replayMode = false,
     openInformation = false,
+    motionDisabled = false,
     showEvalBar = false,
     evalPWin = null,
     evalOppPWin = null,
@@ -274,6 +276,7 @@
         player={benchPlayer}
         slots={benchSlotsFor(benchPlayer)}
         opponent={benchPlayer.index === topPlayer.index}
+        {motionDisabled}
         {canPlayToBenchArea}
         {canPlayOnBoard}
         {clickBoardPlay}

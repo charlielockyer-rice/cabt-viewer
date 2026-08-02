@@ -8,6 +8,7 @@
     stateIndex: number;
     displayLabel?: string;
     stepIndex: number;
+    exactDecisions?: boolean;
     copiedForkPoint?: boolean;
     analysisWarning?: string;
     analysis?: ReplayDecisionAnalysis | null;
@@ -31,6 +32,7 @@
     stateIndex,
     displayLabel,
     stepIndex,
+    exactDecisions = false,
     copiedForkPoint = false,
     analysisWarning = '',
     analysis = null,
@@ -50,15 +52,26 @@
 
   let maxStepIndex = $derived(Math.max(0, replay.steps.length - 1));
   let maxStateIndex = $derived(Math.max(0, replay.stateCount - 1));
-  let actionValue = $derived(step.actionIndex === null ? 'Initial' : `${step.actionIndex + 1} / ${replay.actionCount}`);
+  let maxTimelineIndex = $derived(exactDecisions ? maxStateIndex : maxStepIndex);
+  let timelinePosition = $derived(exactDecisions ? stateIndex : stepIndex);
+  let actionName = $derived(exactDecisions ? 'Decision' : 'Action');
+  let actionValue = $derived(exactDecisions
+    ? (analysis ? `${stateIndex + 1} / ${maxStateIndex}` : 'Final position')
+    : (step.actionIndex === null ? 'Initial' : `${step.actionIndex + 1} / ${replay.actionCount}`));
   let stateValue = $derived(`${stateIndex} / ${maxStateIndex}`);
   let timelineLabel = $derived(displayLabel || step.label);
-  let payloadPreview = $derived(formatPayload(step.payload));
+  let payloadPreview = $derived(exactDecisions ? '' : formatPayload(step.payload));
+  let turnValue = $derived(exactDecisions ? replay.views[stateIndex]?.turn ?? step.turn : step.turn);
   let createdLabel = $derived(Number.isFinite(replay.created) ? new Date(replay.created).toLocaleString() : '');
   let playerLabel = $derived(replay.players.map((player) => player.name).join(' vs '));
 
-  function onStepInput(event: Event) {
-    setStep(Number((event.currentTarget as HTMLInputElement).value));
+  function onTimelineInput(event: Event) {
+    const index = Number((event.currentTarget as HTMLInputElement).value);
+    if (exactDecisions) {
+      setStateIndex(index);
+    } else {
+      setStep(index);
+    }
   }
 
   function onStateInput(event: Event) {
@@ -75,7 +88,7 @@
 
   function selectionLabel(selection: number[] | undefined): string {
     if (!selection?.length) {
-      return '—';
+      return 'No selection';
     }
     return selection.map((index) =>
       analysis?.legalActions?.[index]?.label || `Option ${index}`,
@@ -103,14 +116,14 @@
     <span>{timelineLabel}</span>
   </div>
   <div class="replay-controls" aria-label="Replay playback controls">
-    <button aria-label="First action" onclick={firstStep} disabled={stepIndex === 0}>|&lt;</button>
-    <button aria-label="Previous action" onclick={previousStep} disabled={stepIndex === 0}>&lt;</button>
+    <button aria-label={exactDecisions ? 'First decision' : 'First action'} onclick={firstStep} disabled={timelinePosition === 0}>|&lt;</button>
+    <button aria-label={exactDecisions ? 'Previous decision' : 'Previous action'} onclick={previousStep} disabled={timelinePosition === 0}>&lt;</button>
     <button
       class="playback-toggle"
       aria-label={isPlaying ? 'Pause replay' : 'Play replay'}
       aria-pressed={isPlaying}
       onclick={togglePlayback}
-      disabled={maxStepIndex === 0}
+      disabled={maxTimelineIndex === 0}
     >
       {#if isPlaying}
         <span class="pause-icon" aria-hidden="true"><span></span><span></span></span>
@@ -119,15 +132,15 @@
       {/if}
     </button>
     <input
-      aria-label="Action step"
+      aria-label={exactDecisions ? 'Decision step' : 'Action step'}
       type="range"
       min="0"
-      max={maxStepIndex}
-      value={stepIndex}
-      oninput={onStepInput}
+      max={maxTimelineIndex}
+      value={timelinePosition}
+      oninput={onTimelineInput}
     />
-    <button aria-label="Next action" onclick={nextStep} disabled={stepIndex >= maxStepIndex}>&gt;</button>
-    <button aria-label="Last action" onclick={lastStep} disabled={stepIndex >= maxStepIndex}>&gt;|</button>
+    <button aria-label={exactDecisions ? 'Next decision' : 'Next action'} onclick={nextStep} disabled={timelinePosition >= maxTimelineIndex}>&gt;</button>
+    <button aria-label={exactDecisions ? 'Last decision' : 'Last action'} onclick={lastStep} disabled={timelinePosition >= maxTimelineIndex}>&gt;|</button>
   </div>
 </section>
 
@@ -136,12 +149,15 @@
     <strong>{replay.name}</strong>
     <span>{playerLabel}</span>
     <span>{createdLabel}</span>
+    {#if exactDecisions}
+      <span>Exact decisions · animations off</span>
+    {/if}
   </div>
 
   <div class="replay-readout">
-    <span>Action <b>{actionValue}</b></span>
+    <span>{actionName} <b>{actionValue}</b></span>
     <span>State <b>{stateValue}</b></span>
-    <span>Turn <b>{step.turn}</b></span>
+    <span>Turn <b>{turnValue}</b></span>
     <span>{timelineLabel}</span>
   </div>
 

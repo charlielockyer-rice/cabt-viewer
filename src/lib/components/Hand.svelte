@@ -11,6 +11,7 @@
     disabled?: boolean;
     concealed?: boolean;
     rotateCards?: boolean;
+    motionDisabled?: boolean;
     // The engine's actual legality: these cards glow as selectable; everything
     // else stays full-color and quietly inert (no gray-out).
     playableIndexes?: number[];
@@ -25,6 +26,7 @@
     disabled = false,
     concealed = false,
     rotateCards = false,
+    motionDisabled = false,
     playableIndexes = [],
     onSelect,
     onDrag,
@@ -107,12 +109,12 @@
       class="hand-card-frame"
       data-hand-card-slot={`player:${player.index}:hand:${index}`}
       data-card-serial={card.serial ?? undefined}
-      animate:flip={{ duration: viewSettingsStore.seatFadeActive ? 0 : 180 }}
+      animate:flip={{ duration: viewSettingsStore.seatFadeActive || motionDisabled ? 0 : 180 }}
     >
       <div
         class="hand-card-content"
-        in:handCardTransition={{ duration: viewSettingsStore.seatFadeActive ? 0 : 140 }}
-        out:handCardTransition={{ duration: viewSettingsStore.seatFadeActive ? 0 : 110 }}
+        in:handCardTransition={{ duration: viewSettingsStore.seatFadeActive || motionDisabled ? 0 : 140 }}
+        out:handCardTransition={{ duration: viewSettingsStore.seatFadeActive || motionDisabled ? 0 : 110 }}
       >
         <div class:rotated={rotateCards} class="hand-card-orientation">
           <CardTile

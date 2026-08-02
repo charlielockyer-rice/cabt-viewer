@@ -16,6 +16,8 @@
     actionStepDelayMs: number;
     themePreference: ThemePreference;
     analysisMode?: boolean;
+    analysisAnimationsEnabled?: boolean;
+    setAnalysisAnimationsEnabled?: (enabled: boolean) => void;
     busy?: boolean;
     promptActive?: boolean;
     gameFinished?: boolean;
@@ -41,6 +43,8 @@
     actionStepDelayMs = $bindable(),
     themePreference = $bindable(),
     analysisMode = false,
+    analysisAnimationsEnabled = true,
+    setAnalysisAnimationsEnabled = () => {},
     busy = false,
     promptActive = false,
     gameFinished = false,
@@ -100,26 +104,39 @@
     <input type="checkbox" bind:checked={showLogs} />
     Show logs
   </label>
-  <label>
-    <input type="checkbox" bind:checked={animateActions} />
-    Step playback
-  </label>
+  {#if analysisMode}
+    <label>
+      <input
+        type="checkbox"
+        checked={analysisAnimationsEnabled}
+        onchange={(event) => setAnalysisAnimationsEnabled((event.currentTarget as HTMLInputElement).checked)}
+      />
+      Animations
+    </label>
+  {:else}
+    <label>
+      <input type="checkbox" bind:checked={animateActions} />
+      Step playback
+    </label>
+  {/if}
   <label>
     <input type="checkbox" bind:checked={showCardImages} />
     Card images
   </label>
-  <label>
-    Step ms
-    <input
-      class="compact-number"
-      type="number"
-      min="50"
-      max="2500"
-      step="50"
-      bind:value={actionStepDelayMs}
-      disabled={!animateActions}
-    />
-  </label>
+  {#if !analysisMode}
+    <label>
+      Step ms
+      <input
+        class="compact-number"
+        type="number"
+        min="50"
+        max="2500"
+        step="50"
+        bind:value={actionStepDelayMs}
+        disabled={!animateActions}
+      />
+    </label>
+  {/if}
   <label>
     Theme
     <select bind:value={themePreference} aria-label="Theme preference">

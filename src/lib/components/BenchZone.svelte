@@ -8,6 +8,7 @@
     player: PlayerView;
     slots?: PokemonSlotView[];
     opponent?: boolean;
+    motionDisabled?: boolean;
     canPlayToBenchArea: (player: PlayerView) => boolean;
     canPlayOnBoard?: boolean;
     clickBoardPlay: (event: MouseEvent) => void;
@@ -31,6 +32,7 @@
     player,
     slots = [],
     opponent = false,
+    motionDisabled = false,
     canPlayToBenchArea,
     canPlayOnBoard = false,
     clickBoardPlay,
@@ -99,7 +101,7 @@
   <div class="bench-row" class:opponent>
     {#each benchEntries as entry (entry.key)}
       {@const slot = entry.slot}
-      <div class="bench-slot-frame" animate:flip={{ duration: viewSettingsStore.seatFadeActive ? 0 : 180 }}>
+      <div class="bench-slot-frame" animate:flip={{ duration: viewSettingsStore.seatFadeActive || motionDisabled ? 0 : 180 }}>
         <BoardSlot
           {slot}
           canDrop={isPlayableTarget(slot)}

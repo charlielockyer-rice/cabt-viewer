@@ -4,12 +4,17 @@
 
   type Props = {
     children: Snippet;
+    motionDisabled?: boolean;
   };
 
-  let { children }: Props = $props();
+  let { children, motionDisabled = false }: Props = $props();
 </script>
 
-<div class="board" class:seat-fade-active={viewSettingsStore.seatFadeActive}>
+<div
+  class="board"
+  class:seat-fade-active={viewSettingsStore.seatFadeActive}
+  class:motion-disabled={motionDisabled}
+>
   {@render children()}
 </div>
 
@@ -30,6 +35,11 @@
      Web-Animations flips on the hands/bench are gated separately by the same
      flag in Hand/BenchZone (CSS can't reach those). */
   .board.seat-fade-active :global(*) {
+    transition-duration: 0s !important;
+  }
+
+  .board.motion-disabled :global(*) {
+    animation-duration: 0s !important;
     transition-duration: 0s !important;
   }
 

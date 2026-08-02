@@ -87,19 +87,23 @@
   let analysisModeLabel = $derived(analysisMode
     ? (replayStore.analysisVisibility.prizes === 'full' ? 'Analysis · open information' : 'Analysis · partial recording')
     : '');
+  let replayAnimationsEnabled = $derived(replayStore.animationsEnabled);
+  let motionDisabled = $derived(analysisMode && !replayAnimationsEnabled);
   let configuredAnalysisReplay = $state('');
   let game = $derived(replayMode ? replayStore.currentView : gameStore.game);
   let animationScopeKey = $derived(replayMode
-    ? `replay-${replayStore.stepIndex}-${replayStore.stateIndex}-${replayStore.animationPhaseIndex}`
+    ? `replay-${replayAnimationsEnabled ? 'animated' : 'exact'}-${replayStore.stepIndex}-${replayStore.stateIndex}-${replayStore.animationPhaseIndex}`
     : `live-${game?.actionTimeline?.at(-1)?.id ?? 0}`);
   // Live playback steps carry exactly their own events; the interactive view
   // that lands afterwards carries the cumulative timeline for the log panel,
   // which must not re-enter the animation layers.
-  let animationEvents = $derived(replayMode || gameStore.playingSequence
+  let animationEvents = $derived(replayMode && !replayAnimationsEnabled
+    ? []
+    : replayMode || gameStore.playingSequence
     ? (game?.actionTimeline ?? [])
     : []);
   let animationStepEvents = $derived(replayMode
-    ? (replayStore.isTimelinePosition ? replayStore.currentStep?.actionTimeline ?? [] : [])
+    ? (replayAnimationsEnabled && replayStore.isTimelinePosition ? replayStore.currentStep?.actionTimeline ?? [] : [])
     : animationEvents);
   // Live turn boundary for the animation layers: stale claims/sprites are
   // released when the turn counter advances. Constant in replay.
@@ -279,6 +283,9 @@
   });
 
   function replayFinalEvolutionEvents(): ActionTimelineEvent[] {
+    if (!replayAnimationsEnabled) {
+      return [];
+    }
     const step = replayStore.currentStep;
     const phases = step?.animationPhases ?? [];
     if (!step || replayStore.animationPhaseIndex < phases.length) {
@@ -994,6 +1001,8 @@
         bind:actionStepDelayMs={viewSettingsStore.actionStepDelayMs}
         bind:themePreference={viewSettingsStore.themePreference}
         {analysisMode}
+        analysisAnimationsEnabled={replayAnimationsEnabled}
+        setAnalysisAnimationsEnabled={(enabled) => replayStore.setAnimationsEnabled(enabled)}
         busy={commandBusy}
         promptActive={replayMode || !!dialogDecision || boardAnswerable}
         {gameFinished}
@@ -1014,6 +1023,7 @@
           displayLabel={replayStore.currentDisplayLabel}
           stepIndex={replayStore.stepIndex}
           copiedForkPoint={replayStore.copiedForkPoint}
+          exactDecisions={!replayAnimationsEnabled}
           analysisWarning={replayStore.analysisVisibility.warning}
           analysis={replayStore.currentDecisionAnalysis}
           nextDisagreementStateIndex={replayStore.nextDisagreementStateIndex}
@@ -1082,7 +1092,7 @@
         </PromptDock>
       {/if}
 
-      <BoardLayer>
+      <BoardLayer {motionDisabled}>
         <!-- Panels are keyed by player.index and rendered in a stable order, so
              the follow-active seat flip is a pure CSS reposition (side class)
              over the SAME Hand instance — the hand's card elements survive the
@@ -1099,6 +1109,7 @@
               playableIndexes={playableIndexesFor(panelPlayer)}
               concealed={analysisMode ? false : (isBottom ? (!replayMode && !isSelfControlled(panelPlayer.index)) : true)}
               rotateCards={analysisMode && !isBottom}
+              {motionDisabled}
               onSelect={selectHandCard}
               onDrag={onHandDrag}
               onDragEnd={clearDragState}
@@ -1141,6 +1152,7 @@
           evolutionChromeEvents={finalEvolutionEvents}
           {replayMode}
           openInformation={analysisMode}
+          {motionDisabled}
           {showEvalBar}
           evalPWin={evalBarPWin}
           evalOppPWin={evalBarOppPWin}

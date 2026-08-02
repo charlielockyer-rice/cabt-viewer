@@ -55,6 +55,7 @@ class ReplayStore {
   stepIndex = $state(0);
   stateIndex = $state(0);
   animationPhaseIndex = $state(0);
+  animationsEnabled = $state(true);
   loading = $state(false);
   error = $state('');
   copiedForkPoint = $state(false);
@@ -99,6 +100,9 @@ class ReplayStore {
   }
 
   get currentDisplayLabel(): string {
+    if (!this.animationsEnabled) {
+      return exactDecisionLabel(this.currentDecisionAnalysis);
+    }
     const step = this.currentStep;
     if (!step) {
       return '';
@@ -114,6 +118,9 @@ class ReplayStore {
     const step = this.currentStep;
     if (!replay || !step) {
       return null;
+    }
+    if (!this.animationsEnabled) {
+      return replay.views[this.stateIndex] ?? null;
     }
     if (this.stateIndex !== step.stateIndex) {
       return replay.views[this.stateIndex] ?? null;
@@ -186,6 +193,11 @@ class ReplayStore {
       this.gameContext = loaded.gameContext;
       this.decisionAnalyses = loaded.decisionAnalyses;
       const search = typeof window === 'undefined' ? '' : window.location.search;
+      if (loaded.analysisVisibility.mode !== 'analysis') {
+        this.animationsEnabled = true;
+      } else if (new URLSearchParams(search).get('detail') === 'exact') {
+        this.animationsEnabled = false;
+      }
       const position = replayPositionFromSearch(
         search,
         loaded.snapshot.steps,
@@ -276,28 +288,49 @@ class ReplayStore {
   }
 
   nextStep(): void {
+    if (!this.animationsEnabled) {
+      this.setStateIndex(this.stateIndex + 1);
+      return;
+    }
     this.setStep(this.stepIndex + 1);
   }
 
   previousStep(): void {
+    if (!this.animationsEnabled) {
+      this.setStateIndex(this.stateIndex - 1);
+      return;
+    }
     this.setStep(this.stepIndex - 1);
   }
 
   firstStep(): void {
+    if (!this.animationsEnabled) {
+      this.setStateIndex(0);
+      return;
+    }
     this.setStep(0);
   }
 
   lastStep(): void {
+    if (!this.animationsEnabled) {
+      this.setStateIndex(Math.max(0, (this.replay?.stateCount ?? 1) - 1));
+      return;
+    }
     this.setStep(this.maxStepIndex);
   }
 
   play(): void {
-    if (!this.replay || this.maxStepIndex <= 0) {
+    if (!this.replay || this.maxNavigationIndex <= 0) {
       return;
     }
-    if (this.stepIndex >= this.maxStepIndex) {
-      this.stepIndex = 0;
-      this.stateIndex = this.currentStep?.stateIndex ?? 0;
+    if (this.atEnd) {
+      if (this.animationsEnabled) {
+        this.stepIndex = 0;
+        this.stateIndex = this.currentStep?.stateIndex ?? 0;
+      } else {
+        this.stateIndex = 0;
+        this.stepIndex = replayStepForState(this.replay.steps, 0);
+      }
       this.animationPhaseIndex = 0;
       this.scheduleAnimationPhase();
     }
@@ -325,6 +358,21 @@ class ReplayStore {
       return;
     }
     const clampedState = clampIndex(stateIndex, Math.max(0, replay.stateCount - 1));
+    if (!this.animationsEnabled) {
+      this.markNavigation();
+      this.stateIndex = clampedState;
+      this.stepIndex = replayStepForState(replay.steps, clampedState);
+      this.animationPhaseIndex = 0;
+      this.copiedForkPoint = false;
+      this.clearAnimationPhaseTimer();
+      this.syncPositionUrl();
+      if (this.atEnd) {
+        this.pause();
+      } else if (this.isPlaying) {
+        this.schedulePlaybackStep();
+      }
+      return;
+    }
     this.setStep(replayStepForState(replay.steps, clampedState));
     this.stateIndex = clampedState;
     this.animationPhaseIndex = 0;
@@ -339,20 +387,38 @@ class ReplayStore {
     }
   }
 
+  setAnimationsEnabled(enabled: boolean): void {
+    if (this.animationsEnabled === enabled) {
+      return;
+    }
+    this.pause();
+    this.clearAnimationPhaseTimer();
+    this.animationsEnabled = enabled;
+    this.animationPhaseIndex = 0;
+    if (this.replay) {
+      this.stepIndex = replayStepForState(this.replay.steps, this.stateIndex);
+      if (enabled) {
+        this.stateIndex = this.currentStep?.stateIndex ?? this.stateIndex;
+        this.scheduleAnimationPhase();
+      }
+      this.syncPositionUrl();
+    }
+  }
+
   async copyForkPoint(): Promise<void> {
     const replay = this.replay;
     if (!replay || typeof navigator === 'undefined' || !navigator.clipboard) {
       return;
     }
 
-    const url = replayUrlAtState(window.location.href, this.stateIndex, this.stepIndex);
+    const url = this.positionUrl();
     const step = this.currentStep;
     const context = this.gameContext;
     const analysis = this.currentDecisionAnalysis;
     const lines = [
       'CABT game checkpoint',
       `Game: ${context?.game_uid ?? replay.name}`,
-      `Position: state ${this.stateIndex}, step ${this.stepIndex}${step ? `, turn ${step.turn}` : ''}`,
+      `Position: state ${this.stateIndex}, step ${this.stepIndex}${this.currentView ? `, turn ${this.currentView.turn}` : ''}`,
       `Event: ${this.currentDisplayLabel || step?.label || 'Recorded position'}`,
     ];
     if (context) {
@@ -380,8 +446,18 @@ class ReplayStore {
     window.history.replaceState(
       {},
       '',
-      replayUrlAtState(window.location.href, this.stateIndex, this.stepIndex),
+      this.positionUrl(),
     );
+  }
+
+  private positionUrl(): string {
+    const next = new URL(replayUrlAtState(window.location.href, this.stateIndex, this.stepIndex));
+    if (this.animationsEnabled) {
+      next.searchParams.delete('detail');
+    } else {
+      next.searchParams.set('detail', 'exact');
+    }
+    return next.toString();
   }
 
   private clearPlaybackTimer(): void {
@@ -397,17 +473,19 @@ class ReplayStore {
       return;
     }
     this.playbackTimer = setTimeout(() => {
-      if (this.stepIndex >= this.maxStepIndex) {
+      if (this.atEnd) {
         this.pause();
         return;
       }
       this.nextStep();
-    }, replayStepPlaybackDelayMs(this.currentStep, this.playbackDelayMs));
+    }, this.animationsEnabled
+      ? replayStepPlaybackDelayMs(this.currentStep, this.playbackDelayMs)
+      : this.playbackDelayMs);
   }
 
   private scheduleAnimationPhase(): void {
     this.clearAnimationPhaseTimer();
-    if (!this.isTimelinePosition) {
+    if (!this.animationsEnabled || !this.isTimelinePosition) {
       return;
     }
     const phase = this.currentStep?.animationPhases?.[this.animationPhaseIndex];
@@ -427,12 +505,39 @@ class ReplayStore {
     }, phaseDurationMs + replayAnimationPhaseGapMs);
   }
 
+  private get maxNavigationIndex(): number {
+    return this.animationsEnabled
+      ? this.maxStepIndex
+      : Math.max(0, (this.replay?.stateCount ?? 1) - 1);
+  }
+
+  private get atEnd(): boolean {
+    return this.animationsEnabled
+      ? this.stepIndex >= this.maxStepIndex
+      : this.stateIndex >= this.maxNavigationIndex;
+  }
+
   private clearAnimationPhaseTimer(): void {
     if (this.animationPhaseTimer) {
       clearTimeout(this.animationPhaseTimer);
       this.animationPhaseTimer = null;
     }
   }
+}
+
+function exactDecisionLabel(analysis: ReplayDecisionAnalysis | null): string {
+  if (!analysis) {
+    return 'Final position';
+  }
+  const actor = analysis.playerIndex === undefined ? 'Model' : `Player ${analysis.playerIndex + 1}`;
+  const selection = analysis.playedSelection ?? [];
+  if (!selection.length) {
+    return `${actor} submitted no selection.`;
+  }
+  const choices = selection.map((index) =>
+    analysis.legalActions?.[index]?.label ?? `Option ${index}`
+  );
+  return `${actor} chose ${choices.join(' + ')}.`;
 }
 
 type LoadedReplay = {
