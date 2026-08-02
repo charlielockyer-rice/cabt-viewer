@@ -11,6 +11,7 @@ import {
   replayUrlAtState,
 } from '../lib/game/replayLocation';
 import { cabtReplayToSnapshot } from '../lib/cabt/cabtReplay';
+import { exactDecisionResultView } from '../lib/game/exactReplay';
 
 // The raw per-state observation ({current, select}) the value head needs, kept
 // alongside the projected snapshot (which drops it). Frame index === stateIndex
@@ -123,7 +124,14 @@ class ReplayStore {
       // A recorded selection on state N produces state N+1. Exact-decision
       // mode keeps the decision metadata at N but renders its resulting board,
       // so the named action and visible card movement share one timeline step.
-      return replay.views[Math.min(this.stateIndex + 1, replay.stateCount - 1)] ?? null;
+      const resultView = replay.views[Math.min(this.stateIndex + 1, replay.stateCount - 1)] ?? null;
+      return exactDecisionResultView(
+        resultView,
+        replay.views,
+        this.stateIndex,
+        this.observationFrames[this.stateIndex]?.select,
+        this.currentDecisionAnalysis,
+      );
     }
     if (this.stateIndex !== step.stateIndex) {
       return replay.views[this.stateIndex] ?? null;
