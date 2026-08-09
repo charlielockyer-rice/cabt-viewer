@@ -1,13 +1,15 @@
 <script lang="ts">
+  import ClipBrowser from './ClipBrowser.svelte';
   import KaggleEpisodeBrowser from './KaggleEpisodeBrowser.svelte';
   import SearchedGameBrowser from './SearchedGameBrowser.svelte';
+  import type { ClipManifestEntry } from '../clips/clipFormat';
   import type { AgentOption, DeckOption, GameLogEntry } from '../home/catalog';
   import type { SearchedGame } from '../gameBank/searchedGames';
   import type { PlayerControl } from '../game/httpClient';
   import type { KaggleEpisodeDay, KaggleEpisodeSummary } from '../kaggle/episodes';
 
   type HomeMode = 'play' | 'logs';
-  type LogSource = 'searched' | 'local' | 'kaggle';
+  type LogSource = 'searched' | 'local' | 'kaggle' | 'clips';
 
   type Props = {
     homeMode: HomeMode;
@@ -36,6 +38,7 @@
     loadGameLog: (log: GameLogEntry) => void;
     loadKaggleEpisode: (day: KaggleEpisodeDay, episode: KaggleEpisodeSummary) => void;
     loadSearchedGame: (game: SearchedGame) => void;
+    loadClip: (entry: ClipManifestEntry) => void;
     refreshCatalog: () => void;
   };
 
@@ -66,6 +69,7 @@
     loadGameLog,
     loadKaggleEpisode,
     loadSearchedGame,
+    loadClip,
     refreshCatalog,
   }: Props = $props();
 
@@ -253,6 +257,15 @@
             logSource = 'local';
           }}
         >Local logs</button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={logSource === 'clips'}
+          class:active={logSource === 'clips'}
+          onclick={() => {
+            logSource = 'clips';
+          }}
+        >Clips</button>
       </span>
     </div>
 
@@ -269,6 +282,8 @@
         initialSelectedSlug={kaggleSelectedSlug}
         openEpisode={loadKaggleEpisode}
       />
+    {:else if logSource === 'clips'}
+      <ClipBrowser busy={busy} openClip={loadClip} />
     {:else}
       <div class="local-log-toolbar">
         <span></span>
@@ -350,7 +365,7 @@
 
   .source-tabs {
     display: inline-grid;
-    grid-template-columns: repeat(3, minmax(112px, 1fr));
+    grid-template-columns: repeat(4, minmax(112px, 1fr));
     gap: 4px;
     padding: 4px;
     border-radius: 8px;

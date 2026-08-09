@@ -4,13 +4,19 @@
   type Props = {
     debugZones?: boolean;
     replayMode?: boolean;
+    clipMode?: boolean;
     children: Snippet;
   };
 
-  let { debugZones = false, replayMode = false, children }: Props = $props();
+  let { debugZones = false, replayMode = false, clipMode = false, children }: Props = $props();
 </script>
 
-<section class="table-shell" class:debug-zones={debugZones} class:replay-mode={replayMode}>
+<section
+  class="table-shell"
+  class:debug-zones={debugZones}
+  class:replay-mode={replayMode}
+  class:clip-mode={clipMode}
+>
   {@render children()}
 </section>
 
@@ -76,6 +82,22 @@
   .table-shell.replay-mode {
     --replay-dock-h: 48px;
     --replay-eval-h: 64px;
+  }
+
+  /* Clip mode widens the right rail so the docked clip panel sits BESIDE the
+     board instead of over it: the board keeps its own space and stays fully
+     readable while the tour is open. Below the breakpoint there is not enough
+     width to seat both, so the rail returns to normal and the panel floats
+     over the board like the search inspector. */
+  .table-shell.clip-mode {
+    --clip-panel-w: 340px;
+    --board-right-rail: calc(166px + var(--clip-panel-w) + 8px);
+  }
+
+  @media (max-width: 1180px) {
+    .table-shell.clip-mode {
+      --board-right-rail: 150px;
+    }
   }
 
   .table-shell :global(*) {

@@ -3,6 +3,7 @@
   import ActiveFocus from './lib/components/ActiveFocus.svelte';
   import AppHeader from './lib/components/AppHeader.svelte';
   import BoardLayer from './lib/components/BoardLayer.svelte';
+  import ClipPanel from './lib/components/ClipPanel.svelte';
   import EffectSelectorBanner from './lib/components/EffectSelectorBanner.svelte';
   import EndGamePrompt from './lib/components/EndGamePrompt.svelte';
   import EvalGraph from './lib/components/EvalGraph.svelte';
@@ -46,6 +47,8 @@
   import { searchedGameReplayUrl, type SearchedGame } from './lib/gameBank/searchedGames';
   import { kaggleEpisodeReplayUrl, type KaggleEpisodeDay, type KaggleEpisodeSummary } from './lib/kaggle/episodes';
   import type { ActionTimelineEvent, BoardSlotRef, DecisionOptionView, PokemonSlotView, PlayerView } from './lib/game/types';
+  import { clipViewerUrl, type ClipManifestEntry } from './lib/clips/clipFormat';
+  import { clipStore } from './state/clip.svelte';
   import { deckImportStore } from './state/deckImport.svelte';
   import { evalStore } from './state/eval.svelte';
   import { gameStore } from './state/game.svelte';
@@ -60,7 +63,10 @@
 
   let showPromptGallery = initialSearchParam('view') === 'prompt-gallery';
   const initialReplayMode = initialSearchParam('view') === 'replay';
-  let homeMode = $state<HomeMode>(initialReplayMode ? 'logs' : 'play');
+  // ?view=clip&clip=<ref> opens a clip: an agent-authored tour whose positions
+  // load into the same replay store the board already renders from.
+  const initialClipRef = initialSearchParam('view') === 'clip' ? initialSearchParam('clip') : '';
+  let homeMode = $state<HomeMode>(initialReplayMode || initialClipRef ? 'logs' : 'play');
   let lastGameBankGameId = $state(initialSearchParam('gameBank'));
   let lastKaggleDaySlug = $state(initialSearchParam('kaggleDay'));
   let lastKaggleEpisodeId = $state(initialSearchParam('kaggleEpisode'));
@@ -83,6 +89,11 @@
   let saveReplayMessage = $state('');
   let saveReplayError = $state('');
   let replayMode = $derived(homeMode === 'logs' && !!replayStore.replay);
+  let clipMode = $derived(clipStore.active);
+  let shellLoading = $derived(clipMode ? clipStore.loading || replayStore.loading : replayStore.loading);
+  let shellLoadingTitle = $derived(shellLoading
+    ? (clipMode ? 'Loading clip' : 'Loading replay')
+    : (clipMode ? 'Clip unavailable' : 'Replay unavailable'));
   let analysisMode = $derived(replayMode && replayStore.analysisVisibility.mode === 'analysis');
   let analysisModeLabel = $derived(analysisMode
     ? (replayStore.analysisVisibility.prizes === 'full' ? 'Analysis · open information' : 'Analysis · partial recording')
@@ -114,6 +125,11 @@
   let animationApplySignal = $derived(gameStore.liveApplyGeneration);
   let finalEvolutionEvents = $derived(replayMode ? replayFinalEvolutionEvents() : []);
   let error = $derived(homeMode === 'logs' ? replayStore.error : gameStore.error);
+  let shellLoadingMessage = $derived(shellLoading
+    ? (clipMode ? 'Preparing the clip and its replay frames.' : 'Preparing CABT replay frames.')
+    : labelFor(clipStore.error || error || (clipMode
+      ? 'This clip has no position to open.'
+      : 'Unable to load replay.')));
   let busy = $derived(replayMode ? replayStore.loading : gameStore.busy);
   let sessionBusy = $derived(replayMode ? replayStore.loading : busy);
   let resolvingPrompt = $derived(gameStore.resolvingPrompt);
@@ -162,6 +178,9 @@
     void refreshCatalog();
     if (initialReplayMode) {
       void replayStore.loadSaved();
+    }
+    if (initialClipRef) {
+      void clipStore.load(initialClipRef);
     }
     return stopThemeSync;
   });
@@ -818,14 +837,18 @@
   }
 
   function resetGame() {
-    if (replayMode) {
+    if (replayMode || clipMode) {
+      clipStore.clear();
       replayStore.clear();
       evalStore.clearReplay();
       resetSaveReplayStatus();
       zoneViewerStore.close();
       viewSettingsStore.resetView();
       homeMode = 'logs';
-      if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('view') === 'replay') {
+      const view = typeof window === 'undefined'
+        ? ''
+        : new URLSearchParams(window.location.search).get('view');
+      if (view === 'replay' || view === 'clip') {
         window.history.replaceState({}, '', window.location.pathname);
       }
       return;
@@ -907,6 +930,49 @@
     window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}${window.location.hash}`);
   }
 
+  function loadClip(entry: ClipManifestEntry) {
+    if (typeof window !== 'undefined') {
+      window.history.replaceState({}, '', clipViewerUrl(window.location.href, entry.file));
+    }
+    void clipStore.load(entry.file);
+  }
+
+  // One keyboard surface for reviewing: step the replay, play/pause, and in a
+  // clip walk the tour. Typing anywhere (including the timeline's own range
+  // and number inputs, which have their own arrow behaviour) is left alone.
+  function onViewerKeydown(event: KeyboardEvent) {
+    if (!replayMode && !clipMode) {
+      return;
+    }
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+      return;
+    }
+    const target = event.target as HTMLElement | null;
+    if (target?.isContentEditable) {
+      return;
+    }
+    const tag = target?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+      return;
+    }
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      replayStore.previousStep();
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      replayStore.nextStep();
+    } else if (event.key === ' ' || event.key === 'Spacebar') {
+      event.preventDefault();
+      replayStore.togglePlayback();
+    } else if (clipMode && event.key === 'ArrowUp') {
+      event.preventDefault();
+      void clipStore.previousItem();
+    } else if (clipMode && event.key === 'ArrowDown') {
+      event.preventDefault();
+      void clipStore.nextItem();
+    }
+  }
+
   function replaceReplayUrl(replayId: string) {
     if (typeof window === 'undefined') {
       return;
@@ -924,16 +990,21 @@
   }
 </script>
 
+<svelte:window onkeydown={onViewerKeydown} />
+
 {#if showPromptGallery}
   <PromptGallery />
 {:else}
 <main>
-  {#if replayMode && !game}
+  {#if (replayMode || clipMode) && !game}
     <AppHeader />
     <section class="replay-loading-screen">
       <div class="replay-loading-panel">
-        <strong>{replayStore.loading ? 'Loading replay' : 'Replay unavailable'}</strong>
-        <span>{replayStore.loading ? 'Preparing CABT replay frames.' : labelFor(error || 'Unable to load replay.')}</span>
+        <strong>{shellLoadingTitle}</strong>
+        <span>{shellLoadingMessage}</span>
+        {#if clipMode && !shellLoading}
+          <button type="button" onclick={resetGame}>Back to clips</button>
+        {/if}
       </div>
     </section>
   {:else if !game}
@@ -973,10 +1044,11 @@
         {loadGameLog}
         {loadKaggleEpisode}
         {loadSearchedGame}
+        {loadClip}
         refreshCatalog={() => void refreshCatalog()}
       />
   {:else if bottomPlayer && topPlayer}
-    <TableShell {debugZones} {replayMode}>
+    <TableShell {debugZones} {replayMode} {clipMode}>
       <GameStatus
         phaseLabel={game.phaseLabel}
         turn={game.turn}
@@ -1065,6 +1137,10 @@
             computeJudge={computeJudgeLine}
           />
         </div>
+      {/if}
+
+      {#if clipMode}
+        <ClipPanel />
       {/if}
 
       {#if gameFinished && !replayMode}

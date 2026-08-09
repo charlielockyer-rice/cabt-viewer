@@ -1,0 +1,46 @@
+{
+  "schema": "cabt-clip-v1",
+  "title": "Reading a game in four stops",
+  "created": "2026-08-09T09:00:00Z",
+  "author": "viewer demo",
+  "summary": "A worked example of the clip format against a bundled local replay. Open it with `?view=clip&clip=/clips-demo.json`.",
+  "items": [
+    {
+      "kind": "note",
+      "markdown": "This clip walks one **local** game. Each stop below loads the same replay and seeks to a recorded position, so the board, timeline, and eval graph stay live underneath.\n\nUse the arrow keys: up and down move between stops, left and right step the replay."
+    },
+    {
+      "kind": "position",
+      "replay": "/local-replays/setA-fleet-config-CSV-game1.json",
+      "state": 40,
+      "caption": "First real main phase. The board is set and the turn opens with the usual fork: **develop** the bench or commit the hand card now.",
+      "focusOptions": [6, 7]
+    },
+    {
+      "kind": "position",
+      "replay": "/local-replays/setA-fleet-config-CSV-game1.json",
+      "state": 87,
+      "caption": "An `AttachFrom` sub-decision. Which Pokemon receives the energy is the whole decision here — the rest of the turn is already spent."
+    },
+    {
+      "kind": "compare",
+      "replay": "/local-replays/setA-fleet-config-CSV-game1.json",
+      "state": 120,
+      "caption": "A forced switch. Three of the five bench slots are defensible answers, and the recording only shows one of them.",
+      "lines": [
+        {
+          "label": "Promote the first bench slot",
+          "role": "played",
+          "optionIndexes": [0],
+          "note": "What the recording actually did."
+        },
+        {
+          "label": "Promote the third bench slot",
+          "role": "alternative",
+          "optionIndexes": [2],
+          "note": "Keeps the attacker in reserve at the cost of a slower board."
+        }
+      ]
+    }
+  ]
+}

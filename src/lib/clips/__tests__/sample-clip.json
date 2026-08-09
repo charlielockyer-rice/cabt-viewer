@@ -1,0 +1,41 @@
+{
+  "schema": "cabt-clip-v1",
+  "title": "Sample tour",
+  "created": "2026-08-09T09:00:00Z",
+  "author": "test fixture",
+  "summary": "Two stops on one replay and one on another.",
+  "items": [
+    {
+      "kind": "note",
+      "markdown": "Opening **note** with `code` and\na hard line break."
+    },
+    {
+      "kind": "position",
+      "replay": "/local-replays/fixture-game.json",
+      "state": 4,
+      "caption": "The fork.",
+      "focusOptions": [0, 2]
+    },
+    {
+      "kind": "compare",
+      "replay": "/local-replays/fixture-game.json",
+      "state": 6,
+      "caption": "The alternative.",
+      "exact": true,
+      "lines": [
+        { "label": "Played line", "role": "played", "optionIndexes": [1], "note": "What happened." },
+        { "label": "Other line", "role": "alternative", "optionIndexes": [0, 2] },
+        { "label": "Bare line" }
+      ]
+    },
+    {
+      "kind": "position",
+      "replay": "gamebank:abc 123",
+      "state": 2
+    },
+    {
+      "kind": "diagram",
+      "svg": "<circle />"
+    }
+  ]
+}

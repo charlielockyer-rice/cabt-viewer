@@ -45,6 +45,13 @@ export type ReplayGameContext = {
   decks: Array<{ family_name: string; family_id: string; deck_id: string }>;
 };
 
+// An explicit "open here" for loadFrom: the caller already knows the state it
+// wants and whether that position should open in exact-decision mode.
+export type ReplayLoadPosition = {
+  stateIndex: number;
+  exact?: boolean;
+};
+
 const perspectiveVisibility: ReplayAnalysisVisibility = {
   mode: 'perspective',
   hands: 'per-actor',
@@ -189,7 +196,17 @@ class ReplayStore {
     await this.loadCandidates([url]);
   }
 
-  private async loadCandidates(candidates: string[]): Promise<void> {
+  // Load an explicitly resolved replay at an explicit position, for callers
+  // that own the resolution themselves (clips). Everything after the fetch is
+  // the same path as the URL-driven loads.
+  async loadFrom(candidates: string[], position: ReplayLoadPosition): Promise<void> {
+    await this.loadCandidates(candidates, position);
+  }
+
+  private async loadCandidates(
+    candidates: string[],
+    requested: ReplayLoadPosition | null = null,
+  ): Promise<void> {
     if (this.loading) {
       return;
     }
@@ -210,14 +227,21 @@ class ReplayStore {
       const search = typeof window === 'undefined' ? '' : window.location.search;
       if (loaded.analysisVisibility.mode !== 'analysis') {
         this.animationsEnabled = true;
+      } else if (requested) {
+        this.animationsEnabled = !requested.exact;
       } else if (new URLSearchParams(search).get('detail') === 'exact') {
         this.animationsEnabled = false;
       }
-      const position = replayPositionFromSearch(
-        search,
-        loaded.snapshot.steps,
-        loaded.snapshot.stateCount,
-      );
+      const position = requested
+        ? {
+          stateIndex: clampIndex(requested.stateIndex, Math.max(0, loaded.snapshot.stateCount - 1)),
+          stepIndex: replayStepForState(loaded.snapshot.steps, requested.stateIndex),
+        }
+        : replayPositionFromSearch(
+          search,
+          loaded.snapshot.steps,
+          loaded.snapshot.stateCount,
+        );
       this.stepIndex = position.stepIndex;
       this.stateIndex = this.animationsEnabled
         ? position.stateIndex
