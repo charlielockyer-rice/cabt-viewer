@@ -1,15 +1,17 @@
 <script lang="ts">
   import ClipBrowser from './ClipBrowser.svelte';
   import KaggleEpisodeBrowser from './KaggleEpisodeBrowser.svelte';
+  import LadderArchiveBrowser from './LadderArchiveBrowser.svelte';
   import SearchedGameBrowser from './SearchedGameBrowser.svelte';
   import type { ClipManifestEntry } from '../clips/clipFormat';
   import type { AgentOption, DeckOption, GameLogEntry } from '../home/catalog';
+  import type { LadderEpisode } from '../gameBank/ladderLibrary';
   import type { SearchedGame } from '../gameBank/searchedGames';
   import type { PlayerControl } from '../game/httpClient';
   import type { KaggleEpisodeDay, KaggleEpisodeSummary } from '../kaggle/episodes';
 
   type HomeMode = 'play' | 'logs';
-  type LogSource = 'searched' | 'local' | 'kaggle' | 'clips';
+  type LogSource = 'searched' | 'local' | 'kaggle' | 'ladder' | 'clips';
 
   type Props = {
     homeMode: HomeMode;
@@ -32,11 +34,14 @@
     catalogError?: string;
     kaggleSelectedEpisodeId?: string;
     kaggleSelectedSlug?: string;
+    ladderSelectedDay?: string;
+    ladderSelectedEpisodeId?: string;
     gameBankSelectedGameId?: string;
     setHomeMode: (mode: HomeMode) => void;
     startGame: () => void;
     loadGameLog: (log: GameLogEntry) => void;
     loadKaggleEpisode: (day: KaggleEpisodeDay, episode: KaggleEpisodeSummary) => void;
+    loadLadderEpisode: (day: string, episode: LadderEpisode) => void;
     loadSearchedGame: (game: SearchedGame) => void;
     loadClip: (entry: ClipManifestEntry) => void;
     refreshCatalog: () => void;
@@ -63,11 +68,14 @@
     catalogError = '',
     kaggleSelectedEpisodeId = '',
     kaggleSelectedSlug = '',
+    ladderSelectedDay = '',
+    ladderSelectedEpisodeId = '',
     gameBankSelectedGameId = '',
     setHomeMode,
     startGame,
     loadGameLog,
     loadKaggleEpisode,
+    loadLadderEpisode,
     loadSearchedGame,
     loadClip,
     refreshCatalog,
@@ -251,6 +259,15 @@
         <button
           type="button"
           role="tab"
+          aria-selected={logSource === 'ladder'}
+          class:active={logSource === 'ladder'}
+          onclick={() => {
+            logSource = 'ladder';
+          }}
+        >Ladder archive</button>
+        <button
+          type="button"
+          role="tab"
           aria-selected={logSource === 'local'}
           class:active={logSource === 'local'}
           onclick={() => {
@@ -281,6 +298,13 @@
         initialSelectedEpisodeId={kaggleSelectedEpisodeId}
         initialSelectedSlug={kaggleSelectedSlug}
         openEpisode={loadKaggleEpisode}
+      />
+    {:else if logSource === 'ladder'}
+      <LadderArchiveBrowser
+        busy={busy}
+        initialSelectedDay={ladderSelectedDay}
+        initialSelectedEpisodeId={ladderSelectedEpisodeId}
+        openEpisode={loadLadderEpisode}
       />
     {:else if logSource === 'clips'}
       <ClipBrowser busy={busy} openClip={loadClip} />
@@ -365,7 +389,7 @@
 
   .source-tabs {
     display: inline-grid;
-    grid-template-columns: repeat(4, minmax(112px, 1fr));
+    grid-template-columns: repeat(5, minmax(112px, 1fr));
     gap: 4px;
     padding: 4px;
     border-radius: 8px;
@@ -555,6 +579,7 @@
 
     .source-tabs {
       width: 100%;
+      grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
     }
   }
 </style>
