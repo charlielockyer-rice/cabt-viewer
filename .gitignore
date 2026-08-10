@@ -4,6 +4,8 @@ node_modules
 .svelte-kit
 *.tsbuildinfo
 .env
+.env.local
+.env.*.local
 .DS_Store
 sample_submission
 data
