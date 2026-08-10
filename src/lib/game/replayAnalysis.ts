@@ -19,6 +19,28 @@ export type ReplaySearchLineStep = {
   valueSeat0?: number | null;
 };
 
+export type ReplaySearchContinuationRow = {
+  depth?: number;
+  label?: string;
+  nodeVisits?: number;
+  decisionVisits?: number;
+  edgeVisits?: number;
+  runnerUpVisits?: number;
+  requiredVisits?: number;
+  supported?: boolean;
+  committed?: boolean;
+  reason?: string;
+};
+
+export type ReplaySearchContinuationSupport = {
+  checkedContinuations?: number;
+  committedContinuations?: number;
+  blocked?: boolean;
+  blockedReason?: string;
+  boundaryReason?: string;
+  rows?: ReplaySearchContinuationRow[];
+};
+
 export type ReplaySearchInspector = {
   schemaVersion?: number;
   actorSeat?: number;
@@ -30,6 +52,7 @@ export type ReplaySearchInspector = {
   stopReason?: string;
   actions?: ReplaySearchAction[];
   principalLine?: ReplaySearchLineStep[];
+  continuationSupport?: ReplaySearchContinuationSupport;
   beliefs?: Array<{ id?: number; weight?: number }>;
 };
 

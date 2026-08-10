@@ -73,10 +73,15 @@ it('renders the tour, the selected item, and an unsupported row that does not br
     stateIndex: 4,
     legalActions: [{ label: 'Promote Bench 1' }, { label: 'Promote Bench 2' }],
     searchInspector: {
+      actorSeat: 0,
+      completedTraversals: 32,
       actions: [
-        { optionIndexes: [0], prior: 0.7, visits: 24, qForActor: 0.61 },
+        { optionIndexes: [0], prior: 0.7, visits: 24, qForActor: 0.61, selected: true },
         { optionIndexes: [1], prior: 0.3, visits: 8, qForActor: 0.44 },
       ],
+      continuationSupport: {
+        rows: [{ decisionVisits: 8, requiredVisits: 16, supported: false, reason: 'visit-floor' }],
+      },
     },
   }];
 
@@ -85,36 +90,26 @@ it('renders the tour, the selected item, and an unsupported row that does not br
 
   const text = () => document.body.textContent ?? '';
   expect(text()).toContain('Guided tour');
-  expect(text()).toContain('lab agent');
-  expect(text()).toContain('A short tour.');
-  expect(text()).toContain('Read the note first.');
+  expect(text()).toContain('1 / 2');
   expect(text()).toContain('Position · state 3');
-  expect(text()).toContain('Compare · state 4');
-  expect(text()).toContain('Unsupported item');
 
-  // Load opened on the first position, and its caption is in the detail pane.
+  // Load opens on the first position without putting prose ahead of the board.
   expect(clipStore.selectedIndex).toBe(1);
   expect(text()).toContain('The fork.');
 
-  // Selecting the compare item joins each author line to the recorded action
-  // that carries the same option indexes.
-  const compareButton = [...document.querySelectorAll<HTMLButtonElement>('.clip-items button')]
-    .find((button) => button.textContent?.includes('Compare'));
-  expect(compareButton).toBeTruthy();
-  compareButton!.click();
+  document.querySelector<HTMLButtonElement>('.clip-nav button:last-child')!.click();
   await vi.waitFor(() => {
     flushSync();
     expect(clipStore.selectedIndex).toBe(2);
   });
   flushSync();
 
-  expect(text()).toContain('Played line');
-  expect(text()).toContain('What happened.');
-  expect(text()).toContain('Alternative line');
+  expect(text()).toContain('START');
+  expect(text()).toContain('32 searched turns');
   expect(text()).toContain('70%');
   expect(text()).toContain('24');
   expect(text()).toContain('61%');
-  // Option indexes are shown as the recorded action labels.
+  expect(text()).toContain('Stopped before the next decision: visit floor');
   expect(text()).toContain('Promote Bench 1');
   expect(text()).toContain('Promote Bench 2');
 

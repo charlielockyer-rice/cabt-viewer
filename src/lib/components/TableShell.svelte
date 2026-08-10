@@ -84,14 +84,12 @@
     --replay-eval-h: 64px;
   }
 
-  /* Clip mode widens the right rail so the docked clip panel sits BESIDE the
-     board instead of over it: the board keeps its own space and stays fully
-     readable while the tour is open. Below the breakpoint there is not enough
-     width to seat both, so the rail returns to normal and the panel floats
-     over the board like the search inspector. */
+  /* Clip mode is a film-review surface: the ordinary toolbar disappears and
+     its space goes to the action tree. The board and tree remain side by side
+     without paying for a second right-hand card. */
   .table-shell.clip-mode {
-    --clip-panel-w: 340px;
-    --board-right-rail: calc(166px + var(--clip-panel-w) + 8px);
+    --clip-panel-w: min(500px, 42vw);
+    --board-right-rail: calc(var(--clip-panel-w) + 18px);
   }
 
   @media (max-width: 1180px) {

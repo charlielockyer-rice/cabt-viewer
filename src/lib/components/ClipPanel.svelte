@@ -1,5 +1,6 @@
 <script lang="ts">
   import ClipMarkdown from './ClipMarkdown.svelte';
+  import SearchTree from './SearchTree.svelte';
   import { clipMarkdownPreview } from '../clips/clipMarkdown';
   import { clipReplayViewerUrl, type ClipCompareLine, type ClipItem } from '../clips/clipFormat';
   import { clipOptionLabel } from '../clips/clipOptions';
@@ -15,9 +16,11 @@
   let selectedIndex = $derived(clipStore.selectedIndex);
   let selected = $derived(clipStore.selectedItem);
   let selectedSeekable = $derived(clipStore.selectedSeekableItem);
-  // Numbers only count the positions; notes are prose between them.
-  let itemNumbers = $derived(numberItems(items));
+  let seekableCount = $derived(items.filter(isClipSeekable).length);
+  let selectedNumber = $derived(items.slice(0, selectedIndex + 1).filter(isClipSeekable).length);
   let analysis = $derived(analysisAt(selectedSeekable?.state));
+  let seat0Name = $derived(replayStore.replay?.players[0]?.name ?? 'Player 1');
+  let seat1Name = $derived(replayStore.replay?.players[1]?.name ?? 'Player 2');
   let focusLabels = $derived((selectedSeekable?.focusOptions ?? []).map((index) => ({
     index,
     label: optionLabel(selectedSeekable?.state, index),
@@ -29,17 +32,6 @@
     selectedIndex;
     copied = false;
   });
-
-  function numberItems(list: ClipItem[]): Array<number | null> {
-    let position = 0;
-    return list.map((item) => {
-      if (!isClipSeekable(item)) {
-        return null;
-      }
-      position += 1;
-      return position;
-    });
-  }
 
   function analysisAt(stateIndex: number | undefined): ReplayDecisionAnalysis | null {
     if (stateIndex === undefined) {
@@ -91,13 +83,6 @@
       : '—';
   }
 
-  function itemPreview(item: ClipItem): string {
-    if (item.kind === 'position' || item.kind === 'compare') {
-      return clipMarkdownPreview(item.caption);
-    }
-    return '';
-  }
-
   function itemHeading(item: ClipItem): string {
     if (item.kind === 'compare') {
       return `Compare · state ${item.state}`;
@@ -135,45 +120,15 @@
   {:else if clip}
     <header>
       <strong>{clip.title}</strong>
-      <span>
-        {[clip.author, clip.created].filter(Boolean).join(' · ')}
-        · {items.length} {items.length === 1 ? 'item' : 'items'}
-      </span>
+      <span>{selectedNumber} / {seekableCount}</span>
     </header>
 
-    {#if clip.summary}
-      <div class="clip-summary"><ClipMarkdown markdown={clip.summary} /></div>
-    {/if}
+    <nav class="clip-nav" aria-label="Clip positions">
+      <button type="button" onclick={() => void clipStore.previousItem()} disabled={selectedNumber <= 1}>↑</button>
+      <strong>{selected ? itemHeading(selected) : 'No position'}</strong>
+      <button type="button" onclick={() => void clipStore.nextItem()} disabled={selectedNumber >= seekableCount}>↓</button>
+    </nav>
 
-    <ol class="clip-items">
-      {#each items as item, index}
-        <li>
-          {#if item.kind === 'note'}
-            <div class:selected={index === selectedIndex} class="clip-note">
-              <ClipMarkdown markdown={item.markdown} />
-            </div>
-          {:else}
-            <button
-              type="button"
-              class:selected={index === selectedIndex}
-              aria-current={index === selectedIndex}
-              onclick={() => void clipStore.selectItem(index)}
-            >
-              <b>{itemNumbers[index]}</b>
-              <span>
-                <strong>{itemHeading(item)}</strong>
-                {#if itemPreview(item)}
-                  <small>{itemPreview(item)}</small>
-                {/if}
-              </span>
-            </button>
-          {/if}
-        </li>
-      {/each}
-    </ol>
-
-    <!-- Notes are already the list's own prose; only the stops get a detail
-         section under it. -->
     {#if selected && selected.kind !== 'note'}
       <section class="clip-detail" aria-label="Clip item detail">
         {#if selected.kind === 'unsupported'}
@@ -181,16 +136,11 @@
             This item uses <code>{selected.originalKind}</code>, which this viewer build does not render.
           </p>
         {:else}
-          <div class="detail-heading">
-            <strong>{itemHeading(selected)}</strong>
-            {#if selected.exact}<i class="mode-tag">Exact decisions</i>{/if}
-          </div>
-
           {#if selected.caption}
-            <ClipMarkdown markdown={selected.caption} />
+            <p class="caption">{clipMarkdownPreview(selected.caption)}</p>
           {/if}
 
-          {#if focusLabels.length}
+          {#if focusLabels.length && !analysis?.searchInspector?.actions?.length}
             <div class="focus-options">
               <small>Focus</small>
               <div>
@@ -201,7 +151,9 @@
             </div>
           {/if}
 
-          {#if selected.kind === 'compare'}
+          {#if analysis?.searchInspector?.actions?.length}
+            <SearchTree {analysis} {seat0Name} {seat1Name} />
+          {:else if selected.kind === 'compare'}
             <div class="line-table" role="table" aria-label="Compared lines">
               <div class="line-row table-head" role="row">
                 <span>Line</span><span>Policy</span><span>Visits</span><span>Q</span>
@@ -225,9 +177,7 @@
                 </div>
               {/each}
             </div>
-            {#if !analysis?.searchInspector?.actions?.length}
-              <small class="clip-hint">This recording has no search weights at state {selected.state}; the author's lines are shown on their own.</small>
-            {/if}
+            <small class="clip-hint">This recording has no saved search tree at state {selected.state}.</small>
           {/if}
 
           <div class="detail-actions">
@@ -240,7 +190,7 @@
       </section>
     {/if}
 
-    <footer class="clip-hint">↑ ↓ item · ← → step · space play</footer>
+    <footer class="clip-hint">↑ ↓ position · ← → replay step</footer>
   {:else}
     <p class="clip-status">No clip loaded.</p>
   {/if}
@@ -251,9 +201,9 @@
     position: absolute;
     top: 54px;
     right: calc(var(--board-right-rail) - var(--clip-panel-w, 340px) - 8px);
-    bottom: calc(var(--replay-dock-h, 48px) + var(--replay-eval-h, 64px) + 10px);
+    bottom: calc(var(--replay-dock-h, 48px) + 10px);
     z-index: 30;
-    width: var(--clip-panel-w, 340px);
+    width: var(--clip-panel-w, 500px);
     overflow-y: auto;
     display: grid;
     align-content: start;
@@ -268,8 +218,10 @@
   }
 
   header {
-    display: grid;
-    gap: 3px;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
   }
 
   header strong {
@@ -280,23 +232,7 @@
   header span {
     color: var(--text-muted);
     font-size: 10px;
-  }
-
-  .clip-summary {
-    color: var(--text-secondary);
-    font-size: 11px;
-  }
-
-  .clip-note {
-    padding-left: 8px;
-    border-left: 2px solid var(--surface-inset-border);
-    color: var(--text-secondary);
-    font-size: 11px;
-  }
-
-  .clip-note.selected {
-    border-left-color: var(--accent-base);
-    color: var(--text-primary);
+    white-space: nowrap;
   }
 
   .clip-status {
@@ -316,57 +252,27 @@
     overflow-wrap: anywhere;
   }
 
-  .clip-items {
+  .clip-nav {
     display: grid;
-    gap: 6px;
-    margin: 0;
+    grid-template-columns: 30px minmax(0, 1fr) 30px;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .clip-nav button {
+    height: 28px;
     padding: 0;
-    list-style: none;
-  }
-
-  .clip-items button {
-    width: 100%;
-    display: grid;
-    grid-template-columns: 22px minmax(0, 1fr);
-    gap: 8px;
-    align-items: start;
-    padding: 8px;
-    border: 1px solid var(--surface-inset-border);
-    border-radius: 7px;
-    background: var(--surface-inset-bg);
-    color: var(--text-primary);
-    text-align: left;
-  }
-
-  .clip-items button.selected {
-    border-color: var(--accent-base);
-    background: var(--accent-soft);
-  }
-
-  .clip-items b {
-    display: grid;
-    place-items: center;
-    min-height: 18px;
-    border-radius: 999px;
+    border: 1px solid var(--button-border);
+    border-radius: 5px;
     background: var(--button-bg);
     color: var(--button-text);
-    font-size: 9px;
   }
 
-  .clip-items span {
-    display: grid;
-    gap: 3px;
-    min-width: 0;
-  }
-
-  .clip-items strong {
-    font-size: 11px;
-  }
-
-  .clip-items small {
-    color: var(--text-muted);
-    font-size: 10px;
+  .clip-nav strong {
     overflow: hidden;
+    color: var(--text-secondary);
+    font-size: 10px;
+    text-align: center;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -378,18 +284,6 @@
     border-top: 1px solid var(--surface-inset-border);
   }
 
-  .detail-heading {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
-
-  .detail-heading strong {
-    font-size: 12px;
-  }
-
-  .mode-tag,
   .role-tag {
     padding: 2px 5px;
     border-radius: 999px;
@@ -403,6 +297,15 @@
   .role-played { background: var(--accent-soft); color: var(--accent-strong); }
   .role-policy { background: rgba(217, 119, 46, 0.18); color: #dc8a4c; }
   .role-search { background: rgba(82, 133, 188, 0.18); color: #6ba0d8; }
+
+  .caption {
+    margin: 0;
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 
   .focus-options {
     display: grid;

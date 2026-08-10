@@ -202,7 +202,7 @@ describe('clipStore item navigation', () => {
 
     await clipStore.previousItem();
     await clipStore.previousItem();
-    expect(clipStore.selectedIndex).toBe(0);
+    expect(clipStore.selectedIndex).toBe(1);
 
     await clipStore.nextItem();
     await clipStore.nextItem();

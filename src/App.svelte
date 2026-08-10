@@ -1073,33 +1073,35 @@
         />
       {/if}
 
-      <Toolbar
-        bind:boardTilt={viewSettingsStore.boardTilt}
-        bind:boardPerspective={viewSettingsStore.boardPerspective}
-        bind:boardScaleY={viewSettingsStore.boardScaleY}
-        bind:boardLift={viewSettingsStore.boardLift}
-        bind:followActive={viewSettingsStore.followActive}
-        bind:debugZones={viewSettingsStore.debugZones}
-        bind:showLogs={viewSettingsStore.showLogs}
-        bind:animateActions={viewSettingsStore.animateActions}
-        bind:showCardImages={viewSettingsStore.showCardImages}
-        bind:actionStepDelayMs={viewSettingsStore.actionStepDelayMs}
-        bind:themePreference={viewSettingsStore.themePreference}
-        {replayMode}
-        {analysisMode}
-        analysisAnimationsEnabled={replayAnimationsEnabled}
-        setAnalysisAnimationsEnabled={(enabled) => replayStore.setAnimationsEnabled(enabled)}
-        busy={commandBusy}
-        promptActive={replayMode || !!dialogDecision || boardAnswerable}
-        {gameFinished}
-        {error}
-        resetPerspective={() => viewSettingsStore.resetPerspective()}
-        {passTurn}
-        {switchSides}
-        switchDisabled={!replayMode && actingPlayerIsSelf}
-        {resetGame}
-        resetLabel={replayMode ? 'Exit replay' : 'Change decks'}
-      />
+      {#if !clipMode}
+        <Toolbar
+          bind:boardTilt={viewSettingsStore.boardTilt}
+          bind:boardPerspective={viewSettingsStore.boardPerspective}
+          bind:boardScaleY={viewSettingsStore.boardScaleY}
+          bind:boardLift={viewSettingsStore.boardLift}
+          bind:followActive={viewSettingsStore.followActive}
+          bind:debugZones={viewSettingsStore.debugZones}
+          bind:showLogs={viewSettingsStore.showLogs}
+          bind:animateActions={viewSettingsStore.animateActions}
+          bind:showCardImages={viewSettingsStore.showCardImages}
+          bind:actionStepDelayMs={viewSettingsStore.actionStepDelayMs}
+          bind:themePreference={viewSettingsStore.themePreference}
+          {replayMode}
+          {analysisMode}
+          analysisAnimationsEnabled={replayAnimationsEnabled}
+          setAnalysisAnimationsEnabled={(enabled) => replayStore.setAnimationsEnabled(enabled)}
+          busy={commandBusy}
+          promptActive={replayMode || !!dialogDecision || boardAnswerable}
+          {gameFinished}
+          {error}
+          resetPerspective={() => viewSettingsStore.resetPerspective()}
+          {passTurn}
+          {switchSides}
+          switchDisabled={!replayMode && actingPlayerIsSelf}
+          {resetGame}
+          resetLabel={replayMode ? 'Exit replay' : 'Change decks'}
+        />
+      {/if}
 
       {#if replayMode && replayStore.replay && replayStore.currentStep}
         <ReplayTimeline

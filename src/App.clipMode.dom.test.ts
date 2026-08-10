@@ -59,8 +59,8 @@ it('opens the demo clip from ?view=clip and drives it from the keyboard', async 
 
   const text = () => document.body.textContent ?? '';
   expect(text()).toContain('Reading a game in four stops');
+  expect(text()).toContain('1 / 3');
   expect(text()).toContain('Position · state 40');
-  expect(text()).toContain('Compare · state 120');
   expect(document.querySelector('.clip-panel')).toBeTruthy();
   // This recording has no decision analysis, so focus options are named from
   // the frame's own select rather than left as bare indexes.

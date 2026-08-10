@@ -106,11 +106,20 @@ class ClipStore {
   }
 
   async nextItem(): Promise<void> {
-    await this.selectItem(this.selectedIndex + 1);
+    const next = this.items.findIndex((item, index) => index > this.selectedIndex && isClipSeekable(item));
+    if (next !== -1) {
+      await this.selectItem(next);
+    }
   }
 
   async previousItem(): Promise<void> {
-    await this.selectItem(this.selectedIndex - 1);
+    const previous = this.items
+      .map((item, index) => ({ item, index }))
+      .filter(({ item, index }) => index < this.selectedIndex && isClipSeekable(item))
+      .at(-1)?.index;
+    if (previous !== undefined) {
+      await this.selectItem(previous);
+    }
   }
 
   clear(): void {
