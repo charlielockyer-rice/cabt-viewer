@@ -36,7 +36,7 @@ describe('cabtReplayToSnapshot', () => {
     expect(snapshot.views[0].players.map((value) => value.prizes?.map((card) => card.id))).toEqual([[2], [4]]);
   });
 
-  it('loads top-level Kaggle episode JSON from the public archive datasets', () => {
+  it('loads a top-level episode envelope (steps[0][0] carrying visualize frames)', () => {
     const snapshot = cabtReplayToSnapshot({
       id: 'episode-env-id',
       title: 'Card Battle',
@@ -2686,7 +2686,7 @@ describe('cabtReplayToSnapshot', () => {
       .map((slot) => slot.pokemon?.serial)).toEqual([6, 13]);
   });
 
-  // Real shape from Kaggle episode 84924975 (Charlie's reported repro), frames
+  // Real shape from recorded episode 84924975 (Charlie's reported repro), frames
   // 3->4->5. Telepath Psychic Energy (card 19) attaches to a {P} Pokemon and its
   // effect searches the deck for up to 2 Basic {P} Pokemon and benches them. The
   // engine emits the Attach and the two DECK->BENCH placements in SEPARATE frames
@@ -4836,7 +4836,7 @@ describe('cabtReplayToSnapshot', () => {
     expect(snapshot.views[step.stateIndex].players[0].bench[0].pokemon?.serial).toBe(79);
   });
 
-  // Real retreat shape from Kaggle episode 84924975 (frames 22->23->24): a
+  // Real retreat shape from recorded episode 84924975 (frames 22->23->24): a
   // retreat discards the active's energy (ENERGY->DISCARD), THEN swaps the
   // active with a bench Pokemon (Switch), coalesced into one step. The energy
   // discard must not import the post-swap board positions, or the swap phase

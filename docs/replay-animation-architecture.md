@@ -211,8 +211,8 @@ What is still genuinely live-specific:
   phase scope ends (a 40ms settle plus two pre-paint frames, then release). Live
   instead releases per motion and, when required, polls until the destination
   card exists (`handOffWhenDestinationReady`, `handoffMaxWaitMs`). This is the
-  "two clocks" the 2026-07-09 holistic audit flags for unification onto replay's
-  deterministic hold-to-boundary model.
+  "two clocks" divergence: it wants unifying onto replay's deterministic
+  hold-to-boundary model.
 
 Principled live-only behaviour (not divergence to remove): interactive
 decisions, concealed opponent hands and prize concealment, and the follow-active

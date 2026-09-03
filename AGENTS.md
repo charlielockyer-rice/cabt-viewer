@@ -93,6 +93,32 @@ Rules that keep this system flicker-free:
 - Preserve the animation look. Keyframes, easings, and timing constants are
   the product; change them deliberately, not as a refactor side effect.
 
+Craft rules that keep motions reading as one physical event:
+
+- Land on the visible destination surface, not the broad container. For discard
+  piles that is the `.discard-card-top .card-tile`; landing on the pile button
+  reads as the card going to the bottom and then flickering to the top.
+- Handoff is identity-specific and paint-ordered: hide only the real
+  destination card for the serial being animated, keep the sprite fully visible
+  through its final frame, reveal the destination DOM underneath it, then
+  remove the sprite after a short settle. Never fade the moving card out before
+  the destination is painted.
+- For staggered batch placements (two Poffin targets), earlier sprites hold at
+  their final position until the whole placement phase and its transition have
+  caught up; the first sprite must not hand off alone.
+- If an attached card renders as a badge or crop, do not animate a full card
+  out of the badge rectangle — use the owning Pokemon's card footprint. Source
+  Pokemon may occlude a card sliding out from under them; destination piles must
+  not occlude cards landing on top of them.
+- A played Trainer with follow-up phases stays in the play zone until every
+  phase has resolved. It must not flicker into discard during intermediate deck
+  search, bench placement, attach, switch, draw, shuffle, or damage phases.
+- Search/reveal effects must make the chosen card visually distinct and stable
+  while the unselected revealed cards return to the deck. When a selected reveal
+  card later moves to hand, normalize from its current visual center at the
+  start of the take phase rather than rewriting geometry on a timer at the end
+  of the reveal phase.
+
 ## Checks
 
 Do not run expensive checks reflexively after every small CSS tweak. Agents are

@@ -65,7 +65,7 @@ class ReplayStore {
   // choreography and render settled views directly while this is set; otherwise
   // dozens of orphaned viewport sprites pile up (Svelte coalesces the intermediate
   // scopes so their teardown never runs, and each sprite then drains only on its
-  // own fixed cleanup timer). See docs/audit-2026-07-09-cluster-rules.md.
+  // own fixed cleanup timer).
   scrubbing = $state(false);
 
   private playbackTimer: ReturnType<typeof setTimeout> | null = null;

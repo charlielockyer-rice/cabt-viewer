@@ -33,9 +33,8 @@ export type NormalizedObservation = {
 //
 // Position can: counting lines per seat stream gives every line a global
 // event index, and an index below the canonical high-water mark is a
-// re-delivery regardless of encoding. Verified against live engine games —
-// see docs/audit-2026-07-07-viewer-play-pipeline.md (F4) and the env-gated
-// bridge integration test.
+// re-delivery regardless of encoding. Verified against live engine games by
+// the env-gated bridge integration test.
 export class LiveObservationNormalizer {
   private readonly canonicalLogs = new CanonicalCabtLogStream<BridgeLog>();
   private hands: [CabtCard[], CabtCard[]] = [[], []];
@@ -68,7 +67,7 @@ export class LiveObservationNormalizer {
   // observations; emit them the way the engine tells the other seat instead,
   // so the timeline and draw animations don't reveal the card. Other
   // hidden-info encodings (deck searches) keep their first-delivery form for
-  // now; choosing per-event encodings is bridge work (audit F4).
+  // now; choosing per-event encodings is bridge work.
   private applyVisibility(log: BridgeLog): BridgeLog {
     const playerIndex = log.playerIndex;
     if (

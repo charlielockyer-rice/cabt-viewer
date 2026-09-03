@@ -538,7 +538,7 @@ function normalizePlayerControls(payload: any): [PlayerControl, PlayerControl] {
 
 // Agent seats' hidden information (their draws) is downgraded to the
 // opponent-facing encoding when a human is playing; a pure agent-vs-agent
-// game keeps the omniscient spectator view.
+// game keeps the open-information spectator view.
 function concealedSeats(playerControls: [PlayerControl, PlayerControl]): Set<number> {
   if (!playerControls.includes('self')) {
     return new Set();

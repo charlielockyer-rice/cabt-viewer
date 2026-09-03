@@ -2,10 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 // Deck catalog served to the viewer's deck picker, decoupled from agents. The
-// manifest (CABT_DECKS_FILE, default agent-lab/viewer/decks.json) lists every
-// selectable deck — all Limitless archetypes (top-finisher lists) plus the
-// Kaggle-provided decks — each pointing at a CSV of card ids. Mirrors
-// workspaceAgents.ts; regenerate the manifest with decklists.viewer_decks.
+// manifest (CABT_DECKS_FILE) lists every selectable deck, each pointing at a
+// CSV of card ids. Mirrors workspaceAgents.ts.
 
 export type WorkspaceDeck = {
   id: string;

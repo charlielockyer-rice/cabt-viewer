@@ -224,7 +224,7 @@ describe('LocalEngineController', () => {
   });
 
   it('splits an attack-ends-turn batch so the opponent start-of-turn draw is its own beat (Task 5)', () => {
-    // Real shape from Kaggle ep84924975 frame 26 (Itchy Pollen): one observation
+    // Real shape from recorded ep84924975 frame 26 (Itchy Pollen): one observation
     // carries [Attack, HPChange, TurnEnd, TurnStart, Draw]. The new turn's draw
     // must NOT animate inside the attacker's step — it belongs to a beat after
     // the turn transition, with the pre-draw hand.
