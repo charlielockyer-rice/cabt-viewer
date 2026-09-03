@@ -36,7 +36,7 @@ Watching needs nothing but Node — no python, no engine, no agent.
 Agents generate these links; they are stable.
 
 ```text
-?view=replay&replay=<path>          # a file in public/game-logs
+?view=replay&replay=<path>          # under public/game-logs, else /cabt-artifacts
 ?view=replay&replayUrl=<url>        # any URL or same-origin path
 &state=<frame>  &step=<step>        # open at an exact position
 ?view=clip&clip=<path>              # a cabt-clip-v1 guided tour
