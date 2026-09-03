@@ -40,6 +40,7 @@ Agents generate these links; they are stable.
 ?view=replay&replayUrl=<url>        # any URL or same-origin path
 &state=<frame>  &step=<step>        # open at an exact position
 ?view=clip&clip=<path>              # a cabt-clip-v1 guided tour
+?view=play                          # quick play against the preconfigured bot
 ?view=prompt-gallery                # the decision-dialog gallery
 ```
 
@@ -73,6 +74,30 @@ cards. Missing manifests just mean no extra agents or decks.
 
 Finished games can be saved to `public/game-logs`, where they appear under
 **Watch → Local logs**.
+
+### Quick play
+
+`?view=play` is the hosted one-button game: a friend lands on it, sees the
+bot's name and both deck names, presses **Start game**, and gets **Play again**
+at the end. Nothing is chosen. Build with `VITE_CABT_DEFAULT_VIEW=play` to make
+a bare `/` open there too (the dev build leaves it unset).
+
+The matchup comes from `CABT_QUICKPLAY_FILE`, read by the engine server on
+every `GET /local-engine/quickplay`, so the decks re-roll each game:
+
+```json
+{
+  "agentId": "copycat-v1-20m",
+  "playerDecks": ["dragapult-dusknoir", "raging-bolt-ogerpon"],
+  "botDecks": ["dragapult-dusknoir", "raging-bolt-ogerpon"]
+}
+```
+
+`agentId` names an agent from `CABT_AGENTS_FILE`; the deck ids name decks from
+`CABT_DECKS_FILE`. One deck is picked at random per side (a mirror is fine).
+A deck-locked agent — one with a paired `deck` and no `"anyDeck": true` — plays
+that deck instead, and `botDecks` is ignored. Anything unset, missing or
+misspelled answers 404 with the reason, which the quick-play screen shows.
 
 ## Card Images
 
