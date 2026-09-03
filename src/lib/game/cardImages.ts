@@ -51,6 +51,7 @@ export const setImageMap: Record<string, string | SetImageInfo> = {
   ASC: 'me2pt5',
   POR: 'me3',
   CRI: 'me4',
+  PBL: 'me5',
   PROMO: 'svp',
   SVP: 'svp',
 };
