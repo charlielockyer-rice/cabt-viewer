@@ -46,7 +46,6 @@
   import { loadAgentOptions, loadDeckOptions, loadGameLogs, type AgentOption, type DeckOption, type GameLogEntry } from './lib/home/catalog';
   import { ladderReplayUrl, type LadderEpisode } from './lib/gameBank/ladderLibrary';
   import { searchedGameReplayUrl, type SearchedGame } from './lib/gameBank/searchedGames';
-  import { kaggleEpisodeReplayUrl, type KaggleEpisodeDay, type KaggleEpisodeSummary } from './lib/kaggle/episodes';
   import type { ActionTimelineEvent, BoardSlotRef, DecisionOptionView, PokemonSlotView, PlayerView } from './lib/game/types';
   import { clipViewerUrl, type ClipManifestEntry } from './lib/clips/clipFormat';
   import { clipStore } from './state/clip.svelte';
@@ -69,8 +68,6 @@
   const initialClipRef = initialSearchParam('view') === 'clip' ? initialSearchParam('clip') : '';
   let homeMode = $state<HomeMode>(initialReplayMode || initialClipRef ? 'logs' : 'play');
   let lastGameBankGameId = $state(initialSearchParam('gameBank'));
-  let lastKaggleDaySlug = $state(initialSearchParam('kaggleDay'));
-  let lastKaggleEpisodeId = $state(initialSearchParam('kaggleEpisode'));
   let lastLadderDay = $state(initialSearchParam('ladderDay'));
   let lastLadderEpisodeId = $state(initialSearchParam('ladderEpisode'));
   let agents = $state<AgentOption[]>([]);
@@ -559,8 +556,6 @@
     resetSaveReplayStatus();
     zoneViewerStore.close();
     viewSettingsStore.resetView();
-    lastKaggleDaySlug = '';
-    lastKaggleEpisodeId = '';
     lastLadderDay = '';
     lastLadderEpisodeId = '';
     lastGameBankGameId = '';
@@ -571,15 +566,6 @@
     beginReplayLoad();
     replaceReplayUrl(log.file || log.id);
     await replayStore.loadSaved(log.file || log.id);
-  }
-
-  async function loadKaggleEpisode(day: KaggleEpisodeDay, episode: KaggleEpisodeSummary) {
-    const replayUrl = kaggleEpisodeReplayUrl(day.slug, episode.episodeId);
-    beginReplayLoad();
-    lastKaggleDaySlug = day.slug;
-    lastKaggleEpisodeId = episode.episodeId;
-    replaceKaggleReplayUrl(day, episode, replayUrl);
-    await replayStore.loadUrl(replayUrl);
   }
 
   // The ladder mirror is served by the local sidecar as the Kaggle envelope it
@@ -912,8 +898,7 @@
   // One deep-linkable replay position at a time: every source key is cleared,
   // then the source that is opening writes back the ones it owns.
   const replaySourceParams = [
-    'replay', 'replayUrl', 'kaggleDay', 'kaggleEpisode',
-    'ladderDay', 'ladderEpisode', 'gameBank', 'state', 'step',
+    'replay', 'replayUrl', 'ladderDay', 'ladderEpisode', 'gameBank', 'state', 'step',
   ];
 
   function replaceReplayLocation(next: Record<string, string>) {
@@ -929,14 +914,6 @@
       params.set(name, value);
     }
     window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}${window.location.hash}`);
-  }
-
-  function replaceKaggleReplayUrl(day: KaggleEpisodeDay, episode: KaggleEpisodeSummary, replayUrl: string) {
-    replaceReplayLocation({
-      kaggleDay: day.slug,
-      kaggleEpisode: episode.episodeId,
-      replayUrl,
-    });
   }
 
   function replaceLadderReplayUrl(day: string, episodeId: string, replayUrl: string) {
@@ -1034,8 +1011,6 @@
         {catalogBusy}
         {error}
         {catalogError}
-        kaggleSelectedSlug={lastKaggleDaySlug}
-        kaggleSelectedEpisodeId={lastKaggleEpisodeId}
         ladderSelectedDay={lastLadderDay}
         ladderSelectedEpisodeId={lastLadderEpisodeId}
         gameBankSelectedGameId={lastGameBankGameId}
@@ -1049,7 +1024,6 @@
         }}
         startGame={startGame}
         {loadGameLog}
-        {loadKaggleEpisode}
         {loadLadderEpisode}
         {loadSearchedGame}
         {loadClip}

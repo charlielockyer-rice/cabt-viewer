@@ -52,6 +52,9 @@ export type ReplayLoadPosition = {
   exact?: boolean;
 };
 
+// The one bundled sample replay, used when ?view=replay names no source.
+const SAMPLE_REPLAY_FILE = 'cabt-match.json';
+
 const perspectiveVisibility: ReplayAnalysisVisibility = {
   mode: 'perspective',
   hands: 'per-actor',
@@ -188,7 +191,7 @@ class ReplayStore {
     return this.currentStep?.stateIndex === this.stateIndex;
   }
 
-  async loadSaved(id = 'kaggle-context.json'): Promise<void> {
+  async loadSaved(id = SAMPLE_REPLAY_FILE): Promise<void> {
     await this.loadCandidates(replayCandidates(id));
   }
 
@@ -722,11 +725,11 @@ function replayCandidates(id: string): string[] {
   if (/^https?:\/\//.test(file) || file.startsWith('/')) {
     return [file];
   }
+  // A bare filename is looked up in the bundled samples first, then in the
+  // artifacts mount the harness writes replays to.
   return [
     `/game-logs/${encodePath(file)}`,
     `/cabt-artifacts/${encodePath(file)}`,
-    '/cabt-artifacts/kaggle-context.json',
-    '/cabt-artifacts/cabt-match.json',
   ];
 }
 
