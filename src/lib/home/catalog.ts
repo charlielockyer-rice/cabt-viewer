@@ -3,13 +3,10 @@ export type AgentOption = {
   name: string;
   description?: string;
   path?: string;
-  // Rule-based agents may name a catalog deck to SOFT-select when chosen
-  // (never a lock — the picker stays free). General agents have none.
-  preferredDeck?: string;
 };
 
 // A selectable deck in the picker, decoupled from agents. Served by the engine
-// server from CABT_DECKS_FILE (all Limitless archetypes + Kaggle decks).
+// server from CABT_DECKS_FILE.
 export type DeckOption = {
   id: string;
   name: string;

@@ -55,14 +55,14 @@
   import { visualAssetsStore } from './state/visualAssets.svelte';
   import { zoneViewerStore } from './state/zoneViewer.svelte';
 
-  type HomeMode = 'play' | 'logs';
+  type HomeMode = 'play' | 'watch';
 
   let showPromptGallery = initialSearchParam('view') === 'prompt-gallery';
   const initialReplayMode = initialSearchParam('view') === 'replay';
   // ?view=clip&clip=<ref> opens a clip: an agent-authored tour whose positions
   // load into the same replay store the board already renders from.
   const initialClipRef = initialSearchParam('view') === 'clip' ? initialSearchParam('clip') : '';
-  let homeMode = $state<HomeMode>(initialReplayMode || initialClipRef ? 'logs' : 'play');
+  let homeMode = $state<HomeMode>(initialReplayMode || initialClipRef ? 'watch' : 'play');
   let agents = $state<AgentOption[]>([]);
   let decks = $state<DeckOption[]>([]);
   let gameLogs = $state<GameLogEntry[]>([]);
@@ -81,7 +81,7 @@
   let savingReplay = $state(false);
   let saveReplayMessage = $state('');
   let saveReplayError = $state('');
-  let replayMode = $derived(homeMode === 'logs' && !!replayStore.replay);
+  let replayMode = $derived(homeMode === 'watch' && !!replayStore.replay);
   let clipMode = $derived(clipStore.active);
   let shellLoading = $derived(clipMode ? clipStore.loading || replayStore.loading : replayStore.loading);
   let shellLoadingTitle = $derived(shellLoading
@@ -117,7 +117,7 @@
   // moment the next authoritative view lands. Ignored in replay (scope key drives).
   let animationApplySignal = $derived(gameStore.liveApplyGeneration);
   let finalEvolutionEvents = $derived(replayMode ? replayFinalEvolutionEvents() : []);
-  let error = $derived(homeMode === 'logs' ? replayStore.error : gameStore.error);
+  let error = $derived(homeMode === 'watch' ? replayStore.error : gameStore.error);
   let shellLoadingMessage = $derived(shellLoading
     ? (clipMode ? 'Preparing the clip and its replay frames.' : 'Preparing CABT replay frames.')
     : labelFor(clipStore.error || error || (clipMode
@@ -184,31 +184,11 @@
   });
   $effect(() => {
     document.body.classList.toggle('prompt-gallery-page', showPromptGallery);
-    document.body.classList.toggle('logs-home-page', !showPromptGallery && homeMode === 'logs' && !game);
+    document.body.classList.toggle('watch-home-page', !showPromptGallery && homeMode === 'watch' && !game);
     return () => {
       document.body.classList.remove('prompt-gallery-page');
-      document.body.classList.remove('logs-home-page');
+      document.body.classList.remove('watch-home-page');
     };
-  });
-  // Agents are UNTIED from decks. A rule agent may name a preferredDeck, which
-  // SOFT-selects that catalog deck once when the agent is chosen (Charlie can
-  // then change it freely). General agents have no preferredDeck, so choosing
-  // one never touches the deck selection.
-  let player1DefaultedAgentId = $state('');
-  let player2DefaultedAgentId = $state('');
-  $effect(() => {
-    const agent = player1Control === 'agent' ? selectedPlayer1Agent : undefined;
-    if (agent?.preferredDeck && player1DefaultedAgentId !== agent.id) {
-      player1DefaultedAgentId = agent.id;
-      player1DeckSource = agent.preferredDeck;
-    }
-  });
-  $effect(() => {
-    const agent = player2Control === 'agent' ? selectedPlayer2Agent : undefined;
-    if (agent?.preferredDeck && player2DefaultedAgentId !== agent.id) {
-      player2DefaultedAgentId = agent.id;
-      player2DeckSource = agent.preferredDeck;
-    }
   });
   $effect(() => {
     const deckUrl = selectedPlayer1Deck?.deckUrl ?? '';
@@ -478,13 +458,61 @@
     resetSaveReplayStatus();
     zoneViewerStore.close();
     viewSettingsStore.resetView();
-    homeMode = 'logs';
+    homeMode = 'watch';
   }
 
   async function loadGameLog(log: GameLogEntry) {
     beginReplayLoad();
     replaceReplayUrl(log.file || log.id);
     await replayStore.loadSaved(log.file || log.id);
+  }
+
+  // "Open replay": a path or absolute URL ("/cabt-artifacts/viewer-inbox/x.json",
+  // "https://host/game.json"), a bare file name from public/game-logs, or a whole
+  // viewer link an agent generated ("...?view=replay&replayUrl=...&state=87").
+  // The location is rewritten first so the store reads the requested state/step
+  // out of it, exactly like every other open path.
+  async function openReplayRef(input: string) {
+    const ref = input.trim();
+    if (!ref) {
+      return;
+    }
+    const link = viewerLink(ref);
+    const replayUrl = link?.searchParams.get('replayUrl') ?? '';
+    const replayFile = link?.searchParams.get('replay') ?? '';
+    const position: Record<string, string> = {};
+    for (const name of ['state', 'step']) {
+      const value = link?.searchParams.get(name);
+      if (value) {
+        position[name] = value;
+      }
+    }
+    beginReplayLoad();
+    if (replayUrl || (!replayFile && isReplayLocation(ref))) {
+      const url = replayUrl || ref;
+      replaceReplayLocation({ ...position, replayUrl: url });
+      await replayStore.loadUrl(url);
+      return;
+    }
+    const file = replayFile || ref;
+    replaceReplayLocation({ ...position, replay: file });
+    await replayStore.loadSaved(file);
+  }
+
+  // A pasted viewer link, or null when the input is a plain replay ref.
+  function viewerLink(ref: string): URL | null {
+    if (typeof window === 'undefined' || !ref.includes('?')) {
+      return null;
+    }
+    try {
+      return new URL(ref, window.location.origin);
+    } catch {
+      return null;
+    }
+  }
+
+  function isReplayLocation(ref: string): boolean {
+    return ref.startsWith('/') || /^https?:\/\//i.test(ref);
   }
 
   async function saveReplay() {
@@ -740,7 +768,7 @@
       resetSaveReplayStatus();
       zoneViewerStore.close();
       viewSettingsStore.resetView();
-      homeMode = 'logs';
+      homeMode = 'watch';
       const view = typeof window === 'undefined'
         ? ''
         : new URLSearchParams(window.location.search).get('view');
@@ -901,7 +929,7 @@
         {catalogError}
         setHomeMode={(nextMode) => {
           homeMode = nextMode;
-          if (nextMode === 'logs') {
+          if (nextMode === 'watch') {
             gameStore.reset();
           } else {
             replayStore.clear();
@@ -909,6 +937,7 @@
         }}
         startGame={startGame}
         {loadGameLog}
+        {openReplayRef}
         {loadClip}
         refreshCatalog={() => void refreshCatalog()}
       />

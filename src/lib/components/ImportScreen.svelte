@@ -4,8 +4,8 @@
   import type { AgentOption, DeckOption, GameLogEntry } from '../home/catalog';
   import type { PlayerControl } from '../game/httpClient';
 
-  type HomeMode = 'play' | 'logs';
-  type LogSource = 'local' | 'clips';
+  type HomeMode = 'play' | 'watch';
+  type WatchSource = 'local' | 'clips';
 
   type Props = {
     homeMode: HomeMode;
@@ -29,6 +29,7 @@
     setHomeMode: (mode: HomeMode) => void;
     startGame: () => void;
     loadGameLog: (log: GameLogEntry) => void;
+    openReplayRef: (ref: string) => void;
     loadClip: (entry: ClipManifestEntry) => void;
     refreshCatalog: () => void;
   };
@@ -55,11 +56,13 @@
     setHomeMode,
     startGame,
     loadGameLog,
+    openReplayRef,
     loadClip,
     refreshCatalog,
   }: Props = $props();
 
-  let logSource = $state<LogSource>('local');
+  let watchSource = $state<WatchSource>('local');
+  let replayRef = $state('');
   let startDisabled = $derived(
     busy
       || (player1Control === 'agent' && !player1AgentId)
@@ -68,6 +71,11 @@
 
   function logPlayerLabel(log: GameLogEntry): string {
     return log.players?.length ? log.players.join(' vs ') : 'AI vs AI';
+  }
+
+  function submitReplayRef(event: SubmitEvent) {
+    event.preventDefault();
+    openReplayRef(replayRef);
   }
 
   function setPlayerControl(playerIndex: 0 | 1, control: PlayerControl) {
@@ -79,10 +87,10 @@
   }
 </script>
 
-<section class="import-screen" class:logs-mode={homeMode === 'logs'}>
+<section class="import-screen">
   <div class="home-tabs" role="tablist" aria-label="Home mode">
     <button class:active={homeMode === 'play'} type="button" onclick={() => setHomeMode('play')}>Play</button>
-    <button class:active={homeMode === 'logs'} type="button" onclick={() => setHomeMode('logs')}>Game logs</button>
+    <button class:active={homeMode === 'watch'} type="button" onclick={() => setHomeMode('watch')}>Watch</button>
   </div>
 
   {#if homeMode === 'play'}
@@ -213,31 +221,43 @@
       <pre class="error">{error}</pre>
     {/if}
   {:else}
+    <form class="open-replay" onsubmit={submitReplayRef}>
+      <label for="open-replay-input">Open replay</label>
+      <input
+        id="open-replay-input"
+        bind:value={replayRef}
+        disabled={busy}
+        spellcheck="false"
+        placeholder="/cabt-artifacts/viewer-inbox/game.json, https://host/game.json, or a viewer link"
+      />
+      <button class="primary" type="submit" disabled={busy || !replayRef.trim()}>Open</button>
+    </form>
+
     <div class="log-toolbar">
-      <strong>Game logs</strong>
+      <strong>Saved</strong>
       <span class="source-tabs" role="tablist" aria-label="Replay source">
         <button
           type="button"
           role="tab"
-          aria-selected={logSource === 'local'}
-          class:active={logSource === 'local'}
+          aria-selected={watchSource === 'local'}
+          class:active={watchSource === 'local'}
           onclick={() => {
-            logSource = 'local';
+            watchSource = 'local';
           }}
         >Local logs</button>
         <button
           type="button"
           role="tab"
-          aria-selected={logSource === 'clips'}
-          class:active={logSource === 'clips'}
+          aria-selected={watchSource === 'clips'}
+          class:active={watchSource === 'clips'}
           onclick={() => {
-            logSource = 'clips';
+            watchSource = 'clips';
           }}
         >Clips</button>
       </span>
     </div>
 
-    {#if logSource === 'clips'}
+    {#if watchSource === 'clips'}
       <ClipBrowser busy={busy} openClip={loadClip} />
     {:else}
       <div class="local-log-toolbar">
@@ -309,6 +329,27 @@
     background: var(--button-bg);
     color: var(--button-text);
     box-shadow: var(--surface-toolbar-shadow);
+  }
+
+  .open-replay {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .open-replay label {
+    color: var(--text-primary);
+    font-weight: 800;
+  }
+
+  .open-replay input {
+    min-height: 40px;
+    border-radius: 8px;
+    border: 1px solid var(--input-border);
+    background: var(--input-bg);
+    color: var(--input-text);
+    padding: 0 12px;
   }
 
   .log-toolbar {

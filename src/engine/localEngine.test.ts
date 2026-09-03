@@ -1,8 +1,20 @@
-import { describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
 import { LocalEngineController } from './localEngine';
 import { CabtAreaType, CabtLogType, CabtOptionType, CabtSelectContext, CabtSelectType } from '../lib/cabt/types';
 
 describe('LocalEngineController', () => {
+  let workspaceManifestDir = '';
+  afterEach(() => {
+    delete process.env.CABT_AGENTS_FILE;
+    if (workspaceManifestDir) {
+      fs.rmSync(workspaceManifestDir, { recursive: true, force: true });
+      workspaceManifestDir = '';
+    }
+  });
+
   it('starts self-vs-self without sending agent paths to the bridge', async () => {
     const engine = new LocalEngineController() as any;
     let bridgePayload: Record<string, unknown> | undefined;
@@ -25,6 +37,16 @@ describe('LocalEngineController', () => {
   });
 
   it('wires agent-controlled players to their selected agent paths', async () => {
+    // Seat 0 is the bundled first-legal agent (the bridge's built-in player, no
+    // file); seat 1 is a workspace agent resolved through CABT_AGENTS_FILE.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cabt-agents-'));
+    workspaceManifestDir = dir;
+    fs.writeFileSync(
+      path.join(dir, 'agents.json'),
+      JSON.stringify({ agents: [{ id: 'probe-agent', name: 'Probe agent', path: 'probe/main.py' }] }),
+    );
+    process.env.CABT_AGENTS_FILE = path.join(dir, 'agents.json');
+
     const engine = new LocalEngineController() as any;
     let bridgePayload: Record<string, unknown> | undefined;
     engine.bridge = {
@@ -37,12 +59,12 @@ describe('LocalEngineController', () => {
 
     const res = await engine.start({
       player1: { deck: Array(60).fill(1), control: 'agent', agentId: 'first-legal' },
-      player2: { deck: Array(60).fill(2), control: 'agent', agentId: 'mega-lucario-ex' },
+      player2: { deck: Array(60).fill(2), control: 'agent', agentId: 'probe-agent' },
     });
 
     expect(res.ok).toBe(true);
     expect(bridgePayload?.agentControlled).toEqual([true, true]);
-    expect(bridgePayload?.agentPaths).toEqual([undefined, 'public/agents/mega-lucario-ex/main.py']);
+    expect(bridgePayload?.agentPaths).toEqual([undefined, path.join(dir, 'probe', 'main.py')]);
   });
 
   it('projects the current decision with seats onto the interactive view', () => {
