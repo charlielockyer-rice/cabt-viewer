@@ -70,33 +70,6 @@ for (const row of CARD_ROWS) {
 
 const BRIDGE_TIMEOUT_MS = Math.max(1000, Number(process.env.CABT_BRIDGE_TIMEOUT_MS ?? 120_000));
 
-// The value-head eval sidecar (agent-lab/viewer/eval_server.py). A separate
-// process from the game bridge on purpose: value queries must never share the
-// bridge's stdin/stdout gameplay protocol. Missing/unreachable sidecar degrades
-// to pWin=null (the bar hides itself) — it can never break gameplay.
-const EVAL_BASE_URL = process.env.CABT_EVAL_URL
-  ?? `http://127.0.0.1:${process.env.CABT_EVAL_PORT ?? 8097}`;
-const EVAL_TIMEOUT_MS = Math.max(500, Number(process.env.CABT_EVAL_TIMEOUT_MS ?? 5000));
-
-export type EvalResult = { ok: true; pWin: number | null; seat: number; ready: boolean };
-
-async function evalSidecar<T>(path: string, body: unknown, timeoutMs = EVAL_TIMEOUT_MS): Promise<T | null> {
-  try {
-    const response = await fetch(`${EVAL_BASE_URL}${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (!response.ok) {
-      return null;
-    }
-    return (await response.json()) as T;
-  } catch {
-    return null;
-  }
-}
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FRONTEND_ROOT = path.resolve(__dirname, '..', '..');
 const WORKSPACE_ROOT = path.resolve(FRONTEND_ROOT, '..');
@@ -125,19 +98,13 @@ export class LocalEngineController {
   private replayFrames: CabtObservation[] = [];
   // The pre-conceal (raw) observations, one per replay frame. Each carries the
   // ACTING seat's own hidden info (its hand), which the normalizer hides in
-  // replayFrames for a human game. Persisted as `rawVisualize` so the replay
-  // eval graph can score BOTH seats' own-view lines (the seat-1 line needs
-  // seat 1's hand, absent from the concealed playback frames).
+  // replayFrames for a human game. Persisted as `rawVisualize` so an analysis
+  // replay can show each seat's own view.
   private rawFrames: CabtObservation[] = [];
-  // Each seat's LAST raw decision observation (with its own hand), so the live
-  // eval bar can score BOTH perspectives — the tracked seat's current decision
-  // and the opponent's most recent one.
-  private rawObservationBySeat: [CabtObservation | null, CabtObservation | null] = [null, null];
   private replayPlayerLabels: [string, string] = ['Player 1', 'Player 2'];
   private replayModeLabel = 'Self vs Agent';
   private playerControls: [PlayerControl, PlayerControl] = ['self', 'agent'];
-  // The resolved 60-card decks by seat, kept so the eval sidecar can rebuild
-  // the acting seat's deck-conditioned observation encoding.
+  // The resolved 60-card decks by seat, persisted with a saved replay.
   private decks: [number[], number[]] = [[], []];
 
   constructor() {
@@ -185,12 +152,11 @@ export class LocalEngineController {
         format: 'cabt-live-observations',
         logDelivery: 'per-seat-since-last-observation',
       },
-      // Raw (pre-conceal) frames for both-seat eval — playback still uses the
-      // concealed `visualize`; this only feeds the value head.
+      // Raw (pre-conceal) frames carrying each acting seat's own hand;
+      // playback still uses the concealed `visualize`.
       rawVisualize: this.rawFrames,
-      // Persist both seats' decks so the replay eval graph can rebuild the
-      // deck-conditioned observation encoding losslessly (a single observation
-      // can't recover the full deck — prizes/deck stay hidden).
+      // Persist both seats' decks: a single observation can't recover the full
+      // deck (prizes/deck stay hidden).
       decks: this.decks,
       environment: {
         id,
@@ -212,112 +178,6 @@ export class LocalEngineController {
       description: `Saved local ${this.replayModeLabel} match${typeof winner === 'number' && winner >= 0 ? `, result ${winner}` : ''}.`,
     });
     return { ok: true, id, file };
-  }
-
-  // Value-head win probability for `seat` at the CURRENT interactive position,
-  // via the eval sidecar. The value head is asymmetric (it reads one player's
-  // own hidden-info observation), so we only answer when `seat` is the acting
-  // player of the settled observation — otherwise pWin is null and the caller
-  // holds the last value. The raw observation and deck never leave this process.
-  async evaluate(seat: number): Promise<EvalResult> {
-    // Use the seat's own LAST decision observation (raw, with its hand). For the
-    // tracked seat that's the current interactive decision; for the opponent
-    // it's its last turn's decision — so both perspectives are scorable live,
-    // each from what only it can see. The raw observation and deck never leave
-    // this process, and this path is read-only.
-    const obs = this.rawObservationBySeat[seat];
-    const deck = this.decks[seat];
-    if (!obs?.current || !obs.select || !deck?.length) {
-      return { ok: true, pWin: null, seat, ready: false };
-    }
-    const result = await evalSidecar<{ ok: boolean; pWin: number | null }>('/evaluate', {
-      observation: { current: obs.current, select: obs.select },
-      deck,
-    });
-    return { ok: true, pWin: result?.pWin ?? null, seat, ready: !!result };
-  }
-
-  // Batch value curve over a whole episode for the replay eval graph. Each frame
-  // is an observation ({current, select}); we score only those whose acting seat
-  // is `seat` (a consistent fixed perspective), returning {stateIndex, pWin} so
-  // the caller can plot points at real decision states and interpolate between.
-  async evaluateReplay(
-    frames: Array<{ current: CabtObservation['current']; select: CabtObservation['select']; stateIndex: number }>,
-    seat: number,
-    deck: number[],
-  ): Promise<{ ok: true; points: Array<{ stateIndex: number; pWin: number }>; ready: boolean }> {
-    const scored = frames.filter(
-      (frame) => frame.current && frame.select && frame.current.yourIndex === seat && (frame.current.result ?? -1) < 0,
-    );
-    // A deck sharpens the deck-conditioned encoding but isn't required — replays
-    // without persisted decks (Kaggle/spectator, legacy saves) still get a
-    // slightly-degraded curve rather than nothing (the sidecar pads a neutral
-    // deck). Only bail when the seat never acts.
-    if (!scored.length) {
-      return { ok: true, points: [], ready: false };
-    }
-    // A whole-episode batch scored one-at-a-time through the model lock takes
-    // seconds (and both seats' batches serialize there), so allow far longer
-    // than the latency-sensitive live path's timeout.
-    const result = await evalSidecar<{ ok: boolean; pWins: Array<number | null> }>('/evaluate-batch', {
-      items: scored.map((frame) => ({ observation: { current: frame.current, select: frame.select }, deck })),
-    }, 120_000);
-    if (!result?.pWins) {
-      return { ok: true, points: [], ready: false };
-    }
-    const points: Array<{ stateIndex: number; pWin: number }> = [];
-    result.pWins.forEach((pWin, index) => {
-      if (typeof pWin === 'number') {
-        points.push({ stateIndex: scored[index].stateIndex, pWin });
-      }
-    });
-    return { ok: true, points, ready: true };
-  }
-
-  // The near-omniscient "judge's line" (#45 T2): for each of `seat`'s decisions,
-  // an EXCHANGE-depth search that pins the opponent's hidden state to what the
-  // replay recorded (their exact deck + hand as of their last decision). Returns
-  // the judge's win-prob for `seat` on that seat's own axis. On-demand + heavy;
-  // one batch per episode, cached by the caller. Needs BOTH decks and each
-  // acting frame's `searchBeginInput` (the engine's search seed) — frames without
-  // it (legacy/Kaggle) are skipped, so the line degrades to unavailable.
-  async analyzeReplayOmniscient(
-    frames: Array<{ current: CabtObservation['current']; select: CabtObservation['select'];
-                    stateIndex: number; searchBeginInput: string | null }>,
-    seat: number,
-    deckSelf: number[],
-    oppDeck: number[],
-  ): Promise<{ ok: true; points: Array<{ stateIndex: number; qWin: number }>; ready: boolean }> {
-    const scored = frames.filter(
-      (frame) => frame.current && frame.select && frame.current.yourIndex === seat
-        && (frame.current.result ?? -1) < 0 && typeof frame.searchBeginInput === 'string',
-    );
-    // The judge needs the real matchup on BOTH sides; without either deck (or
-    // without the engine's search seed on the frames) there is no true line.
-    if (!scored.length || !deckSelf.length || !oppDeck.length) {
-      return { ok: true, points: [], ready: false };
-    }
-    const items = scored.map((frame) => ({
-      observation: { current: frame.current, select: frame.select,
-                     search_begin_input: frame.searchBeginInput },
-      deckSelf,
-      oppDeck,
-      oppLastHand: lastKnownHand(frames, frame.stateIndex, seat === 0 ? 1 : 0),
-    }));
-    // Exchange-depth search per decision is seconds each; a whole episode is
-    // minutes. The engine proxy holds a long timeout; this is the on-demand path.
-    const result = await evalSidecar<{ ok: boolean; qValues: Array<number | null> }>(
-      '/analyze-omniscient-batch', { items }, 1_800_000);
-    if (!result?.qValues) {
-      return { ok: true, points: [], ready: false };
-    }
-    const points: Array<{ stateIndex: number; qWin: number }> = [];
-    result.qValues.forEach((qWin, index) => {
-      if (typeof qWin === 'number') {
-        points.push({ stateIndex: scored[index].stateIndex, qWin });
-      }
-    });
-    return { ok: true, points, ready: true };
   }
 
   close(): void {
@@ -345,7 +205,6 @@ export class LocalEngineController {
     this.pendingSequence = [];
     this.replayFrames = [];
     this.rawFrames = [];
-    this.rawObservationBySeat = [null, null];
     this.playerControls = playerControls;
     this.replayModeLabel = `${controlLabel(playerControls[0])} vs ${controlLabel(playerControls[1])}`;
     this.replayPlayerLabels = [
@@ -459,13 +318,7 @@ export class LocalEngineController {
       this.lastNewLogs = newLogs;
       this.observation = observation;
       this.replayFrames.push(observation);
-      const rawObs = observations[index];
-      this.rawFrames.push(rawObs);
-      // Remember each seat's most recent decision (raw, with its hand) for the
-      // live both-perspective bar.
-      if (rawObs?.select && rawObs.current && (rawObs.current.yourIndex === 0 || rawObs.current.yourIndex === 1)) {
-        this.rawObservationBySeat[rawObs.current.yourIndex] = rawObs;
-      }
+      this.rawFrames.push(observations[index]);
       if (!stepLogs.length) {
         continue;
       }
@@ -538,7 +391,6 @@ export class LocalEngineController {
     this.pendingSequence = [];
     this.replayFrames = [];
     this.rawFrames = [];
-    this.rawObservationBySeat = [null, null];
     this.decks = [[], []];
     this.logs = [...this.logs, { id: this.logId++, message }];
   }
@@ -725,33 +577,6 @@ function hasNativeMacLibrary(): boolean {
 
 function toPosixPath(value: string): string {
   return value.split(path.sep).join('/');
-}
-
-// The opponent's hand as of THEIR most recent decision at or before `beforeState`
-// -- the last frame the replay recorded that seat's own (exact) hand. This is the
-// ground truth the near-omniscient world pins; the Python side carries it forward
-// and samples only the cards drawn since. null when the seat never revealed a hand
-// (the world builder then samples the whole hand from the exact deck).
-function lastKnownHand(
-  frames: Array<{ current: CabtObservation['current']; stateIndex: number }>,
-  beforeState: number,
-  seat: number,
-): number[] | null {
-  for (let index = frames.length - 1; index >= 0; index -= 1) {
-    const frame = frames[index];
-    if (frame.stateIndex > beforeState) {
-      continue;
-    }
-    const current = frame.current;
-    if (!current || current.yourIndex !== seat) {
-      continue;
-    }
-    const hand = current.players?.[seat]?.hand;
-    if (Array.isArray(hand)) {
-      return hand.map((card) => card?.id).filter((id): id is number => typeof id === 'number');
-    }
-  }
-  return null;
 }
 
 function createSessionId(): string {

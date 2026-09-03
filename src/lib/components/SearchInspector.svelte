@@ -9,7 +9,6 @@
     analysis: ReplayDecisionAnalysis;
     seat0Name?: string;
     seat1Name?: string;
-    viewerEvalSeat0?: number | null;
     close: () => void;
   };
 
@@ -17,14 +16,13 @@
     analysis,
     seat0Name = 'Player 1',
     seat1Name = 'Player 2',
-    viewerEvalSeat0 = null,
     close,
   }: Props = $props();
 
   let inspector = $derived(analysis.searchInspector ?? null);
   let rootActions = $derived(sortedActions(inspector));
   let totalVisits = $derived(rootActions.reduce((total, action) => total + finite(action.visits), 0));
-  let judgeSeat0 = $derived(numberOrNull(inspector?.rootSearchValueSeat0) ?? viewerEvalSeat0);
+  let judgeSeat0 = $derived(numberOrNull(inspector?.rootSearchValueSeat0));
   let networkSeat0 = $derived(numberOrNull(inspector?.rootNetworkValueSeat0));
   let actorSeat = $derived(inspector?.actorSeat === 1 ? 1 : 0);
   let actorName = $derived(actorSeat === 0 ? seat0Name : seat1Name);
@@ -221,7 +219,7 @@
     position: absolute;
     top: 54px;
     right: calc(var(--board-right-rail) + 10px);
-    bottom: calc(var(--replay-dock-h, 48px) + var(--replay-eval-h, 64px) + 10px);
+    bottom: calc(var(--replay-dock-h, 48px) + 10px);
     z-index: 35;
     width: min(560px, calc(100% - var(--board-right-rail) - 34px));
     overflow-y: auto;

@@ -63,8 +63,8 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // Deck catalog (all Limitless archetypes + Kaggle decks), decoupled from
-  // agents. The picker lists these; a deck's CSV is served by id below.
+  // Deck catalog, decoupled from agents. The picker lists these; a deck's CSV
+  // is served by id below.
   if (req.method === 'GET' && url.pathname === '/local-engine/decks') {
     try {
       writeJson(res, 200, { decks: workspaceDeckOptions() });
@@ -90,44 +90,6 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/local-engine/save-replay') {
     const response = controller.saveReplay();
     writeJson(res, response.ok ? 200 : 400, response);
-    return;
-  }
-
-  // Live eval bar: win probability for one seat at the current interactive
-  // position. Read-only and advisory — proxied to the eval sidecar; a missing
-  // sidecar returns pWin=null and the bar hides itself.
-  if (req.method === 'POST' && url.pathname === '/local-engine/eval') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      writeJson(res, 200, await controller.evaluate(Number(body?.seat ?? 0)));
-    } catch (error) {
-      writeJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
-    }
-    return;
-  }
-
-  // Replay eval graph: batch value curve over an episode's frames. Frames carry
-  // full observations, so allow a larger body than the gameplay routes.
-  if (req.method === 'POST' && url.pathname === '/local-engine/eval-replay') {
-    try {
-      const body = JSON.parse((await readBody(req, 64_000_000)) || '{}');
-      writeJson(res, 200, await controller.evaluateReplay(body?.frames ?? [], Number(body?.seat ?? 0), body?.deck ?? []));
-    } catch (error) {
-      writeJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
-    }
-    return;
-  }
-
-  // Near-omniscient "judge's line" (#45 T2): exchange-depth search per decision,
-  // on-demand for a whole episode. Same large-body allowance as eval-replay.
-  if (req.method === 'POST' && url.pathname === '/local-engine/analyze-omniscient') {
-    try {
-      const body = JSON.parse((await readBody(req, 64_000_000)) || '{}');
-      writeJson(res, 200, await controller.analyzeReplayOmniscient(
-        body?.frames ?? [], Number(body?.seat ?? 0), body?.deckSelf ?? [], body?.oppDeck ?? []));
-    } catch (error) {
-      writeJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
-    }
     return;
   }
 

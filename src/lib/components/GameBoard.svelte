@@ -3,7 +3,6 @@
   import BenchZone from './BenchZone.svelte';
   import BoardAnimationLayer from './BoardAnimationLayer.svelte';
   import CenterPiles from './CenterPiles.svelte';
-  import EvalBar from './EvalBar.svelte';
   import { replayStore } from '../../state/replay.svelte';
   import { viewSettingsStore } from '../../state/viewSettings.svelte';
   import type { ActionTimelineEvent, PlayerView, PokemonSlotView } from '../game/types';
@@ -46,12 +45,6 @@
     replayMode?: boolean;
     openInformation?: boolean;
     motionDisabled?: boolean;
-    showEvalBar?: boolean;
-    evalPWin?: number | null;
-    evalOppPWin?: number | null;
-    evalOmniscient?: number | null;
-    evalMyName?: string;
-    evalOpponentName?: string;
   };
 
   let {
@@ -90,12 +83,6 @@
     replayMode = false,
     openInformation = false,
     motionDisabled = false,
-    showEvalBar = false,
-    evalPWin = null,
-    evalOppPWin = null,
-    evalOmniscient = null,
-    evalMyName = 'You',
-    evalOpponentName = 'Opponent',
   }: Props = $props();
 
   // Scrub mode (replay only): the follow-active seat flip is a CSS transition on
@@ -255,22 +242,11 @@
     bind:this={planeElement}
     class="game-board-plane"
     class:can-play-on-board={canPlayOnBoard}
-    class:has-eval-bar={showEvalBar}
     data-scrubbing={scrubbing ? '' : undefined}
     role="presentation"
     ondragover={allowBoardPlayDrop}
     ondrop={dropToBoardPlay}
   >
-    {#if showEvalBar}
-      <!-- A child of the board plane, so the rail inherits the plane's
-           rotateX tilt and hugs the tilted left edge as part of the table.
-           The plane is transform-style: flat, so this adds no preserve-3d
-           context and cannot reintroduce the Chromium hit-test breakage. -->
-      <div class="board-eval-rail">
-        <EvalBar pWin={evalPWin} oppPWin={evalOppPWin} omniscient={evalOmniscient} myName={evalMyName} opponentName={evalOpponentName} />
-      </div>
-    {/if}
-
     {#each orderedPlayers as benchPlayer (benchPlayer.index)}
       <BenchZone
         player={benchPlayer}
@@ -397,11 +373,6 @@
   .game-board-plane {
     position: absolute;
     inset: 0;
-    /* Left lane for the eval bar OUTSIDE the board outline. 0 unless the bar is
-       shown, in which case the outline + content shift right by this much and
-       the rail rides the freed tilted lane (Charlie: bar outside the board,
-       board padded away from the left edge to make room). */
-    --board-eval-gutter: 0px;
     display: grid;
     grid-template-areas:
       "top-left top-bench top-right"
@@ -422,7 +393,7 @@
       var(--board-content-inset-y)
       var(--board-content-inset-x)
       var(--board-content-inset-bottom, var(--board-content-inset-y))
-      calc(var(--board-content-inset-x) + var(--board-eval-gutter));
+      var(--board-content-inset-x);
     background: var(--board-plane-bg);
     overflow: visible;
     transform: rotateX(var(--board-tilt, 8deg)) scaleY(var(--board-scale-y, 0.94)) translateY(var(--board-lift, 0px));
@@ -438,38 +409,12 @@
     background: var(--board-plane-debug-bg);
   }
 
-  /* Win-probability rail riding the tilted plane in the gutter OUTSIDE the
-     board's left outline (the outline + content are shifted right by
-     --board-eval-gutter to make room). Being a plane child, it foreshortens
-     with the board tilt; sitting outside the outline, it can't cover a slot.
-     Height matches the outline (outline-pad-y insets). */
-  .board-eval-rail {
-    position: absolute;
-    top: var(--board-outline-pad-y);
-    bottom: var(--board-outline-pad-y);
-    /* Centered in the gutter: [edge-pad-x .. edge-pad-x + gutter], which is left
-       of the shifted outline (at edge-pad-x + gutter). */
-    left: calc(var(--board-edge-pad-x) + (var(--board-eval-gutter) - 26px) / 2);
-    width: 26px;
-    z-index: 2;
-    display: flex;
-    justify-content: center;
-  }
-
-  .game-board-plane.has-eval-bar {
-    /* The eval bar's lane. Wide enough for the 26px rail plus a small gap to the
-       outline; the board content compresses to fit. */
-    --board-eval-gutter: 42px;
-  }
-
   .game-board-plane::before {
     content: "";
     position: absolute;
     inset:
       var(--board-outline-pad-y)
-      var(--board-edge-pad-x)
-      var(--board-outline-pad-y)
-      calc(var(--board-edge-pad-x) + var(--board-eval-gutter));
+      var(--board-edge-pad-x);
     z-index: 0;
     border: 2px solid var(--board-border);
     border-radius: 18px;

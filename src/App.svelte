@@ -6,7 +6,6 @@
   import ClipPanel from './lib/components/ClipPanel.svelte';
   import EffectSelectorBanner from './lib/components/EffectSelectorBanner.svelte';
   import EndGamePrompt from './lib/components/EndGamePrompt.svelte';
-  import EvalGraph from './lib/components/EvalGraph.svelte';
   import ViewportAnimationLayer from './lib/components/ViewportAnimationLayer.svelte';
   import RevealSessionLayer from './lib/components/RevealSessionLayer.svelte';
   import GameBoard from './lib/components/GameBoard.svelte';
@@ -48,7 +47,6 @@
   import { clipViewerUrl, type ClipManifestEntry } from './lib/clips/clipFormat';
   import { clipStore } from './state/clip.svelte';
   import { deckImportStore } from './state/deckImport.svelte';
-  import { evalStore } from './state/eval.svelte';
   import { gameStore } from './state/game.svelte';
   import { gameSessionStore } from './state/gameSession.svelte';
   import { replayStore } from './state/replay.svelte';
@@ -326,75 +324,6 @@
       viewSettingsStore.followPlayer(playerIndex);
     }
   });
-  // Live eval bar: re-score MY seat's win probability on the ANIMATION clock,
-  // not the engine clock. The engine resolves a turn instantly but the viewer
-  // animates it over seconds; if we scored the moment the decision arrived, the
-  // bar would spike to the outcome BEFORE the cards finish playing (a spoiler).
-  // liveApplyGeneration bumps once per APPLIED view — including each animation
-  // step and the final settled view — while playingSequence stays true through
-  // the sequence. Gating on !playingSequence means we reveal the value only when
-  // a view has actually settled on screen, so the bar steps in time with the
-  // cards (each of my own actions settles separately) and the opponent's value
-  // lands as their turn finishes animating. Instant paths (animations off)
-  // settle immediately, so the value shows at once. copycat-v1-20m reads the
-  // bottom seat's own observation; the engine holds it and proxies to the
-  // sidecar. Read-only — a missing sidecar just leaves the bar off.
-  $effect(() => {
-    const settled = gameStore.liveApplyGeneration;
-    const settling = gameStore.playingSequence;
-    const seat = viewIndex;
-    void settled;
-    if (replayMode || !gameStore.game || settling) {
-      return;
-    }
-    // Score both perspectives: my seat and the opponent (the other seat).
-    void evalStore.refreshLive(seat, seat === 0 ? 1 : 0);
-  });
-  // Replay eval graph: batch-score the whole episode from the tracked seat's
-  // view once a replay loads (or when the viewer switches sides). The frames +
-  // decks come from the loaded replay JSON; the value curve drives both the
-  // graph and the scrub-time bar.
-  $effect(() => {
-    if (!replayMode || !replayStore.replay) {
-      return;
-    }
-    const frames = replayStore.observationFrames;
-    // Only score seats the replay can score honestly; a legacy save's concealed
-    // seat is skipped (labelled unavailable), never drawn as a degraded line.
-    void evalStore.loadReplayCurve(frames, replayStore.decks, replayStore.honestSeats);
-  });
-  let replayStateIndex = $derived(replayStore.stateIndex);
-  let oppIndex = $derived(topPlayer?.index ?? (viewIndex === 0 ? 1 : 0));
-  let showEvalBar = $derived(replayMode ? evalStore.curveForSeat(viewIndex).length > 0 : evalStore.live);
-  let evalBarPWin = $derived(replayMode ? evalStore.pWinAtState(replayStateIndex, viewIndex) : evalStore.pWin);
-  // The opponent's self-view P(they win), for the layered bar (mapped to
-  // 1 - oppPWin in the bar). Replay: from the opponent's curve; live: the
-  // opponent's most recent decision eval.
-  let evalBarOppPWin = $derived(replayMode ? evalStore.pWinAtState(replayStateIndex, oppIndex) : evalStore.oppPWin);
-  // The near-omniscient "judge's line" value for the followed seat at the scrubbed
-  // state (#45 T2) — replay-only, on-demand, so null until the user computes it.
-  let evalBarOmniscient = $derived(
-    replayMode && evalStore.omniscientState === 'ready'
-      ? evalStore.omniscientAt(replayStateIndex, viewIndex)
-      : null,
-  );
-  let inspectorSeat0Eval = $derived(
-    replayMode && evalStore.omniscientState === 'ready'
-      ? evalStore.omniscientAt(replayStateIndex, 0)
-      : replayMode ? evalStore.pWinAtState(replayStateIndex, 0) : null,
-  );
-  // Whether the judge's line CAN be computed for this replay: a raw/omniscient
-  // save (honest seats) whose frames carry the engine search seed. Kaggle/legacy
-  // replays can't, so the affordance is hidden rather than offered-then-failing.
-  let canComputeJudgeLine = $derived(
-    replayMode
-      && (replayStore.honestSeats[0] || replayStore.honestSeats[1])
-      && replayStore.observationFrames.some((f) => typeof f.searchBeginInput === 'string'),
-  );
-  function computeJudgeLine(): void {
-    void evalStore.analyzeOmniscient(
-      replayStore.observationFrames, replayStore.decks, replayStore.honestSeats);
-  }
   let gameFinished = $derived(game?.phase === 7);
   // "Opponent is thinking" indicator gate: a live game where I'm playing and the
   // top (opponent) seat is a (possibly slow) agent. ThinkingIndicator applies
@@ -808,7 +737,6 @@
     if (replayMode || clipMode) {
       clipStore.clear();
       replayStore.clear();
-      evalStore.clearReplay();
       resetSaveReplayStatus();
       zoneViewerStore.close();
       viewSettingsStore.resetView();
@@ -822,7 +750,6 @@
       return;
     }
     gameSessionStore.reset();
-    evalStore.reset();
     resetSaveReplayStatus();
     zoneViewerStore.close();
     viewSettingsStore.resetView();
@@ -1045,7 +972,6 @@
           exactMaxStateIndex={replayStore.maxDecisionStateIndex}
           analysisWarning={replayStore.analysisVisibility.warning}
           analysis={replayStore.currentDecisionAnalysis}
-          viewerEvalSeat0={inspectorSeat0Eval}
           nextDisagreementStateIndex={replayStore.nextDisagreementStateIndex}
           isPlaying={replayStore.isPlaying}
           setStep={(index) => replayStore.setStep(index)}
@@ -1059,24 +985,6 @@
           copyForkPoint={() => void replayStore.copyForkPoint()}
           nextDisagreement={() => replayStore.nextDisagreement()}
         />
-        <div class="eval-graph-dock">
-          <EvalGraph
-            myPoints={evalStore.curveForSeat(viewIndex)}
-            oppPoints={evalStore.curveForSeat(oppIndex)}
-            judgePoints={evalStore.omniscientForSeat(viewIndex)}
-            stateCount={replayStore.replay.stateCount}
-            currentStateIndex={replayStateIndex}
-            seek={(index) => replayStore.setStateIndex(index)}
-            myName={bottomPlayer?.name ?? 'You'}
-            oppName={topPlayer?.name ?? 'Opponent'}
-            myAvailable={replayStore.honestSeats[viewIndex]}
-            oppAvailable={replayStore.honestSeats[oppIndex]}
-            loading={evalStore.replayLoading}
-            judgeState={evalStore.omniscientState}
-            canComputeJudge={canComputeJudgeLine}
-            computeJudge={computeJudgeLine}
-          />
-        </div>
       {/if}
 
       {#if clipMode}
@@ -1177,12 +1085,6 @@
           {replayMode}
           openInformation={analysisMode}
           {motionDisabled}
-          {showEvalBar}
-          evalPWin={evalBarPWin}
-          evalOppPWin={evalBarOppPWin}
-          evalOmniscient={evalBarOmniscient}
-          evalMyName={bottomPlayer?.name ?? 'You'}
-          evalOpponentName={topPlayer?.name ?? 'Opponent'}
         />
 
         <RevealSessionLayer
@@ -1279,20 +1181,6 @@
   .replay-loading-panel span {
     color: #566272;
     font-size: 13px;
-  }
-
-  /* Eval curve strip, seated in the reserved band just above the replay
-     scrubber dock (TableShell's --replay-eval-h keeps the board clear of it). */
-  .eval-graph-dock {
-    position: absolute;
-    left: 0;
-    right: var(--board-right-rail);
-    bottom: var(--replay-dock-h, 48px);
-    height: var(--replay-eval-h, 64px);
-    z-index: 11;
-    padding: 2px 16px;
-    background: var(--surface-toolbar-bg);
-    border-top: 1px solid var(--surface-toolbar-border);
   }
 
 </style>

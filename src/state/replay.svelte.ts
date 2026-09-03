@@ -13,18 +13,14 @@ import {
 import { cabtReplayToSnapshot } from '../lib/cabt/cabtReplay';
 import { exactDecisionResultView } from '../lib/game/exactReplay';
 
-// The raw per-state observation ({current, select}) the value head needs, kept
-// alongside the projected snapshot (which drops it). Frame index === stateIndex
-// because the snapshot's stateCount is exactly visualize.length.
+// The raw per-state observation ({current, select}) behind each projected
+// snapshot frame, kept for the recorded selection (exact-decision mode reads it
+// and clips label options from it). Frame index === stateIndex because the
+// snapshot's stateCount is exactly visualize.length.
 export type ReplayObservationFrame = {
   current: unknown;
   select: unknown;
   stateIndex: number;
-  // The engine's opaque search seed. Present on raw agent-vs-agent frames;
-  // REQUIRED by the near-omniscient analysis line (cg.api.search_begin rejects an
-  // observation without it). Absent on legacy/Kaggle frames -> that line is
-  // unavailable, same as the honesty gate.
-  searchBeginInput: string | null;
 };
 
 export type ReplayAnalysisVisibility = {
@@ -60,18 +56,8 @@ class ReplayStore {
   error = $state('');
   copiedForkPoint = $state(false);
   isPlaying = $state(false);
-  // Raw observation frames + both seats' decks, for the eval graph. Empty when
-  // the replay JSON predates deck persistence (legacy/Kaggle) — the graph then
-  // degrades rather than lying (see evalStore).
+  // The raw observation behind each frame, for the recorded selection.
   observationFrames = $state<ReplayObservationFrame[]>([]);
-  decks = $state<number[][]>([]);
-  // Which seats this replay can honestly score (index = seat): a seat is honest
-  // when ITS OWN decision frames carry its hand. True for both when the replay
-  // has raw (pre-conceal) frames (`rawVisualize`, saved games from now on) or is
-  // an already-omniscient spectator/Kaggle record; a legacy save that concealed
-  // the opponent's hand leaves that seat false, so the graph shows the honest
-  // seat only with an explicit "perspective unavailable" label, never a lie.
-  honestSeats = $state<[boolean, boolean]>([false, false]);
   analysisVisibility = $state<ReplayAnalysisVisibility>(perspectiveVisibility);
   decisionAnalyses = $state<ReplayDecisionAnalysis[]>([]);
   // True while the timeline is being navigated faster than animations can play
@@ -210,8 +196,6 @@ class ReplayStore {
       const loaded = await loadCabtReplay(candidates);
       this.replay = loaded.snapshot;
       this.observationFrames = loaded.frames;
-      this.decks = loaded.decks;
-      this.honestSeats = loaded.honestSeats;
       this.analysisVisibility = loaded.analysisVisibility;
       this.decisionAnalyses = loaded.decisionAnalyses;
       const search = typeof window === 'undefined' ? '' : window.location.search;
@@ -243,8 +227,6 @@ class ReplayStore {
       this.error = error instanceof Error ? error.message : String(error);
       this.replay = null;
       this.observationFrames = [];
-      this.decks = [];
-      this.honestSeats = [false, false];
       this.analysisVisibility = perspectiveVisibility;
       this.decisionAnalyses = [];
       this.stepIndex = 0;
@@ -262,8 +244,6 @@ class ReplayStore {
     this.scrubbing = false;
     this.replay = null;
     this.observationFrames = [];
-    this.decks = [];
-    this.honestSeats = [false, false];
     this.analysisVisibility = perspectiveVisibility;
     this.decisionAnalyses = [];
     this.stepIndex = 0;
@@ -573,8 +553,6 @@ function exactDecisionLabel(analysis: ReplayDecisionAnalysis | null): string {
 type LoadedReplay = {
   snapshot: ReplaySnapshot;
   frames: ReplayObservationFrame[];
-  decks: number[][];
-  honestSeats: [boolean, boolean];
   analysisVisibility: ReplayAnalysisVisibility;
   decisionAnalyses: ReplayDecisionAnalysis[];
 };
@@ -592,8 +570,6 @@ async function loadCabtReplay(candidates: string[]): Promise<LoadedReplay> {
       return {
         snapshot: cabtReplayToSnapshot(json),
         frames: observationFramesFrom(json),
-        decks: Array.isArray(json?.decks) ? json.decks : [],
-        honestSeats: honestSeatsFrom(json),
         analysisVisibility: analysisVisibilityFrom(json),
         decisionAnalyses: replayDecisionAnalyses(json),
       };
@@ -617,52 +593,20 @@ function analysisVisibilityFrom(json: unknown): ReplayAnalysisVisibility {
   };
 }
 
-// Per-seat honesty: a seat is scorable when ITS OWN hand is present. Raw
-// pre-conceal frames carry every acting seat's hand, so both seats are honest.
-// Otherwise inspect the concealed frames: for each seat, its own decision frames
-// (yourIndex === seat) must show that seat's hand (omniscient records show both
-// on every frame; a legacy save hid the opponent's).
-function honestSeatsFrom(json: unknown): [boolean, boolean] {
-  const source = json as { rawVisualize?: unknown; visualize?: unknown };
-  if (Array.isArray(source?.rawVisualize) && source.rawVisualize.length > 0) {
-    return [true, true];
-  }
-  const visualize = source?.visualize;
-  if (!Array.isArray(visualize) || !visualize.length) {
-    return [false, false];
-  }
-  const handVisibleForOwnDecisions = (seat: number): boolean => {
-    const own = visualize.filter((frame) => (frame as { current?: { yourIndex?: number } })?.current?.yourIndex === seat);
-    if (!own.length) {
-      return false;
-    }
-    return own.every((frame) => {
-      const players = (frame as { current?: { players?: unknown[] } })?.current?.players;
-      return Array.isArray(players) && (players[seat] as { hand?: unknown })?.hand != null;
-    });
-  };
-  return [handVisibleForOwnDecisions(0), handVisibleForOwnDecisions(1)];
-}
-
 function observationFramesFrom(json: unknown): ReplayObservationFrame[] {
   // Prefer the raw (pre-conceal) frames when present: they carry each acting
-  // seat's own hand, so BOTH seats' value lines are honest. Fall back to the
-  // concealed playback frames (legacy saves) or an already-omniscient
-  // spectator/Kaggle replay. Indexed identically to `visualize` (stateIndex).
+  // seat's own hand. Fall back to the concealed playback frames. Indexed
+  // identically to `visualize` (stateIndex).
   const source = (json as { rawVisualize?: unknown; visualize?: unknown });
   const visualize = Array.isArray(source?.rawVisualize) ? source.rawVisualize : source?.visualize;
   if (!Array.isArray(visualize)) {
     return [];
   }
-  return visualize.map((frame, stateIndex) => {
-    const sbi = (frame as { search_begin_input?: unknown })?.search_begin_input;
-    return {
-      current: (frame as { current?: unknown })?.current ?? null,
-      select: (frame as { select?: unknown })?.select ?? null,
-      stateIndex,
-      searchBeginInput: typeof sbi === 'string' ? sbi : null,
-    };
-  });
+  return visualize.map((frame, stateIndex) => ({
+    current: (frame as { current?: unknown })?.current ?? null,
+    select: (frame as { select?: unknown })?.select ?? null,
+    stateIndex,
+  }));
 }
 
 function replayCandidates(id: string): string[] {

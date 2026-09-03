@@ -14,7 +14,6 @@
     copiedForkPoint?: boolean;
     analysisWarning?: string;
     analysis?: ReplayDecisionAnalysis | null;
-    viewerEvalSeat0?: number | null;
     nextDisagreementStateIndex?: number | null;
     isPlaying?: boolean;
     setStep: (index: number) => void;
@@ -40,7 +39,6 @@
     copiedForkPoint = false,
     analysisWarning = '',
     analysis = null,
-    viewerEvalSeat0 = null,
     nextDisagreementStateIndex = null,
     isPlaying = false,
     setStep,
@@ -237,7 +235,6 @@
     {analysis}
     seat0Name={replay.players[0]?.name ?? 'Player 1'}
     seat1Name={replay.players[1]?.name ?? 'Player 2'}
-    {viewerEvalSeat0}
     close={() => (searchInspectorOpen = false)}
   />
 {/if}
