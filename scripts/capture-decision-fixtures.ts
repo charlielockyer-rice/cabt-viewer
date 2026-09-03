@@ -3,7 +3,7 @@
 // (plus a few distinct contexts), so the gallery documents what CABT
 // actually emits instead of hand-written shapes.
 //
-//   CABT_SAMPLE_SUBMISSION_DIR=… PYTHON=… npx tsx scripts/capture-decision-fixtures.ts
+//   CABT_ENGINE_DIR=… PYTHON=… npx tsx scripts/capture-decision-fixtures.ts <deck.csv>
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,12 +16,18 @@ import rawCardRows from '../src/lib/cabt/cardData.generated.json';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FRONTEND_ROOT = path.resolve(__dirname, '..');
 const BRIDGE_PATH = path.join(FRONTEND_ROOT, 'src', 'engine', 'cabt_bridge.py');
-const DECK_PATH = path.join(FRONTEND_ROOT, 'public', 'agents', 'official-random-abomasnow', 'deck.csv');
 const OUT_PATH = path.join(FRONTEND_ROOT, 'src', 'lib', 'prompt-gallery', 'decisionFixtures.json');
 
-const sampleSubmissionDir = process.env.CABT_SAMPLE_SUBMISSION_DIR;
-if (!sampleSubmissionDir) {
-  console.error('CABT_SAMPLE_SUBMISSION_DIR is required.');
+const engineDir = process.env.CABT_ENGINE_DIR;
+if (!engineDir) {
+  console.error('CABT_ENGINE_DIR is required.');
+  process.exit(1);
+}
+
+// Both seats play the same deck; any 60-card CSV of CABT card ids will do.
+const deckPath = process.argv[2];
+if (!deckPath) {
+  console.error('Usage: npx tsx scripts/capture-decision-fixtures.ts <deck.csv>');
   process.exit(1);
 }
 
@@ -40,7 +46,7 @@ function toDataMaps(cards: any[], attacks: any[]): CabtDataMaps {
 async function main() {
   const python = process.env.PYTHON ?? 'python3';
   const child = spawn(python, [BRIDGE_PATH], {
-    env: { ...process.env, CABT_SAMPLE_SUBMISSION_DIR: sampleSubmissionDir },
+    env: { ...process.env, CABT_ENGINE_DIR: engineDir },
   });
   const lines = readline.createInterface({ input: child.stdout });
   const pending: Array<(value: any) => void> = [];
@@ -57,7 +63,7 @@ async function main() {
       child.stdin.write(`${JSON.stringify(message)}\n`);
     });
 
-  const deck = fs.readFileSync(DECK_PATH, 'utf8').split('\n').filter(Boolean).map(Number);
+  const deck = fs.readFileSync(deckPath, 'utf8').split('\n').filter(Boolean).map(Number);
   const response = await request({
     id: 1,
     command: 'start',

@@ -19,8 +19,8 @@ These rules apply to `cabt-viewer`.
   model. Do not reach into raw option fields with `as any`.
 - Keep leaf components presentational by default. Store imports belong in
   explicit container components.
-- Keep Kaggle-provided native engine files out of this repo. Use
-  `CABT_SAMPLE_SUBMISSION_DIR` for local engine resources.
+- Keep native engine files out of this repo. Use `CABT_ENGINE_DIR` for local
+  engine resources.
 
 ## Verification
 

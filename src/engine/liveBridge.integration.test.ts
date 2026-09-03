@@ -1,11 +1,12 @@
 // End-to-end live-play verification against the real CABT engine.
 //
-// Env-gated: runs only when CABT_SAMPLE_SUBMISSION_DIR points at the Kaggle
-// sample_submission bundle (and PYTHON at an interpreter that can load it).
+// Env-gated: runs only when CABT_ENGINE_DIR points at an engine directory
+// containing cg/ (and PYTHON at an interpreter that can load it) and
+// CABT_PROBE_DECK at a 60-line CSV of CABT card ids for both seats.
 // Optionally CABT_PROBE_AGENT names an agent file for seat 1 (e.g. a model
 // policy); seat 0 always uses the bridge's built-in first-legal player.
 //
-//   CABT_SAMPLE_SUBMISSION_DIR=... PYTHON=... npx vitest run liveBridge
+//   CABT_ENGINE_DIR=... CABT_PROBE_DECK=... PYTHON=... npx vitest run liveBridge
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -23,15 +24,14 @@ import { CabtAreaType, CabtLogType, type CabtObservation } from '../lib/cabt/typ
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FRONTEND_ROOT = path.resolve(__dirname, '..', '..');
 const BRIDGE_PATH = path.join(FRONTEND_ROOT, 'src', 'engine', 'cabt_bridge.py');
-const DECK_PATH = path.join(FRONTEND_ROOT, 'public', 'agents', 'official-random-abomasnow', 'deck.csv');
-
-const sampleSubmissionDir = process.env.CABT_SAMPLE_SUBMISSION_DIR ?? '';
+const engineDir = process.env.CABT_ENGINE_DIR ?? '';
+const deckPath = process.env.CABT_PROBE_DECK ?? '';
 const python = process.env.PYTHON ?? 'python3';
 const probeAgent = process.env.CABT_PROBE_AGENT;
-const enabled = !!sampleSubmissionDir && fs.existsSync(sampleSubmissionDir);
+const enabled = !!engineDir && fs.existsSync(engineDir) && !!deckPath && fs.existsSync(deckPath);
 
 function readDeck(): number[] {
-  return fs.readFileSync(DECK_PATH, 'utf8').split('\n').filter(Boolean).map(Number);
+  return fs.readFileSync(deckPath, 'utf8').split('\n').filter(Boolean).map(Number);
 }
 
 type BridgeSession = {
@@ -41,7 +41,7 @@ type BridgeSession = {
 
 function spawnBridge(): BridgeSession {
   const child = spawn(python, [BRIDGE_PATH], {
-    env: { ...process.env, CABT_SAMPLE_SUBMISSION_DIR: sampleSubmissionDir },
+    env: { ...process.env, CABT_ENGINE_DIR: engineDir },
   });
   const lines = readline.createInterface({ input: child.stdout });
   const pending: Array<(value: any) => void> = [];
@@ -182,7 +182,6 @@ describe.skipIf(!enabled)('live pipeline against the real CABT engine', () => {
   }, 120_000);
 
   it('controller plays a full agent-vs-agent game into coherent playback steps', async () => {
-    process.env.CABT_ENGINE_MODE = 'native';
     // Optionally give seat 1 a real agent file via a throwaway workspace
     // manifest (the controller only resolves agents by id).
     let manifestFile: string | undefined;
@@ -236,7 +235,6 @@ describe.skipIf(!enabled)('live pipeline against the real CABT engine', () => {
       expect(drawEvents.length).toBeGreaterThan(0);
     } finally {
       controller.close();
-      delete process.env.CABT_ENGINE_MODE;
       if (manifestFile) {
         delete process.env.CABT_AGENTS_FILE;
         fs.rmSync(path.dirname(manifestFile), { recursive: true, force: true });
@@ -245,17 +243,16 @@ describe.skipIf(!enabled)('live pipeline against the real CABT engine', () => {
   }, 180_000);
 
   it('synthesizes ability announces live, ahead of their effects', async () => {
-    process.env.CABT_ENGINE_MODE = 'native';
     const controller = new LocalEngineController();
     try {
-      // The rule-based Lucario agents use abilities and retreats heavily.
-      const deck = fs.readFileSync(path.join(FRONTEND_ROOT, 'public', 'agents', 'mega-lucario-ex', 'deck.csv'), 'utf8')
-        .split('\n').filter(Boolean).map(Number);
+      // Point CABT_PROBE_DECK at an ability-heavy deck for this one; both seats
+      // play it agent-vs-agent so announces are dense.
+      const deck = readDeck();
       const response = await controller.handle({
         type: 'startGame',
         payload: {
-          player1: { name: 'Lucario A', deck, control: 'agent', agentId: 'mega-lucario-ex' },
-          player2: { name: 'Lucario B', deck, control: 'agent', agentId: 'mega-lucario-ex' },
+          player1: { name: 'Agent A', deck, control: 'agent', agentId: 'first-legal' },
+          player2: { name: 'Agent B', deck, control: 'agent', agentId: 'first-legal' },
         },
       });
       expect(response.ok).toBe(true);
@@ -280,12 +277,10 @@ describe.skipIf(!enabled)('live pipeline against the real CABT engine', () => {
       expect(announces).toBeGreaterThan(0);
     } finally {
       controller.close();
-      delete process.env.CABT_ENGINE_MODE;
     }
   }, 180_000);
 
   it('drives a full game through the select contract: decisions in, indexes out', async () => {
-    process.env.CABT_ENGINE_MODE = 'native';
     const controller = new LocalEngineController();
     try {
       const deck = readDeck();
@@ -339,7 +334,6 @@ describe.skipIf(!enabled)('live pipeline against the real CABT engine', () => {
       expect(stale.ok).toBe(false);
     } finally {
       controller.close();
-      delete process.env.CABT_ENGINE_MODE;
     }
   }, 300_000);
 

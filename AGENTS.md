@@ -105,6 +105,6 @@ often enough.
 
 ## Public Boundary
 
-Do not add Kaggle native binaries, raw competition bundles, or generated local
-match artifacts to this repo. Local CABT play should consume user-supplied
-resources through `CABT_SAMPLE_SUBMISSION_DIR`.
+Do not add native engine binaries, engine bundles, or generated local match
+artifacts to this repo. Local CABT play consumes user-supplied resources
+through `CABT_ENGINE_DIR`.

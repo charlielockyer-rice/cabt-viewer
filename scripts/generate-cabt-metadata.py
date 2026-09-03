@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import sys
 from dataclasses import asdict, is_dataclass
 from enum import IntEnum
@@ -32,10 +33,10 @@ def parse_args() -> argparse.Namespace:
         help="Path to EN_Card_Data.csv.",
     )
     parser.add_argument(
-        "--sample-submission",
+        "--engine-dir",
         type=Path,
-        default=ROOT / "sample_submission",
-        help="Path to the Kaggle sample_submission directory containing cg/.",
+        default=Path(os.environ.get("CABT_ENGINE_DIR", ROOT / "cabt-engine")),
+        help="Path to the CABT engine directory containing cg/.",
     )
     parser.add_argument(
         "--out-dir",
@@ -98,8 +99,8 @@ def load_csv_rows(path: Path) -> dict[int, dict[str, Any]]:
     return rows
 
 
-def load_engine_metadata(sample_submission: Path) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    sys.path.insert(0, str(sample_submission.resolve()))
+def load_engine_metadata(engine_dir: Path) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    sys.path.insert(0, str(engine_dir.resolve()))
     from cg.api import all_attack, all_card_data  # type: ignore
 
     cards = [jsonable(card) for card in all_card_data()]
@@ -166,11 +167,11 @@ def main() -> None:
     args = parse_args()
     if not args.card_csv.exists():
         raise FileNotFoundError(f"Card CSV not found: {args.card_csv}")
-    if not (args.sample_submission / "cg").exists():
-        raise FileNotFoundError(f"sample_submission/cg not found: {args.sample_submission}")
+    if not (args.engine_dir / "cg").exists():
+        raise FileNotFoundError(f"engine cg/ not found: {args.engine_dir}")
 
     csv_rows = load_csv_rows(args.card_csv)
-    engine_cards, attacks = load_engine_metadata(args.sample_submission)
+    engine_cards, attacks = load_engine_metadata(args.engine_dir)
     cards = merge_card_rows(engine_cards, csv_rows)
 
     args.out_dir.mkdir(parents=True, exist_ok=True)

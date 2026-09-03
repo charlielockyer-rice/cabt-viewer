@@ -11,13 +11,15 @@ from typing import Any, Callable
 
 FRONTEND_ROOT = Path(__file__).resolve().parents[2]
 WORKSPACE_ROOT = FRONTEND_ROOT.parent
-SAMPLE_SUBMISSION = Path(
+# The CABT engine directory: a folder containing cg/ (api.py, game.py, sim.py,
+# utils.py and the compiled libcg.dylib/.so).
+ENGINE_DIR = Path(
     os.environ.get(
-        "CABT_SAMPLE_SUBMISSION_DIR",
-        FRONTEND_ROOT / "sample_submission",
+        "CABT_ENGINE_DIR",
+        FRONTEND_ROOT / "cabt-engine",
     )
 ).resolve()
-sys.path.insert(0, str(SAMPLE_SUBMISSION))
+sys.path.insert(0, str(ENGINE_DIR))
 
 from cg.api import all_attack, all_card_data  # noqa: E402
 from cg.game import battle_finish, battle_select, battle_start  # noqa: E402
