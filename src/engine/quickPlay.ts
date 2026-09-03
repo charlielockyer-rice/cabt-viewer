@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { workspaceAgentOptions } from './workspaceAgents';
-import { workspaceDeckOptions, type WorkspaceDeckOption } from './workspaceDecks';
+import { workspaceAgentDeckFile } from './workspaceAgents';
+import { workspaceDeckCsvFile, workspaceDeckOptions, type WorkspaceDeckOption } from './workspaceDecks';
 
 // The hosted "quick play" matchup: one preconfigured bot, one pool of player
 // decks, one pool of bot decks. A friend lands on ?view=play and gets a game
@@ -14,6 +15,10 @@ export type QuickPlayManifest = {
   agentId: string;
   playerDecks: string[];
   botDecks: string[];
+  // Highest card id the bot's model can encode. A deck with a newer card
+  // makes the model fall back to first-legal on every decision that sees it,
+  // silently; refusing here turns that into a visible error.
+  maxCardId?: number;
 };
 
 export type QuickPlayAgent = {
@@ -100,12 +105,39 @@ export function quickPlayMatchup(options: Options = {}): QuickPlayMatchup | Quic
   }
 
   const deckById = (id: string) => decks.find((deck) => deck.id === id)!;
+  const playerDeck = deckById(pick(playerDeckIds));
+  const botDeck = lockedDeck ?? deckById(pick(botDeckIds));
+
+  const maxCardId = typeof manifest?.maxCardId === 'number' ? manifest.maxCardId : undefined;
+  if (maxCardId !== undefined) {
+    for (const [role, deck, file] of [
+      ['player', playerDeck, workspaceDeckCsvFile(playerDeck.id, decksFile)],
+      ['bot', botDeck, lockedDeck ? workspaceAgentDeckFile(agent.id, agentsFile) : workspaceDeckCsvFile(botDeck.id, decksFile)],
+    ] as const) {
+      const outside = deckCardIdsOutside(file, maxCardId);
+      if (outside.length) {
+        return {
+          ok: false,
+          error: `Quick play ${role} deck ${deck.id} has card ids the bot's model cannot encode (max ${maxCardId}): ${outside.join(', ')}.`,
+        };
+      }
+    }
+  }
+
   return {
     ok: true,
     agent: { id: agent.id, name: agent.name, description: agent.description },
-    playerDeck: deckById(pick(playerDeckIds)),
-    botDeck: lockedDeck ?? deckById(pick(botDeckIds)),
+    playerDeck,
+    botDeck,
   };
+}
+
+function deckCardIdsOutside(file: string | undefined, maxCardId: number): number[] {
+  if (!file || !fs.existsSync(file)) {
+    return [];
+  }
+  const ids = fs.readFileSync(file, 'utf8').split(/\r?\n/).map((line) => Number(line.trim())).filter((id) => Number.isFinite(id));
+  return [...new Set(ids.filter((id) => id > maxCardId))].sort((a, b) => a - b);
 }
 
 function deckIdList(value: unknown): string[] {

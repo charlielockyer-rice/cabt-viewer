@@ -29,6 +29,11 @@ fs.writeFileSync(
   }),
 );
 
+fs.mkdirSync(path.join(dir, 'decks'), { recursive: true });
+fs.writeFileSync(path.join(dir, 'decks/dragapult-dusknoir.csv'), '119\n120\n121\n');
+fs.writeFileSync(path.join(dir, 'decks/raging-bolt-ogerpon.csv'), '119\n1381\n1500\n');
+fs.writeFileSync(path.join(dir, 'decks/locked.csv'), '119\n');
+
 function writeManifest(name: string, body: unknown): string {
   const file = path.join(dir, name);
   fs.writeFileSync(file, JSON.stringify(body));
@@ -157,5 +162,33 @@ describe('quickPlayMatchup', () => {
     });
     const rolled = quickPlayMatchup({ file: flexible, agentsFile, decksFile, pick: (items) => items[0] });
     expect(rolled.ok && rolled.botDeck.id).toBe('raging-bolt-ogerpon');
+  });
+
+  it('refuses a deck with card ids past maxCardId, naming them', () => {
+    const file = writeManifest('quickplay-vocab.json', {
+      agentId: 'copycat-v1-20m',
+      playerDecks: ['dragapult-dusknoir'],
+      botDecks: ['raging-bolt-ogerpon'],
+      maxCardId: 1271,
+    });
+    expect(quickPlayMatchup({ file, agentsFile, decksFile, pick: (items) => items[0] })).toEqual({
+      ok: false,
+      error: "Quick play bot deck raging-bolt-ogerpon has card ids the bot's model cannot encode (max 1271): 1381, 1500.",
+    });
+
+    // Within the vocabulary: unchanged result. Without maxCardId: no check.
+    const fine = writeManifest('quickplay-vocab-ok.json', {
+      agentId: 'copycat-v1-20m',
+      playerDecks: ['dragapult-dusknoir'],
+      botDecks: ['dragapult-dusknoir'],
+      maxCardId: 1271,
+    });
+    expect(quickPlayMatchup({ file: fine, agentsFile, decksFile, pick: (items) => items[0] }).ok).toBe(true);
+    const unchecked = writeManifest('quickplay-vocab-off.json', {
+      agentId: 'copycat-v1-20m',
+      playerDecks: ['dragapult-dusknoir'],
+      botDecks: ['raging-bolt-ogerpon'],
+    });
+    expect(quickPlayMatchup({ file: unchecked, agentsFile, decksFile, pick: (items) => items[0] }).ok).toBe(true);
   });
 });
