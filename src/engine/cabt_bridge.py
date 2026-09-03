@@ -75,10 +75,8 @@ def load_agent(agent_path: str | None) -> tuple[AgentFn, Callable | None]:
         spec.loader.exec_module(module)
     finally:
         os.chdir(old_cwd)
-        try:
-            sys.path.remove(str(path.parent))
-        except ValueError:
-            pass
+        # The agent's directory stays on sys.path: bundle-style agents import
+        # their siblings lazily on the first decision, not at import time.
 
     agent = getattr(module, "agent", None)
     if not callable(agent):
