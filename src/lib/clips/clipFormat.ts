@@ -101,9 +101,8 @@ export function parseClip(input: unknown): Clip {
   };
 }
 
-// Where an item's `replay` ref resolves to. Absolute refs are used verbatim,
-// `gamebank:<id>` goes to the game-bank replay endpoint, and a bare name is an
-// agent-lab artifact served under /cabt-artifacts.
+// Where an item's `replay` ref resolves to. Absolute refs are used verbatim;
+// a bare name is an agent-lab artifact served under /cabt-artifacts.
 export function clipReplayCandidates(ref: string): string[] {
   const trimmed = ref.trim();
   if (!trimmed) {
@@ -111,13 +110,6 @@ export function clipReplayCandidates(ref: string): string[] {
   }
   if (trimmed.startsWith('/') || /^https?:\/\//i.test(trimmed)) {
     return [trimmed];
-  }
-  if (trimmed.startsWith('gamebank:')) {
-    const id = trimmed.slice('gamebank:'.length);
-    if (!id) {
-      throw new Error(`clip replay ref "${ref}" is missing a game-bank id`);
-    }
-    return [`/game-bank/replays/${encodeURIComponent(id)}`];
   }
   return [`/cabt-artifacts/${encodePath(trimmed)}`];
 }

@@ -161,18 +161,12 @@ describe('clipReplayCandidates', () => {
     expect(clipReplayCandidates('http://example.test/game.json')).toEqual(['http://example.test/game.json']);
   });
 
-  it('routes gamebank refs to the game-bank replay endpoint', () => {
-    expect(clipReplayCandidates('gamebank:abc-123')).toEqual(['/game-bank/replays/abc-123']);
-    expect(clipReplayCandidates('gamebank:abc 123')).toEqual(['/game-bank/replays/abc%20123']);
-  });
-
   it('resolves a bare name as an artifact, encoding each path segment', () => {
     expect(clipReplayCandidates('run-7/game 1.json')).toEqual(['/cabt-artifacts/run-7/game%201.json']);
   });
 
-  it('rejects an empty or id-less ref', () => {
+  it('rejects an empty ref', () => {
     expect(() => clipReplayCandidates('  ')).toThrowError('clip replay ref is empty');
-    expect(() => clipReplayCandidates('gamebank:')).toThrowError(/missing a game-bank id/);
   });
 });
 
@@ -192,9 +186,9 @@ describe('clip URL helpers', () => {
   it('builds an "open full replay" link at the item state', () => {
     expect(clipReplayViewerUrl('https://viewer.test/?view=clip&clip=x.json', {
       kind: 'position',
-      replay: 'gamebank:g-1',
+      replay: 'run-7/g-1.json',
       state: 87,
-    })).toBe('https://viewer.test/?view=replay&replayUrl=%2Fgame-bank%2Freplays%2Fg-1&state=87');
+    })).toBe('https://viewer.test/?view=replay&replayUrl=%2Fcabt-artifacts%2Frun-7%2Fg-1.json&state=87');
   });
 
   it('carries the item exact-decision flag into the replay link', () => {

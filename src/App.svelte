@@ -44,8 +44,6 @@
   } from './lib/game/decisions';
   import { commitPick, observeDecision, pickTally, runProgress, type EffectRun } from './lib/game/effectSelector';
   import { loadAgentOptions, loadDeckOptions, loadGameLogs, type AgentOption, type DeckOption, type GameLogEntry } from './lib/home/catalog';
-  import { ladderReplayUrl, type LadderEpisode } from './lib/gameBank/ladderLibrary';
-  import { searchedGameReplayUrl, type SearchedGame } from './lib/gameBank/searchedGames';
   import type { ActionTimelineEvent, BoardSlotRef, DecisionOptionView, PokemonSlotView, PlayerView } from './lib/game/types';
   import { clipViewerUrl, type ClipManifestEntry } from './lib/clips/clipFormat';
   import { clipStore } from './state/clip.svelte';
@@ -67,9 +65,6 @@
   // load into the same replay store the board already renders from.
   const initialClipRef = initialSearchParam('view') === 'clip' ? initialSearchParam('clip') : '';
   let homeMode = $state<HomeMode>(initialReplayMode || initialClipRef ? 'logs' : 'play');
-  let lastGameBankGameId = $state(initialSearchParam('gameBank'));
-  let lastLadderDay = $state(initialSearchParam('ladderDay'));
-  let lastLadderEpisodeId = $state(initialSearchParam('ladderEpisode'));
   let agents = $state<AgentOption[]>([]);
   let decks = $state<DeckOption[]>([]);
   let gameLogs = $state<GameLogEntry[]>([]);
@@ -549,16 +544,11 @@
     }
   }
 
-  // Every browser hands the replay store a position from exactly one source, so
-  // opening one clears the other sources' remembered selections.
   function beginReplayLoad() {
     gameSessionStore.reset();
     resetSaveReplayStatus();
     zoneViewerStore.close();
     viewSettingsStore.resetView();
-    lastLadderDay = '';
-    lastLadderEpisodeId = '';
-    lastGameBankGameId = '';
     homeMode = 'logs';
   }
 
@@ -566,25 +556,6 @@
     beginReplayLoad();
     replaceReplayUrl(log.file || log.id);
     await replayStore.loadSaved(log.file || log.id);
-  }
-
-  // The ladder mirror is served by the local sidecar as the Kaggle envelope it
-  // was archived as, so this is an ordinary replay-URL load.
-  async function loadLadderEpisode(day: string, episode: LadderEpisode) {
-    const replayUrl = ladderReplayUrl(day, episode.id);
-    beginReplayLoad();
-    lastLadderDay = day;
-    lastLadderEpisodeId = episode.id;
-    replaceLadderReplayUrl(day, episode.id, replayUrl);
-    await replayStore.loadUrl(replayUrl);
-  }
-
-  async function loadSearchedGame(game: SearchedGame) {
-    const replayUrl = searchedGameReplayUrl(game);
-    beginReplayLoad();
-    lastGameBankGameId = game.id;
-    replaceSearchedGameReplayUrl(game, replayUrl);
-    await replayStore.loadUrl(replayUrl);
   }
 
   async function saveReplay() {
@@ -897,9 +868,7 @@
 
   // One deep-linkable replay position at a time: every source key is cleared,
   // then the source that is opening writes back the ones it owns.
-  const replaySourceParams = [
-    'replay', 'replayUrl', 'ladderDay', 'ladderEpisode', 'gameBank', 'state', 'step',
-  ];
+  const replaySourceParams = ['replay', 'replayUrl', 'state', 'step'];
 
   function replaceReplayLocation(next: Record<string, string>) {
     if (typeof window === 'undefined') {
@@ -914,14 +883,6 @@
       params.set(name, value);
     }
     window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}${window.location.hash}`);
-  }
-
-  function replaceLadderReplayUrl(day: string, episodeId: string, replayUrl: string) {
-    replaceReplayLocation({ ladderDay: day, ladderEpisode: episodeId, replayUrl });
-  }
-
-  function replaceSearchedGameReplayUrl(game: SearchedGame, replayUrl: string) {
-    replaceReplayLocation({ gameBank: game.id, replayUrl });
   }
 
   function loadClip(entry: ClipManifestEntry) {
@@ -1011,9 +972,6 @@
         {catalogBusy}
         {error}
         {catalogError}
-        ladderSelectedDay={lastLadderDay}
-        ladderSelectedEpisodeId={lastLadderEpisodeId}
-        gameBankSelectedGameId={lastGameBankGameId}
         setHomeMode={(nextMode) => {
           homeMode = nextMode;
           if (nextMode === 'logs') {
@@ -1024,8 +982,6 @@
         }}
         startGame={startGame}
         {loadGameLog}
-        {loadLadderEpisode}
-        {loadSearchedGame}
         {loadClip}
         refreshCatalog={() => void refreshCatalog()}
       />

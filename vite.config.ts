@@ -13,10 +13,6 @@ export default defineConfig({
         target: 'http://localhost:8095',
         changeOrigin: true,
       },
-      '/game-bank': {
-        target: 'http://localhost:8098',
-        changeOrigin: true,
-      },
       '/cabt-artifacts': {
         target: 'http://localhost:8765',
         changeOrigin: true,

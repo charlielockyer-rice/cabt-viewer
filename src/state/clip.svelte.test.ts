@@ -4,8 +4,8 @@ import { clipStore } from './clip.svelte';
 import { replayStore } from './replay.svelte';
 
 const replayA = '/local-replays/game-a.json';
-const replayB = 'gamebank:game-b';
-const replayBUrl = '/game-bank/replays/game-b';
+const replayB = 'run-7/game-b.json';
+const replayBUrl = '/cabt-artifacts/run-7/game-b.json';
 
 function player() {
   return {

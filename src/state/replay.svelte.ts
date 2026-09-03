@@ -34,17 +34,6 @@ export type ReplayAnalysisVisibility = {
   warning?: string;
 };
 
-export type ReplayGameContext = {
-  id: string;
-  game_uid: string;
-  search_depth: number;
-  search_depths: number[];
-  model_name: string;
-  model_dtype: string;
-  source: string;
-  decks: Array<{ family_name: string; family_id: string; deck_id: string }>;
-};
-
 // An explicit "open here" for loadFrom: the caller already knows the state it
 // wants and whether that position should open in exact-decision mode.
 export type ReplayLoadPosition = {
@@ -84,7 +73,6 @@ class ReplayStore {
   // seat only with an explicit "perspective unavailable" label, never a lie.
   honestSeats = $state<[boolean, boolean]>([false, false]);
   analysisVisibility = $state<ReplayAnalysisVisibility>(perspectiveVisibility);
-  gameContext = $state<ReplayGameContext | null>(null);
   decisionAnalyses = $state<ReplayDecisionAnalysis[]>([]);
   // True while the timeline is being navigated faster than animations can play
   // (scrub-bar drag, key-repeat stepping). The animation layers suppress all
@@ -225,7 +213,6 @@ class ReplayStore {
       this.decks = loaded.decks;
       this.honestSeats = loaded.honestSeats;
       this.analysisVisibility = loaded.analysisVisibility;
-      this.gameContext = loaded.gameContext;
       this.decisionAnalyses = loaded.decisionAnalyses;
       const search = typeof window === 'undefined' ? '' : window.location.search;
       if (loaded.analysisVisibility.mode !== 'analysis') {
@@ -259,7 +246,6 @@ class ReplayStore {
       this.decks = [];
       this.honestSeats = [false, false];
       this.analysisVisibility = perspectiveVisibility;
-      this.gameContext = null;
       this.decisionAnalyses = [];
       this.stepIndex = 0;
       this.stateIndex = 0;
@@ -279,7 +265,6 @@ class ReplayStore {
     this.decks = [];
     this.honestSeats = [false, false];
     this.analysisVisibility = perspectiveVisibility;
-    this.gameContext = null;
     this.decisionAnalyses = [];
     this.stepIndex = 0;
     this.stateIndex = 0;
@@ -463,24 +448,16 @@ class ReplayStore {
 
     const url = this.positionUrl();
     const step = this.currentStep;
-    const context = this.gameContext;
     const analysis = this.currentDecisionAnalysis;
     const position = this.animationsEnabled
       ? `state ${this.stateIndex}`
       : `decision state ${this.stateIndex} → result state ${Math.min(this.stateIndex + 1, replay.stateCount - 1)}`;
     const lines = [
       'CABT game checkpoint',
-      `Game: ${context?.game_uid ?? replay.name}`,
+      `Game: ${replay.name}`,
       `Position: ${position}, step ${this.stepIndex}${this.currentView ? `, turn ${this.currentView.turn}` : ''}`,
       `Event: ${this.currentDisplayLabel || step?.label || 'Recorded position'}`,
     ];
-    if (context) {
-      lines.push(
-        `Search: depth ${context.search_depth} · ${context.model_name}${context.model_dtype ? ` · ${context.model_dtype}` : ''}`,
-        `Decks: ${context.decks.map((deck) => deck.family_name).join(' vs ')}`,
-        `Bank ID: ${context.id} · ${context.source}`,
-      );
-    }
     if (analysis) {
       const verdict = analysis.searched
         ? (analysis.changed ? 'search changed the move' : 'search agreed with policy')
@@ -599,7 +576,6 @@ type LoadedReplay = {
   decks: number[][];
   honestSeats: [boolean, boolean];
   analysisVisibility: ReplayAnalysisVisibility;
-  gameContext: ReplayGameContext | null;
   decisionAnalyses: ReplayDecisionAnalysis[];
 };
 
@@ -619,7 +595,6 @@ async function loadCabtReplay(candidates: string[]): Promise<LoadedReplay> {
         decks: Array.isArray(json?.decks) ? json.decks : [],
         honestSeats: honestSeatsFrom(json),
         analysisVisibility: analysisVisibilityFrom(json),
-        gameContext: gameContextFrom(json),
         decisionAnalyses: replayDecisionAnalyses(json),
       };
     } catch (error) {
@@ -639,31 +614,6 @@ function analysisVisibilityFrom(json: unknown): ReplayAnalysisVisibility {
     hands: value.hands === 'full' || value.hands === 'counts' ? value.hands : 'per-actor',
     prizes: value.prizes === 'full' ? 'full' : 'counts',
     ...(typeof value.warning === 'string' ? { warning: value.warning } : {}),
-  };
-}
-
-function gameContextFrom(json: unknown): ReplayGameContext | null {
-  const value = (json as { gameBank?: Partial<ReplayGameContext> })?.gameBank;
-  if (!value || typeof value.id !== 'string' || typeof value.game_uid !== 'string') {
-    return null;
-  }
-  const decks = Array.isArray(value.decks)
-    ? value.decks.filter((deck): deck is ReplayGameContext['decks'][number] => (
-      !!deck
-      && typeof deck.family_name === 'string'
-      && typeof deck.family_id === 'string'
-      && typeof deck.deck_id === 'string'
-    ))
-    : [];
-  return {
-    id: value.id,
-    game_uid: value.game_uid,
-    search_depth: Number(value.search_depth) || 0,
-    search_depths: Array.isArray(value.search_depths) ? value.search_depths.map(Number) : [],
-    model_name: typeof value.model_name === 'string' ? value.model_name : 'unknown',
-    model_dtype: typeof value.model_dtype === 'string' ? value.model_dtype : '',
-    source: typeof value.source === 'string' ? value.source : '',
-    decks,
   };
 }
 

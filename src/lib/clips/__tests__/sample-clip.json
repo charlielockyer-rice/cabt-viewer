@@ -30,7 +30,7 @@
     },
     {
       "kind": "position",
-      "replay": "gamebank:abc 123",
+      "replay": "run-7/game 2.json",
       "state": 2
     },
     {

@@ -1,15 +1,11 @@
 <script lang="ts">
   import ClipBrowser from './ClipBrowser.svelte';
-  import LadderArchiveBrowser from './LadderArchiveBrowser.svelte';
-  import SearchedGameBrowser from './SearchedGameBrowser.svelte';
   import type { ClipManifestEntry } from '../clips/clipFormat';
   import type { AgentOption, DeckOption, GameLogEntry } from '../home/catalog';
-  import type { LadderEpisode } from '../gameBank/ladderLibrary';
-  import type { SearchedGame } from '../gameBank/searchedGames';
   import type { PlayerControl } from '../game/httpClient';
 
   type HomeMode = 'play' | 'logs';
-  type LogSource = 'searched' | 'local' | 'ladder' | 'clips';
+  type LogSource = 'local' | 'clips';
 
   type Props = {
     homeMode: HomeMode;
@@ -30,14 +26,9 @@
     catalogBusy?: boolean;
     error?: string;
     catalogError?: string;
-    ladderSelectedDay?: string;
-    ladderSelectedEpisodeId?: string;
-    gameBankSelectedGameId?: string;
     setHomeMode: (mode: HomeMode) => void;
     startGame: () => void;
     loadGameLog: (log: GameLogEntry) => void;
-    loadLadderEpisode: (day: string, episode: LadderEpisode) => void;
-    loadSearchedGame: (game: SearchedGame) => void;
     loadClip: (entry: ClipManifestEntry) => void;
     refreshCatalog: () => void;
   };
@@ -61,19 +52,14 @@
     catalogBusy = false,
     error = '',
     catalogError = '',
-    ladderSelectedDay = '',
-    ladderSelectedEpisodeId = '',
-    gameBankSelectedGameId = '',
     setHomeMode,
     startGame,
     loadGameLog,
-    loadLadderEpisode,
-    loadSearchedGame,
     loadClip,
     refreshCatalog,
   }: Props = $props();
 
-  let logSource = $state<LogSource>('searched');
+  let logSource = $state<LogSource>('local');
   let startDisabled = $derived(
     busy
       || (player1Control === 'agent' && !player1AgentId)
@@ -233,24 +219,6 @@
         <button
           type="button"
           role="tab"
-          aria-selected={logSource === 'searched'}
-          class:active={logSource === 'searched'}
-          onclick={() => {
-            logSource = 'searched';
-          }}
-        >Searched games</button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={logSource === 'ladder'}
-          class:active={logSource === 'ladder'}
-          onclick={() => {
-            logSource = 'ladder';
-          }}
-        >Ladder archive</button>
-        <button
-          type="button"
-          role="tab"
           aria-selected={logSource === 'local'}
           class:active={logSource === 'local'}
           onclick={() => {
@@ -269,20 +237,7 @@
       </span>
     </div>
 
-    {#if logSource === 'searched'}
-      <SearchedGameBrowser
-        busy={busy}
-        initialSelectedGameId={gameBankSelectedGameId}
-        openGame={loadSearchedGame}
-      />
-    {:else if logSource === 'ladder'}
-      <LadderArchiveBrowser
-        busy={busy}
-        initialSelectedDay={ladderSelectedDay}
-        initialSelectedEpisodeId={ladderSelectedEpisodeId}
-        openEpisode={loadLadderEpisode}
-      />
-    {:else if logSource === 'clips'}
+    {#if logSource === 'clips'}
       <ClipBrowser busy={busy} openClip={loadClip} />
     {:else}
       <div class="local-log-toolbar">
@@ -365,7 +320,7 @@
 
   .source-tabs {
     display: inline-grid;
-    grid-template-columns: repeat(4, minmax(112px, 1fr));
+    grid-template-columns: repeat(2, minmax(112px, 1fr));
     gap: 4px;
     padding: 4px;
     border-radius: 8px;
