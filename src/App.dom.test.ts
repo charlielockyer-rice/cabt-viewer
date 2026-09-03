@@ -11,7 +11,11 @@ import { viewSettingsStore } from './state/viewSettings.svelte';
 // does not need them.
 vi.mock('./lib/home/catalog', () => ({
   loadAgentOptions: async () => [],
+  loadDeckOptions: async () => [],
   loadGameLogs: async () => [],
+  loadQuickPlayConfig: async () => {
+    throw new Error('quick play is not configured in this test');
+  },
 }));
 
 import App from './App.svelte';

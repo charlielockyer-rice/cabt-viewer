@@ -44,6 +44,26 @@ export async function loadAgentOptions(): Promise<AgentOption[]> {
   return agents.length ? agents : [FALLBACK_AGENT];
 }
 
+// The hosted quick-play matchup: one preconfigured bot and one deck per side,
+// re-rolled by the engine server on every call (CABT_QUICKPLAY_FILE).
+export type QuickPlayConfig = {
+  agent: AgentOption;
+  playerDeck: DeckOption;
+  botDeck: DeckOption;
+};
+
+export async function loadQuickPlayConfig(): Promise<QuickPlayConfig> {
+  const response = await fetch('/local-engine/quickplay');
+  const json = await response.json().catch(() => null);
+  if (!response.ok || !json?.ok) {
+    throw new Error(json?.error || `/local-engine/quickplay: ${response.status}`);
+  }
+  if (!json.agent?.id || !json.playerDeck?.deckUrl || !json.botDeck?.deckUrl) {
+    throw new Error('/local-engine/quickplay: expected { agent, playerDeck, botDeck }');
+  }
+  return { agent: json.agent, playerDeck: json.playerDeck, botDeck: json.botDeck };
+}
+
 export async function loadGameLogs(): Promise<GameLogEntry[]> {
   return loadJsonList<GameLogEntry>('/game-logs/logs.json', 'logs');
 }

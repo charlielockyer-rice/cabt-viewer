@@ -17,6 +17,7 @@
   import PromptGallery from './lib/components/prompt-gallery/PromptGallery.svelte';
   import PromptDock from './lib/components/prompts/PromptDock.svelte';
   import PromptHost from './lib/components/prompts/PromptHost.svelte';
+  import QuickPlayScreen from './lib/components/QuickPlayScreen.svelte';
   import ReplayTimeline from './lib/components/ReplayTimeline.svelte';
   import TableShell from './lib/components/TableShell.svelte';
   import ThinkingIndicator from './lib/components/ThinkingIndicator.svelte';
@@ -42,7 +43,16 @@
     stadiumOption,
   } from './lib/game/decisions';
   import { commitPick, observeDecision, pickTally, runProgress, type EffectRun } from './lib/game/effectSelector';
-  import { loadAgentOptions, loadDeckOptions, loadGameLogs, type AgentOption, type DeckOption, type GameLogEntry } from './lib/home/catalog';
+  import {
+    loadAgentOptions,
+    loadDeckOptions,
+    loadGameLogs,
+    loadQuickPlayConfig,
+    type AgentOption,
+    type DeckOption,
+    type GameLogEntry,
+    type QuickPlayConfig,
+  } from './lib/home/catalog';
   import type { ActionTimelineEvent, BoardSlotRef, DecisionOptionView, PokemonSlotView, PlayerView } from './lib/game/types';
   import { clipViewerUrl, type ClipManifestEntry } from './lib/clips/clipFormat';
   import { clipStore } from './state/clip.svelte';
@@ -55,14 +65,21 @@
   import { visualAssetsStore } from './state/visualAssets.svelte';
   import { zoneViewerStore } from './state/zoneViewer.svelte';
 
-  type HomeMode = 'play' | 'watch';
+  type HomeMode = 'play' | 'watch' | 'quick';
 
-  let showPromptGallery = initialSearchParam('view') === 'prompt-gallery';
-  const initialReplayMode = initialSearchParam('view') === 'replay';
+  // ?view=<name> picks the surface; a build with VITE_CABT_DEFAULT_VIEW set
+  // (the hosted quick-play build) uses it when the URL names nothing.
+  const initialView = initialSearchParam('view') || (import.meta.env?.VITE_CABT_DEFAULT_VIEW ?? '');
+  let showPromptGallery = initialView === 'prompt-gallery';
+  const initialReplayMode = initialView === 'replay';
   // ?view=clip&clip=<ref> opens a clip: an agent-authored tour whose positions
   // load into the same replay store the board already renders from.
-  const initialClipRef = initialSearchParam('view') === 'clip' ? initialSearchParam('clip') : '';
-  let homeMode = $state<HomeMode>(initialReplayMode || initialClipRef ? 'watch' : 'play');
+  const initialClipRef = initialView === 'clip' ? initialSearchParam('clip') : '';
+  // ?view=play is the hosted one-button game against a preconfigured bot.
+  const initialQuickPlay = initialView === 'play';
+  let homeMode = $state<HomeMode>(
+    initialQuickPlay ? 'quick' : initialReplayMode || initialClipRef ? 'watch' : 'play',
+  );
   let agents = $state<AgentOption[]>([]);
   let decks = $state<DeckOption[]>([]);
   let gameLogs = $state<GameLogEntry[]>([]);
@@ -78,10 +95,20 @@
   let player2DeckLoading = $state(false);
   let catalogBusy = $state(false);
   let catalogError = $state('');
+  // Quick play: the matchup currently in play, and the "Play again" round trip.
+  let quickConfig = $state<QuickPlayConfig | null>(null);
+  let quickStarting = $state(false);
+  // Why the last quick start failed; kept across the session reset that sends
+  // the player back to the quick-play screen.
+  let quickStartError = $state('');
   let savingReplay = $state(false);
   let saveReplayMessage = $state('');
   let saveReplayError = $state('');
   let replayMode = $derived(homeMode === 'watch' && !!replayStore.replay);
+  let quickMode = $derived(homeMode === 'quick');
+  // Leaving a game: back to the quick-play screen, the replay home, or the
+  // deck picker, depending on where the game came from.
+  let resetLabel = $derived(quickMode ? 'New game' : replayMode ? 'Exit replay' : 'Change decks');
   let clipMode = $derived(clipStore.active);
   let shellLoading = $derived(clipMode ? clipStore.loading || replayStore.loading : replayStore.loading);
   let shellLoadingTitle = $derived(shellLoading
@@ -315,7 +342,11 @@
   // over the bare seat name; the indicator falls back to "Player N" for agents
   // with no display name.
   let opponentAgentName = $derived(
-    topPlayer?.index === 0 ? selectedPlayer1Agent?.name : selectedPlayer2Agent?.name,
+    quickMode
+      ? quickConfig?.agent.name
+      : topPlayer?.index === 0
+        ? selectedPlayer1Agent?.name
+        : selectedPlayer2Agent?.name,
   );
   let winnerName = $derived(
     game?.winner === 0 || game?.winner === 1
@@ -349,28 +380,86 @@
     }
   });
 
-  async function startGame() {
-    if (!(await ensureSelectedDecksLoaded())) {
-      return;
-    }
+  type MatchControls = {
+    player1Control: PlayerControl;
+    player2Control: PlayerControl;
+    player1AgentId: string;
+    player2AgentId: string;
+  };
+
+  // The one path into a live match: the deck texts currently in the import
+  // store are parsed and handed to the engine under the given seat controls.
+  async function startMatch(controls: MatchControls) {
     const decks = deckImportStore.parseLocalGameDecks();
     if (!decks.ok) {
       gameStore.setError(decks.error);
-      return;
+      return false;
     }
 
     selectionStore.setSelectedHand(null);
     resetSaveReplayStatus();
     replayStore.clear();
-    homeMode = 'play';
-    await gameSessionStore.run(() =>
-      localGameApi.start(decks.player1Cards, decks.player2Cards, {
-        player1Control,
-        player2Control,
-        player1AgentId,
-        player2AgentId,
-      }),
+    const response = await gameSessionStore.run(
+      () => localGameApi.start(decks.player1Cards, decks.player2Cards, controls),
     );
+    return response.ok;
+  }
+
+  async function startGame() {
+    if (!(await ensureSelectedDecksLoaded())) {
+      return;
+    }
+    homeMode = 'play';
+    await startMatch({ player1Control, player2Control, player1AgentId, player2AgentId });
+  }
+
+  // Quick play: fetch the rolled decks, then start self vs the preconfigured
+  // bot. The quick-play screen stays up (never the deck picker) on failure.
+  async function startQuickGame(config: QuickPlayConfig) {
+    quickStarting = true;
+    catalogError = '';
+    quickStartError = '';
+    try {
+      quickConfig = config;
+      homeMode = 'quick';
+      const loaded = await Promise.all([
+        loadSelectedDeck(config.playerDeck.deckUrl, config.playerDeck.id, 0),
+        loadSelectedDeck(config.botDeck.deckUrl, config.botDeck.id, 1),
+      ]);
+      const started = loaded.every(Boolean) && await startMatch({
+        player1Control: 'self',
+        player2Control: 'agent',
+        player1AgentId: '',
+        player2AgentId: config.agent.id,
+      });
+      if (!started) {
+        // Back to the quick-play screen, which carries the reason.
+        quickStartError = gameStore.error || catalogError || 'Unable to start the game.';
+        gameSessionStore.reset();
+      }
+    } finally {
+      quickStarting = false;
+    }
+  }
+
+  // "Play again": a fresh matchup (the decks re-roll) straight from the end
+  // screen. A failed re-roll drops back to the quick-play screen, which
+  // reloads and shows the reason itself.
+  async function playAgain() {
+    quickStarting = true;
+    zoneViewerStore.close();
+    viewSettingsStore.resetView();
+    try {
+      const config = await loadQuickPlayConfig();
+      await startQuickGame(config);
+    } catch (failure) {
+      quickConfig = null;
+      quickStartError = failure instanceof Error ? failure.message : String(failure);
+      gameSessionStore.reset();
+      resetSaveReplayStatus();
+    } finally {
+      quickStarting = false;
+    }
   }
 
   async function refreshCatalog() {
@@ -905,11 +994,19 @@
         {/if}
       </div>
     </section>
+  {:else if !game && quickMode}
+    <AppHeader />
+
+      <QuickPlayScreen
+        busy={sessionBusy || quickStarting || player1DeckLoading || player2DeckLoading}
+        startError={quickStartError || catalogError || error}
+        startQuickGame={(config) => void startQuickGame(config)}
+      />
   {:else if !game}
     <AppHeader />
 
       <ImportScreen
-        {homeMode}
+        homeMode={homeMode === 'watch' ? 'watch' : 'play'}
         bind:deck1Text={deckImportStore.deck1Text}
         bind:deck2Text={deckImportStore.deck2Text}
         bind:player1Control
@@ -985,7 +1082,7 @@
           {switchSides}
           switchDisabled={!replayMode && actingPlayerIsSelf}
           {resetGame}
-          resetLabel={replayMode ? 'Exit replay' : 'Change decks'}
+          {resetLabel}
         />
       {/if}
 
@@ -1024,7 +1121,8 @@
         <EndGamePrompt
           resultLabel={gameResultLabel}
           turn={game.turn}
-          onconfirm={resetGame}
+          onconfirm={quickMode ? () => void playAgain() : resetGame}
+          confirmLabel={quickMode ? 'Play again' : 'Back to main screen'}
           onsave={() => void saveReplay()}
           saveDisabled={savingReplay || !!saveReplayMessage}
           saveMessage={saveReplayMessage}
@@ -1175,7 +1273,7 @@
       <div class="replay-loading-panel">
         <strong>Unable to start game</strong>
         <span>{labelFor(error || game.logs.at(-1)?.message || 'The engine returned an invalid pre-game state.')}</span>
-        <button type="button" onclick={resetGame}>Change decks</button>
+        <button type="button" onclick={resetGame}>{resetLabel}</button>
       </div>
     </section>
   {/if}

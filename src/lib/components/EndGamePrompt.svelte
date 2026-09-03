@@ -3,6 +3,7 @@
     resultLabel: string;
     turn: number;
     onconfirm: () => void;
+    confirmLabel?: string;
     onsave?: () => void;
     saveDisabled?: boolean;
     saveMessage?: string;
@@ -14,6 +15,7 @@
     resultLabel,
     turn,
     onconfirm,
+    confirmLabel = 'Back to main screen',
     onsave,
     saveDisabled = false,
     saveMessage = '',
@@ -35,7 +37,7 @@
           {saving ? 'Saving...' : saveMessage ? 'Saved' : 'Save match'}
         </button>
       {/if}
-      <button type="button" onclick={onconfirm}>Back to main screen</button>
+      <button type="button" onclick={onconfirm}>{confirmLabel}</button>
     </div>
     {#if saveMessage}
       <p class="save-status" role="status">{saveMessage}</p>
