@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import { LocalEngineController } from './localEngine';
+import { quickPlayMatchup } from './quickPlay';
 import { workspaceAgentDeckFile, workspaceAgentOptions } from './workspaceAgents';
 import { workspaceDeckCsvFile, workspaceDeckOptions } from './workspaceDecks';
 
@@ -84,6 +85,17 @@ const server = http.createServer(async (req, res) => {
     const csv = fs.readFileSync(deckFile, 'utf8');
     res.writeHead(200, { 'Content-Type': 'text/csv', 'Content-Length': Buffer.byteLength(csv) });
     res.end(csv);
+    return;
+  }
+
+  // The hosted quick-play matchup: preconfigured bot, decks re-rolled per call.
+  if (req.method === 'GET' && url.pathname === '/local-engine/quickplay') {
+    try {
+      const matchup = quickPlayMatchup();
+      writeJson(res, matchup.ok ? 200 : 404, matchup);
+    } catch (error) {
+      writeJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
     return;
   }
 
