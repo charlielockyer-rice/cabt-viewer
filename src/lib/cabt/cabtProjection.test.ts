@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { cabtObservationToGameView, projectDecision } from './cabtProjection';
 import type { CabtDataMaps } from './cabtProjection';
 import { CabtAreaType, CabtCardType, CabtOptionType, CabtSelectContext, CabtSelectType } from './types';
-import type { CabtObservation } from './types';
+import type { CabtObservation, CabtSelectData } from './types';
 
 describe('cabtObservationToGameView', () => {
   it('surfaces the global CABT stadium on the owning player view', () => {
@@ -752,6 +752,105 @@ describe('dedicated evolve select (product options: hand card × board target)',
     expect(decision?.options.every((option) => !option.label.includes('→'))).toBe(true);
     // The two-dimensional refs still project for the hand→target click flow.
     expect(decision?.options[0]?.boardTarget).toEqual({ ownerIndex: 0, slot: 'bench', index: 0 });
+  });
+});
+// A Buddy-Buddy Poffin style deck search: the engine hands over the WHOLE deck
+// and offers only the entries the effect can take.
+describe('deck search decisions', () => {
+  const dataMaps: CabtDataMaps = {
+    cardData: {
+      3: { cardId: 3, name: 'Basic {W} Energy', cardType: CabtCardType.BASIC_ENERGY, energyType: 3, set: 'SVE', setNumber: '3' },
+      722: { cardId: 722, name: 'Snover', cardType: CabtCardType.POKEMON, basic: true, hp: 60 },
+      901: { cardId: 901, name: 'Applin', cardType: CabtCardType.POKEMON, basic: true, hp: 70 },
+      902: { cardId: 902, name: 'Abomasnow', cardType: CabtCardType.POKEMON, stage1: true, hp: 120 },
+      1123: { cardId: 1123, name: 'Switch', cardType: CabtCardType.ITEM },
+      1200: { cardId: 1200, name: 'Iono', cardType: CabtCardType.SUPPORTER },
+    },
+    attacks: {},
+  };
+
+  // Deliberately NOT in reading order: this is the engine's real shuffle order.
+  const deck = [
+    { id: 3, serial: 61, playerIndex: 0 },
+    { id: 722, serial: 62, playerIndex: 0 },
+    { id: 1200, serial: 63, playerIndex: 0 },
+    { id: 902, serial: 64, playerIndex: 0 },
+    { id: 901, serial: 65, playerIndex: 0 },
+    { id: 1123, serial: 66, playerIndex: 0 },
+  ];
+
+  const deckSearchObservation = (
+    overrides: Partial<CabtSelectData> = {},
+  ) => ({
+    select: {
+      type: CabtSelectType.CARD,
+      context: CabtSelectContext.TO_BENCH,
+      minCount: 0,
+      maxCount: 2,
+      remainDamageCounter: 0,
+      remainEnergyCost: 0,
+      option: [
+        { type: CabtOptionType.CARD, area: CabtAreaType.DECK, index: 1 },
+        { type: CabtOptionType.CARD, area: CabtAreaType.DECK, index: 4 },
+      ],
+      deck,
+      contextCard: null,
+      effect: null,
+      ...overrides,
+    },
+    logs: [],
+    current: {
+      turn: 3,
+      turnActionCount: 0,
+      yourIndex: 0,
+      firstPlayer: 0,
+      supporterPlayed: false,
+      stadiumPlayed: false,
+      energyAttached: false,
+      retreated: false,
+      result: -1,
+      stadium: [],
+      looking: null,
+      players: [player(), player()],
+    },
+  } satisfies CabtObservation);
+
+  it('projects the whole deck in reading order with the legal picks carrying their option index', () => {
+    const decision = projectDecision(deckSearchObservation(), 1, dataMaps);
+
+    expect(decision?.deckCards?.map((item) => [item.card.name, item.optionIndex])).toEqual([
+      ['Applin', 1],
+      ['Snover', 0],
+      ['Abomasnow', undefined],
+      ['Iono', undefined],
+      ['Switch', undefined],
+      ['Basic {W} Energy', undefined],
+    ]);
+    // Exactly the two options, and each points at the card it selects.
+    expect(decision?.deckCards?.filter((item) => item.optionIndex !== undefined)).toHaveLength(2);
+    expect(decision?.options.map((option) => option.card?.name)).toEqual(['Snover', 'Applin']);
+  });
+
+  it('leaves deckCards absent when the select carries no deck', () => {
+    const decision = projectDecision(deckSearchObservation({ deck: null }), 1, dataMaps);
+
+    expect(decision?.deckCards).toBeUndefined();
+    expect(decision?.options).toHaveLength(2);
+  });
+
+  it('leaves deckCards absent when the options point somewhere other than the deck', () => {
+    const decision = projectDecision(
+      deckSearchObservation({
+        option: [
+          { type: CabtOptionType.CARD, area: CabtAreaType.HAND, index: 0, playerIndex: 0 },
+          { type: CabtOptionType.CARD, area: CabtAreaType.HAND, index: 1, playerIndex: 0 },
+        ],
+      }),
+      1,
+      dataMaps,
+    );
+
+    expect(decision?.deckCards).toBeUndefined();
   });
 });
 

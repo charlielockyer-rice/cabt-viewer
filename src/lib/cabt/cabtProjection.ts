@@ -1,4 +1,5 @@
 import { resolveCardImageUrl } from '../game/cardImages';
+import { sortByDeckOrder } from '../game/deckSort';
 import { classifyCard } from './cardClassify';
 import {
   SlotType,
@@ -7,6 +8,7 @@ import {
   type CardView,
   type DecisionOptionView,
   type DecisionView,
+  type DeckSearchCardView,
   type GameView,
   type LogView,
   type ActionTimelineEvent,
@@ -240,7 +242,43 @@ export function projectDecision(observation: CabtObservation, seq: number, dataM
         ? 'energy'
         : undefined,
     options: select.option.map((option, index) => projectOption(option, index, observation, dataMaps, seat)),
+    deckCards: projectDeckSearchCards(select, dataMaps),
   };
+}
+
+// A deck search: the engine sends the acting seat's WHOLE deck in
+// `select.deck` and offers only the entries the effect can take. Recognized
+// structurally (every option is a DECK-area card option), never by context —
+// TO_BENCH, TO_HAND, TO_FIELD and ATTACH_TO all arrive this way.
+function projectDeckSearchCards(
+  select: CabtSelectData,
+  dataMaps: CabtDataMaps,
+): DeckSearchCardView[] | undefined {
+  const deck = select.deck;
+  if (!deck?.length || !select.option.every(isDeckCardOption)) {
+    return undefined;
+  }
+  const optionIndexByDeckIndex = new Map<number, number>();
+  select.option.forEach((option, optionIndex) => {
+    if (typeof option.index === 'number' && !optionIndexByDeckIndex.has(option.index)) {
+      optionIndexByDeckIndex.set(option.index, optionIndex);
+    }
+  });
+  const cards = deck.map((card, deckIndex): DeckSearchCardView => {
+    const optionIndex = optionIndexByDeckIndex.get(deckIndex);
+    return optionIndex === undefined
+      ? { card: cabtCardToView(card, dataMaps) }
+      : { card: cabtCardToView(card, dataMaps), optionIndex };
+  });
+  // Sorting is the privacy boundary as much as the reading order: `deck`
+  // arrives in the engine's real shuffle order (see deckSort.ts).
+  return sortByDeckOrder(cards, (item) => item.card);
+}
+
+function isDeckCardOption(option: CabtOption): boolean {
+  return option.type === CabtOptionType.CARD
+    && option.area === CabtAreaType.DECK
+    && typeof option.index === 'number';
 }
 
 // The engine asks the non-mulliganing player how many extra cards to take —

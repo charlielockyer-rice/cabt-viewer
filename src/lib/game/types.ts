@@ -170,6 +170,14 @@ export type DecisionOptionView = {
   number?: number;
 };
 
+// One card of the acting seat's deck during a deck search. The engine sends
+// the WHOLE deck in `select.deck`; only the entries an option points at can be
+// taken, and `optionIndex` is that engine option index.
+export type DeckSearchCardView = {
+  card: CardView;
+  optionIndex?: number;
+};
+
 // The engine's current select, projected 1:1. This is the only interaction
 // contract: every affordance derives from `options`, and the one engine
 // command is `select {seq, indexes}`.
@@ -187,6 +195,10 @@ export type DecisionView = {
   // styling (damage counter chips vs energy pips), never card semantics.
   remainingKind?: 'damage' | 'energy';
   options: DecisionOptionView[];
+  // Deck searches only: the acting seat's whole deck in reading order, with
+  // the selectable entries carrying their option index. Absent for every other
+  // decision (a looked-at set, a replay decision with no deck payload).
+  deckCards?: DeckSearchCardView[];
 };
 
 export type SeatView = {
