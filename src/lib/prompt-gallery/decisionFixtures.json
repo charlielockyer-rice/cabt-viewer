@@ -471,5 +471,643 @@
         }
       ]
     }
+  },
+  {
+    "key": "choose-cards-deck-search",
+    "title": "choose-cards · Deck search (Buddy-Buddy Poffin)",
+    "decision": {
+      "seq": 9,
+      "seat": 0,
+      "kind": "choose-cards",
+      "message": "Choose Bench Pokemon",
+      "min": 0,
+      "max": 2,
+      "options": [
+        {
+          "index": 0,
+          "type": 3,
+          "area": 1,
+          "label": "Applin",
+          "card": {
+            "id": 2001,
+            "serial": 31,
+            "playerIndex": 0,
+            "name": "Applin",
+            "fullName": "Applin",
+            "superType": "Pokemon",
+            "stage": "Basic",
+            "hp": 70
+          }
+        },
+        {
+          "index": 1,
+          "type": 3,
+          "area": 1,
+          "label": "Snover",
+          "card": {
+            "id": 2003,
+            "serial": 19,
+            "playerIndex": 0,
+            "name": "Snover",
+            "fullName": "Snover",
+            "superType": "Pokemon",
+            "stage": "Basic",
+            "hp": 60
+          }
+        },
+        {
+          "index": 2,
+          "type": 3,
+          "area": 1,
+          "label": "Applin",
+          "card": {
+            "id": 2001,
+            "serial": 44,
+            "playerIndex": 0,
+            "name": "Applin",
+            "fullName": "Applin",
+            "superType": "Pokemon",
+            "stage": "Basic",
+            "hp": 70
+          }
+        },
+        {
+          "index": 3,
+          "type": 3,
+          "area": 1,
+          "label": "Applin",
+          "card": {
+            "id": 2001,
+            "serial": 12,
+            "playerIndex": 0,
+            "name": "Applin",
+            "fullName": "Applin",
+            "superType": "Pokemon",
+            "stage": "Basic",
+            "hp": 70
+          }
+        },
+        {
+          "index": 4,
+          "type": 3,
+          "area": 1,
+          "label": "Snover",
+          "card": {
+            "id": 2003,
+            "serial": 38,
+            "playerIndex": 0,
+            "name": "Snover",
+            "fullName": "Snover",
+            "superType": "Pokemon",
+            "stage": "Basic",
+            "hp": 60
+          }
+        },
+        {
+          "index": 5,
+          "type": 3,
+          "area": 1,
+          "label": "Applin",
+          "card": {
+            "id": 2001,
+            "serial": 27,
+            "playerIndex": 0,
+            "name": "Applin",
+            "fullName": "Applin",
+            "superType": "Pokemon",
+            "stage": "Basic",
+            "hp": 70
+          }
+        }
+      ],
+      "deckCards": [
+        {
+          "card": {
+            "id": 2001,
+            "serial": 31,
+            "playerIndex": 0,
+            "name": "Applin",
+            "fullName": "Applin",
+            "superType": "Pokemon",
+            "stage": "Basic",
+            "hp": 70
+          },
+          "optionIndex": 0
+        },
+        {
+          "card": {
+            "id": 2001,
+            "serial": 44,
+            "playerIndex": 0,
+            "name": "Applin",
+            "fullName": "Applin",
+            "superType": "Pokemon",
+            "stage": "Basic",
+            "hp": 70
+          },
+          "optionIndex": 2
+        },
+        {
+          "card": {
+            "id": 2001,
+            "serial": 12,
+            "playerIndex": 0,
+            "name": "Applin",
+            "fullName": "Applin",
+            "superType": "Pokemon",
+            "stage": "Basic",
+            "hp": 70
+          },
+          "optionIndex": 3
+        },
+        {
+          "card": {
+            "id": 2001,
+            "serial": 27,
+            "playerIndex": 0,
+            "name": "Applin",
+            "fullName": "Applin",
+            "superType": "Pokemon",
+            "stage": "Basic",
+            "hp": 70
+          },
+          "optionIndex": 5
+        },
+        {
+          "card": {
+            "id": 2002,
+            "serial": 50,
+            "playerIndex": 0,
+            "name": "Fezandipiti ex",
+            "fullName": "Fezandipiti ex",
+            "superType": "Pokemon",
+            "stage": "Basic",
+            "hp": 210
+          }
+        },
+        {
+          "card": {
+            "id": 2003,
+            "serial": 19,
+            "playerIndex": 0,
+            "name": "Snover",
+            "fullName": "Snover",
+            "superType": "Pokemon",
+            "stage": "Basic",
+            "hp": 60
+          },
+          "optionIndex": 1
+        },
+        {
+          "card": {
+            "id": 2003,
+            "serial": 38,
+            "playerIndex": 0,
+            "name": "Snover",
+            "fullName": "Snover",
+            "superType": "Pokemon",
+            "stage": "Basic",
+            "hp": 60
+          },
+          "optionIndex": 4
+        },
+        {
+          "card": {
+            "id": 2004,
+            "serial": 23,
+            "playerIndex": 0,
+            "name": "Squawkabilly ex",
+            "fullName": "Squawkabilly ex",
+            "superType": "Pokemon",
+            "stage": "Basic",
+            "hp": 180
+          }
+        },
+        {
+          "card": {
+            "id": 2005,
+            "serial": 41,
+            "playerIndex": 0,
+            "name": "Abomasnow",
+            "fullName": "Abomasnow",
+            "superType": "Pokemon",
+            "stage": "Stage 1",
+            "hp": 120
+          }
+        },
+        {
+          "card": {
+            "id": 2005,
+            "serial": 16,
+            "playerIndex": 0,
+            "name": "Abomasnow",
+            "fullName": "Abomasnow",
+            "superType": "Pokemon",
+            "stage": "Stage 1",
+            "hp": 120
+          }
+        },
+        {
+          "card": {
+            "id": 2006,
+            "serial": 29,
+            "playerIndex": 0,
+            "name": "Drakloak",
+            "fullName": "Drakloak",
+            "superType": "Pokemon",
+            "stage": "Stage 1",
+            "hp": 90
+          }
+        },
+        {
+          "card": {
+            "id": 2006,
+            "serial": 47,
+            "playerIndex": 0,
+            "name": "Drakloak",
+            "fullName": "Drakloak",
+            "superType": "Pokemon",
+            "stage": "Stage 1",
+            "hp": 90
+          }
+        },
+        {
+          "card": {
+            "id": 2007,
+            "serial": 10,
+            "playerIndex": 0,
+            "name": "Dragapult ex",
+            "fullName": "Dragapult ex",
+            "superType": "Pokemon",
+            "stage": "Stage 2",
+            "hp": 320
+          }
+        },
+        {
+          "card": {
+            "id": 2007,
+            "serial": 35,
+            "playerIndex": 0,
+            "name": "Dragapult ex",
+            "fullName": "Dragapult ex",
+            "superType": "Pokemon",
+            "stage": "Stage 2",
+            "hp": 320
+          }
+        },
+        {
+          "card": {
+            "id": 2008,
+            "serial": 22,
+            "playerIndex": 0,
+            "name": "Boss's Orders",
+            "fullName": "Boss's Orders",
+            "superType": "Trainer",
+            "trainerType": "Supporter"
+          }
+        },
+        {
+          "card": {
+            "id": 2008,
+            "serial": 48,
+            "playerIndex": 0,
+            "name": "Boss's Orders",
+            "fullName": "Boss's Orders",
+            "superType": "Trainer",
+            "trainerType": "Supporter"
+          }
+        },
+        {
+          "card": {
+            "id": 2009,
+            "serial": 14,
+            "playerIndex": 0,
+            "name": "Iono",
+            "fullName": "Iono",
+            "superType": "Trainer",
+            "trainerType": "Supporter"
+          }
+        },
+        {
+          "card": {
+            "id": 2009,
+            "serial": 33,
+            "playerIndex": 0,
+            "name": "Iono",
+            "fullName": "Iono",
+            "superType": "Trainer",
+            "trainerType": "Supporter"
+          }
+        },
+        {
+          "card": {
+            "id": 2009,
+            "serial": 26,
+            "playerIndex": 0,
+            "name": "Iono",
+            "fullName": "Iono",
+            "superType": "Trainer",
+            "trainerType": "Supporter"
+          }
+        },
+        {
+          "card": {
+            "id": 2010,
+            "serial": 45,
+            "playerIndex": 0,
+            "name": "Professor's Research",
+            "fullName": "Professor's Research",
+            "superType": "Trainer",
+            "trainerType": "Supporter"
+          }
+        },
+        {
+          "card": {
+            "id": 2010,
+            "serial": 18,
+            "playerIndex": 0,
+            "name": "Professor's Research",
+            "fullName": "Professor's Research",
+            "superType": "Trainer",
+            "trainerType": "Supporter"
+          }
+        },
+        {
+          "card": {
+            "id": 2011,
+            "serial": 37,
+            "playerIndex": 0,
+            "name": "Buddy-Buddy Poffin",
+            "fullName": "Buddy-Buddy Poffin",
+            "superType": "Trainer",
+            "trainerType": "Item"
+          }
+        },
+        {
+          "card": {
+            "id": 2011,
+            "serial": 11,
+            "playerIndex": 0,
+            "name": "Buddy-Buddy Poffin",
+            "fullName": "Buddy-Buddy Poffin",
+            "superType": "Trainer",
+            "trainerType": "Item"
+          }
+        },
+        {
+          "card": {
+            "id": 2012,
+            "serial": 30,
+            "playerIndex": 0,
+            "name": "Nest Ball",
+            "fullName": "Nest Ball",
+            "superType": "Trainer",
+            "trainerType": "Item"
+          }
+        },
+        {
+          "card": {
+            "id": 2012,
+            "serial": 49,
+            "playerIndex": 0,
+            "name": "Nest Ball",
+            "fullName": "Nest Ball",
+            "superType": "Trainer",
+            "trainerType": "Item"
+          }
+        },
+        {
+          "card": {
+            "id": 2012,
+            "serial": 21,
+            "playerIndex": 0,
+            "name": "Nest Ball",
+            "fullName": "Nest Ball",
+            "superType": "Trainer",
+            "trainerType": "Item"
+          }
+        },
+        {
+          "card": {
+            "id": 2013,
+            "serial": 40,
+            "playerIndex": 0,
+            "name": "Rare Candy",
+            "fullName": "Rare Candy",
+            "superType": "Trainer",
+            "trainerType": "Item"
+          }
+        },
+        {
+          "card": {
+            "id": 2013,
+            "serial": 15,
+            "playerIndex": 0,
+            "name": "Rare Candy",
+            "fullName": "Rare Candy",
+            "superType": "Trainer",
+            "trainerType": "Item"
+          }
+        },
+        {
+          "card": {
+            "id": 2013,
+            "serial": 34,
+            "playerIndex": 0,
+            "name": "Rare Candy",
+            "fullName": "Rare Candy",
+            "superType": "Trainer",
+            "trainerType": "Item"
+          }
+        },
+        {
+          "card": {
+            "id": 2014,
+            "serial": 25,
+            "playerIndex": 0,
+            "name": "Switch",
+            "fullName": "Switch",
+            "superType": "Trainer",
+            "trainerType": "Item"
+          }
+        },
+        {
+          "card": {
+            "id": 2014,
+            "serial": 43,
+            "playerIndex": 0,
+            "name": "Switch",
+            "fullName": "Switch",
+            "superType": "Trainer",
+            "trainerType": "Item"
+          }
+        },
+        {
+          "card": {
+            "id": 2015,
+            "serial": 13,
+            "playerIndex": 0,
+            "name": "Ultra Ball",
+            "fullName": "Ultra Ball",
+            "superType": "Trainer",
+            "trainerType": "Item"
+          }
+        },
+        {
+          "card": {
+            "id": 2015,
+            "serial": 32,
+            "playerIndex": 0,
+            "name": "Ultra Ball",
+            "fullName": "Ultra Ball",
+            "superType": "Trainer",
+            "trainerType": "Item"
+          }
+        },
+        {
+          "card": {
+            "id": 2015,
+            "serial": 20,
+            "playerIndex": 0,
+            "name": "Ultra Ball",
+            "fullName": "Ultra Ball",
+            "superType": "Trainer",
+            "trainerType": "Item"
+          }
+        },
+        {
+          "card": {
+            "id": 2015,
+            "serial": 39,
+            "playerIndex": 0,
+            "name": "Ultra Ball",
+            "fullName": "Ultra Ball",
+            "superType": "Trainer",
+            "trainerType": "Item"
+          }
+        },
+        {
+          "card": {
+            "id": 2016,
+            "serial": 28,
+            "playerIndex": 0,
+            "name": "Bravery Charm",
+            "fullName": "Bravery Charm",
+            "superType": "Trainer",
+            "trainerType": "Pokémon Tool"
+          }
+        },
+        {
+          "card": {
+            "id": 2016,
+            "serial": 46,
+            "playerIndex": 0,
+            "name": "Bravery Charm",
+            "fullName": "Bravery Charm",
+            "superType": "Trainer",
+            "trainerType": "Pokémon Tool"
+          }
+        },
+        {
+          "card": {
+            "id": 2017,
+            "serial": 17,
+            "playerIndex": 0,
+            "name": "Technical Machine: Evolution",
+            "fullName": "Technical Machine: Evolution",
+            "superType": "Trainer",
+            "trainerType": "Pokémon Tool"
+          }
+        },
+        {
+          "card": {
+            "id": 2018,
+            "serial": 36,
+            "playerIndex": 0,
+            "name": "Forest of Vitality",
+            "fullName": "Forest of Vitality",
+            "superType": "Trainer",
+            "trainerType": "Stadium"
+          }
+        },
+        {
+          "card": {
+            "id": 2018,
+            "serial": 24,
+            "playerIndex": 0,
+            "name": "Forest of Vitality",
+            "fullName": "Forest of Vitality",
+            "superType": "Trainer",
+            "trainerType": "Stadium"
+          }
+        },
+        {
+          "card": {
+            "id": 2019,
+            "serial": 42,
+            "playerIndex": 0,
+            "name": "Basic {P} Energy",
+            "fullName": "Basic {P} Energy",
+            "superType": "Energy",
+            "energyType": 5
+          }
+        },
+        {
+          "card": {
+            "id": 2020,
+            "serial": 51,
+            "playerIndex": 0,
+            "name": "Basic {W} Energy",
+            "fullName": "Basic {W} Energy",
+            "superType": "Energy",
+            "energyType": 3
+          }
+        },
+        {
+          "card": {
+            "id": 2020,
+            "serial": 52,
+            "playerIndex": 0,
+            "name": "Basic {W} Energy",
+            "fullName": "Basic {W} Energy",
+            "superType": "Energy",
+            "energyType": 3
+          }
+        },
+        {
+          "card": {
+            "id": 2020,
+            "serial": 53,
+            "playerIndex": 0,
+            "name": "Basic {W} Energy",
+            "fullName": "Basic {W} Energy",
+            "superType": "Energy",
+            "energyType": 3
+          }
+        },
+        {
+          "card": {
+            "id": 2020,
+            "serial": 54,
+            "playerIndex": 0,
+            "name": "Basic {W} Energy",
+            "fullName": "Basic {W} Energy",
+            "superType": "Energy",
+            "energyType": 3
+          }
+        },
+        {
+          "card": {
+            "id": 2021,
+            "serial": 55,
+            "playerIndex": 0,
+            "name": "Jet Energy",
+            "fullName": "Jet Energy",
+            "superType": "Energy",
+            "energyType": 0
+          }
+        }
+      ]
+    }
   }
 ]

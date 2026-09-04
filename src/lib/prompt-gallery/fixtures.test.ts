@@ -10,6 +10,15 @@ describe('prompt gallery fixtures', () => {
     expect(kinds.has('choose-option')).toBe(true);
   });
 
+  it('covers the deck-search layout: a whole deck with a few legal picks', () => {
+    const deckSearch = decisionDemos.find((demo) => demo.decision.deckCards);
+
+    expect(deckSearch?.decision.deckCards?.length).toBeGreaterThan(40);
+    const selectable = deckSearch?.decision.deckCards?.filter((item) => item.optionIndex !== undefined) ?? [];
+    expect(selectable.map((item) => item.optionIndex).sort((a, b) => (a ?? 0) - (b ?? 0)))
+      .toEqual(deckSearch?.decision.options.map((option) => option.index));
+  });
+
   it('captured decisions are well-formed', () => {
     for (const demo of decisionDemos) {
       expect(demo.decision.options.length).toBeGreaterThan(0);

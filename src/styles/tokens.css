@@ -8,6 +8,9 @@
   --radius-pill: 999px;
 
   --disabled-opacity: 0.32;
+  /* Cards shown for context only — the rest of the deck during a search:
+     readable, clearly not an affordance. */
+  --deck-faded-opacity: 0.42;
 
   --transition-fast: 140ms ease;
 

@@ -37,6 +37,19 @@
     background: var(--selection-bg);
   }
 
+  /* The card grid scrolls inside the panel: the title, the selected strip and
+     the actions stay put while the search body moves. A deck search stacks
+     two grids in this one scrolling region. */
+  :global(.search-card-scroll) {
+    display: grid;
+    gap: 12px;
+    align-content: start;
+    min-height: 0;
+    max-height: min(52vh, 560px);
+    overflow: auto;
+    padding: 10px 12px 14px;
+  }
+
   :global(.search-card-grid) {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(clamp(116px, 9vw, 142px), 1fr));
@@ -44,9 +57,6 @@
     align-content: start;
     align-items: start;
     min-height: 0;
-    max-height: min(52vh, 560px);
-    overflow: auto;
-    padding: 10px 12px 14px;
   }
 
   :global(.prize-prompt-grid) {
