@@ -85,7 +85,39 @@ card backs.
 
 Finished games can be saved to `public/game-logs`, where they appear under
 **Watch → Local logs**. Saved replays carry the concealed frames; the raw
-per-seat frames stay in the file's `rawVisualize` for analysis.
+per-seat frames stay in the file's `rawVisualize` for analysis. Quick play
+(below) has no save button: a hosted build is served from a snapshot that
+never sees the engine host's `public/game-logs`.
+
+### Engine server and sessions
+
+`src/engine/server.ts` (`npm run dev:engine`, `LOCAL_ENGINE_HOST`/`PORT`,
+default `127.0.0.1:8095`) hosts many games at once. `src/engine/sessions.ts`
+keeps one `LocalEngineController` — one Python bridge process, one engine
+battle — per game, keyed by a 128-bit random session id that the client sends
+with every command. The id is the only credential for a game.
+
+| Env | Default | Effect |
+|---|---|---|
+| `CABT_MAX_SESSIONS` | `6` | concurrent games; beyond it `startGame` answers `503 {"error": "The table is full — try again in a minute.", "full": true}` |
+| `CABT_SESSION_IDLE_MS` | `600000` | close a game that has had no request for this long |
+| `CABT_SESSION_FINISHED_MS` | `120000` | close a finished game this long after its last request |
+| `CABT_PUBLIC` | unset | `1` locks the server down for a public deployment (below) |
+
+A `startGame` that carries a session id closes that game first (that is
+"Play again"), SIGINT/SIGTERM close every bridge, and
+`GET /local-engine/health` reports `{"sessions": {"active", "max", "finished"}}`.
+Each bridge is a Python process holding the model, roughly 330 MiB for a 12M
+policy, so the cap is a memory budget. The bridge is spawned per game either
+way, so per-session bridges add no startup cost.
+
+With `CABT_PUBLIC=1`, `/local-engine/agents`, `/decks`, `/deck-csv/*`,
+`/agent-decks/*` and `/save-replay` answer 404, and every `startGame` ignores
+the client's decks and agent: the server builds the game from the quick-play
+matchup and reads the deck files itself. `GET /local-engine/quickplay` then
+carries `X-CABT-Public: 1`, which tells the client not to fetch decks. The
+picker-based Play tab does not work against a public server; only `?view=play`
+does.
 
 ### Quick play
 
@@ -99,17 +131,25 @@ every `GET /local-engine/quickplay`, so the decks re-roll each game:
 
 ```json
 {
-  "agentId": "copycat-v1-20m",
-  "playerDecks": ["dragapult-dusknoir", "raging-bolt-ogerpon"],
-  "botDecks": ["dragapult-dusknoir", "raging-bolt-ogerpon"]
+  "agentId": "v42-general-12m",
+  "playerDecks": ["dragapult-0903"],
+  "botDecks": ["dragapult-0903"],
+  "maxCardId": 1271
 }
 ```
 
 `agentId` names an agent from `CABT_AGENTS_FILE`; the deck ids name decks from
 `CABT_DECKS_FILE`. One deck is picked at random per side (a mirror is fine).
 A deck-locked agent — one with a paired `deck` and no `"anyDeck": true` — plays
-that deck instead, and `botDecks` is ignored. Anything unset, missing or
-misspelled answers 404 with the reason, which the quick-play screen shows.
+that deck instead, and `botDecks` is ignored. Optional `maxCardId` rejects any
+deck containing a higher card id — the guard for models whose card vocabulary
+stops before the engine's card pool. Anything unset, missing or misspelled
+answers 404 with the reason, which the quick-play screen shows.
+
+Deck-search prompts show the whole deck sorted (Pokemon by stage, then
+Trainers, then Energy); the selectable cards come first in full color and the
+rest are faded and inert. The sort is also the privacy boundary: the engine
+sends the deck in its real order.
 
 ## Card Images
 
