@@ -66,8 +66,8 @@ describe('hand and pile render stability (happy-dom)', () => {
     engine.sessionId = 'test-session';
     engine.playerControls = ['self', 'agent'];
     engine.decisionSeq = 1;
-    engine.dataMaps = { cardData: {}, attacks: {} };
-    engine.observation = {
+    engine.live.dataMaps = { cardData: {}, attacks: {} };
+    engine.live.observation = {
       select: {
         type: CabtSelectType.MAIN,
         context: 0,

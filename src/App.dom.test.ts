@@ -82,8 +82,8 @@ describe('App board click path (happy-dom)', () => {
     engine.sessionId = 'test-session';
     engine.playerControls = ['self', 'agent'];
     engine.decisionSeq = 1;
-    engine.dataMaps = { cardData: {}, attacks: {} };
-    engine.observation = { select: placementSelect(remaining), logs: [], current: placementState() };
+    engine.live.dataMaps = { cardData: {}, attacks: {} };
+    engine.live.observation = { select: placementSelect(remaining), logs: [], current: placementState() };
     engine.bridge = {
       request: async ({ selection }: { selection: number[] }) => {
         bridgeSelections.push(selection);
@@ -243,14 +243,14 @@ describe('App board click path (happy-dom)', () => {
     engine.sessionId = 'test-session';
     engine.playerControls = ['self', 'agent'];
     engine.decisionSeq = 1;
-    engine.dataMaps = {
+    engine.live.dataMaps = {
       cardData: {
         900: { cardId: 900, name: 'Dragapult ex', cardType: 0, stage2: true, hp: 320 },
         800: { cardId: 800, name: 'Drakloak', cardType: 0, stage1: true, hp: 90 },
       },
       attacks: {},
     };
-    engine.observation = { select: evolveSelect, logs: [], current: evolveState() };
+    engine.live.observation = { select: evolveSelect, logs: [], current: evolveState() };
     engine.bridge = {
       request: async ({ selection }: { selection: number[] }) => {
         bridgeSelections.push(selection);

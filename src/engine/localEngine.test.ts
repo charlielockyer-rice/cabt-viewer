@@ -72,8 +72,8 @@ describe('LocalEngineController', () => {
     engine.playerControls = ['self', 'agent'];
     engine.replayPlayerLabels = ['Charlie', 'Copycat'];
     engine.decisionSeq = 3;
-    engine.dataMaps = { cardData: {}, attacks: {} };
-    engine.observation = {
+    engine.live.dataMaps = { cardData: {}, attacks: {} };
+    engine.live.observation = {
       select: yesNoSelect(),
       logs: [],
       current: currentState(),
@@ -102,8 +102,8 @@ describe('LocalEngineController', () => {
     let bridgeCalled = false;
     engine.sessionId = 'test-session';
     engine.decisionSeq = 5;
-    engine.dataMaps = { cardData: {}, attacks: {} };
-    engine.observation = { select: yesNoSelect(), logs: [], current: currentState() };
+    engine.live.dataMaps = { cardData: {}, attacks: {} };
+    engine.live.observation = { select: yesNoSelect(), logs: [], current: currentState() };
     engine.bridge = {
       request: async () => {
         bridgeCalled = true;
@@ -126,8 +126,8 @@ describe('LocalEngineController', () => {
     const engine = new LocalEngineController() as any;
     engine.sessionId = 'test-session';
     engine.decisionSeq = 1;
-    engine.dataMaps = { cardData: {}, attacks: {} };
-    engine.observation = { select: yesNoSelect(), logs: [], current: currentState() };
+    engine.live.dataMaps = { cardData: {}, attacks: {} };
+    engine.live.observation = { select: yesNoSelect(), logs: [], current: currentState() };
     engine.bridge = { request: async () => ({ ok: true, observation: null }) };
 
     const empty = await engine.handle({
@@ -154,8 +154,8 @@ describe('LocalEngineController', () => {
     const selections: number[][] = [];
     engine.sessionId = 'test-session';
     engine.decisionSeq = 1;
-    engine.dataMaps = { cardData: {}, attacks: {} };
-    engine.observation = { select: yesNoSelect(), logs: [], current: currentState() };
+    engine.live.dataMaps = { cardData: {}, attacks: {} };
+    engine.live.observation = { select: yesNoSelect(), logs: [], current: currentState() };
     engine.bridge = {
       request: async ({ selection }: { selection: number[] }) => {
         selections.push(selection);
@@ -245,8 +245,8 @@ describe('LocalEngineController', () => {
         playerState({ hand: null, handCount: 4, active: [{ id: 20, serial: 6, hp: 70, maxHp: 70 }] }),
       ],
     });
-    engine.observation = { select: null, logs: [], current: preState };
-    engine.dataMaps = { cardData: {}, attacks: {} };
+    engine.live.observation = { select: null, logs: [], current: preState };
+    engine.live.dataMaps = { cardData: {}, attacks: {} };
 
     engine.applyBridgeResponse({
       ok: true,
@@ -317,8 +317,8 @@ describe('LocalEngineController', () => {
         playerState({ hand: null, handCount: 4, active: [{ id: 20, serial: 6, hp: 70, maxHp: 70 }] }),
       ],
     });
-    engine.observation = { select: null, logs: [], current: preState };
-    engine.dataMaps = { cardData: {}, attacks: {} };
+    engine.live.observation = { select: null, logs: [], current: preState };
+    engine.live.dataMaps = { cardData: {}, attacks: {} };
 
     engine.applyBridgeResponse({
       ok: true,
@@ -368,8 +368,8 @@ describe('LocalEngineController', () => {
         playerState({ hand: null, handCount: 4, active: [{ id: 20, serial: 6, hp: 70, maxHp: 70 }] }),
       ],
     });
-    engine.observation = { select: null, logs: [], current: preState };
-    engine.dataMaps = { cardData: {}, attacks: {} };
+    engine.live.observation = { select: null, logs: [], current: preState };
+    engine.live.dataMaps = { cardData: {}, attacks: {} };
 
     engine.applyBridgeResponse({
       ok: true,
@@ -425,8 +425,8 @@ describe('LocalEngineController', () => {
         playerState({ hand: null, handCount: 4, active: [{ id: 20, serial: 6, hp: 70, maxHp: 70 }] }),
       ],
     });
-    engine.observation = { select: null, logs: [], current: preState };
-    engine.dataMaps = { cardData: {}, attacks: {} };
+    engine.live.observation = { select: null, logs: [], current: preState };
+    engine.live.dataMaps = { cardData: {}, attacks: {} };
 
     engine.applyBridgeResponse({
       ok: true,
@@ -498,8 +498,8 @@ describe('LocalEngineController', () => {
     engine.sessionId = 'test-session';
     engine.playerControls = ['self', 'agent'];
     engine.decisionSeq = 1;
-    engine.dataMaps = { cardData: {}, attacks: {} };
-    engine.observation = { select: placementSelect(remaining), logs: [], current: placementState() };
+    engine.live.dataMaps = { cardData: {}, attacks: {} };
+    engine.live.observation = { select: placementSelect(remaining), logs: [], current: placementState() };
     engine.bridge = {
       request: async ({ selection }: { selection: number[] }) => {
         selections.push(selection);
