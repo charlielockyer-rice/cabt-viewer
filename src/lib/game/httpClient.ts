@@ -24,7 +24,7 @@ export type SaveReplayResponse = {
 let currentSessionId = '';
 
 async function send(command: Command): Promise<EngineResponse> {
-  const commandWithSession = command.type === 'startGame' || !currentSessionId
+  const commandWithSession = !currentSessionId
     ? command
     : {
         ...command,
@@ -87,7 +87,7 @@ export const localGameApi = {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: '{}',
+      body: JSON.stringify({ sessionId: currentSessionId }),
     });
     return await response.json() as SaveReplayResponse;
   },
