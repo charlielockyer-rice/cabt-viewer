@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
@@ -443,7 +444,7 @@ function bridgeProcessCommand(): { command: string; args: string[] } {
 }
 
 function createSessionId(): string {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return randomBytes(16).toString('hex');
 }
 
 function normalizePlayerControls(payload: any): [PlayerControl, PlayerControl] {
