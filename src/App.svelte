@@ -1118,15 +1118,18 @@
       {/if}
 
       {#if gameFinished && !replayMode}
+        <!-- Quick play (the hosted friends site) is Start -> game -> Play
+             again; saving writes into the engine host's checkout, which the
+             hosted static snapshot never serves, so the button is dev-only. -->
         <EndGamePrompt
           resultLabel={gameResultLabel}
           turn={game.turn}
           onconfirm={quickMode ? () => void playAgain() : resetGame}
           confirmLabel={quickMode ? 'Play again' : 'Back to main screen'}
-          onsave={() => void saveReplay()}
+          onsave={quickMode ? undefined : () => void saveReplay()}
           saveDisabled={savingReplay || !!saveReplayMessage}
-          saveMessage={saveReplayMessage}
-          saveError={saveReplayError}
+          saveMessage={quickMode ? '' : saveReplayMessage}
+          saveError={quickMode ? '' : saveReplayError}
           saving={savingReplay}
         />
       {/if}
