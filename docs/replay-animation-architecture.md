@@ -23,6 +23,39 @@ board state.
 Replay steps expose animation phases as `{ key, view, actionTimeline,
 durationMs }`.
 
+### The mulligan beat
+
+One phase is not a straight read of the event stream. The engine resolves a
+player's ENTIRE mulligan sequence inside a single observation: `HasBasicPokemon
+false`, seven HAND→DECK returns, a `Shuffle`, seven `Draw`s, repeated until a
+Basic turns up — 19 cycles in one recorded game, 272 events when both players
+mulligan. Animated cycle by cycle that is a minute of shuffling, and worse: for
+a player's OWN mulligans every intermediate "drew 7" deals the *final* hand,
+because the settled observation is the only hand that exists.
+
+`animationEventPhases` therefore folds a player's whole run into one
+`Mulligan:<player>` beat, including the opening draw that failed (the player
+never keeps that hand, so it is not its own beat). The beat's timeline is
+exactly one return set, one `Shuffle`, one draw set and one synthesized
+`Ability` announce; `mulliganBeat` rewrites the return set against the beat's
+own pre-state hand in `groupedStepAnimationPhases`, so each sprite launches from
+a hand slot that is really rendered — face-down for a concealed opponent, whose
+tracked hand is placeholders. The announce carries `slotAnnounce`, which anchors
+its bubble to the player's Active slot: during setup there may be nothing in
+play at all, and the hand is about to be empty.
+
+Rules of the beat:
+
+- One beat per player per batch, in the order the engine resolved them.
+- `durationMs` is return + shuffle + deal; the cycles it drops are net-neutral
+  on hand and deck, so the running phase-start view stays exact.
+- The label counts the Basic checks that failed in the batch — `Player 1
+  mulliganed ×18`, plus `— opponent may draw up to 18` when it is the seat the
+  human is playing. A mulligan the engine SPLIT across observations (the
+  opponent acted in between) resolves as its own beat and says `redrew their
+  opening hand` rather than re-counting a failure the previous beat announced.
+- Replay and live share the splitter, so a recorded game plays the same beat.
+
 The render layers receive the phase timeline and players, then call
 `choreograph(events, players, context)`. `choreograph` is a pure classifier: it
 does not read the DOM or mutate state. It returns card sprites and target-owned
@@ -178,8 +211,9 @@ sprite.
 
 Live play shares the entire pipeline — choreographer, anchors, visibility,
 renderers — **and the same phase / pre-state builder as replay**. A live engine
-response is a batch of newly settled logs; `LocalEngineController.appendSteps`
-event-sources both hands (`LiveObservationNormalizer`), synthesizes the ability
+response is a batch of newly settled logs; `buildLiveSteps` (liveSteps.ts, which
+`LocalEngineController.appendSteps` delegates to) event-sources both hands and
+conceals the agent seat (`LiveObservationNormalizer`), synthesizes the ability
 announces the engine never logs (`logsWithSynthesizedAnnounce`, the twin of
 replay's `logsWithSynthesizedAbility`), and then builds each step through the
 **same** `stepAnimationPhases` / `projectedViewForEvents` machinery replay uses.

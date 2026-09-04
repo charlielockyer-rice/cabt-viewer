@@ -72,8 +72,20 @@ paired deck a default rather than a lock; before battle start the bridge calls
 the module's optional `set_deck(deck, seat)` hook with the seat's actual 60
 cards. Missing manifests just mean no extra agents or decks.
 
+When you play against an agent the engine server conceals the agent seat; the
+browser only receives the human seat's encoding. CABT delivers every event to
+both seats — to its owner card-first, to the opponent face-down — so the server
+replaces each of the agent's log lines with the human's own delivery of the same
+event, and strips the agent's hand, looks and prompt from the observation before
+projecting it. Nothing is hand-written, so context-dependent reveals land right:
+a mulliganed hand and an Ultra Ball search stay named, a Recon Directive look
+does not. The same substitution runs the other way — a Judge the agent plays
+redraws your hand mid-turn, and you see your real cards immediately instead of
+card backs.
+
 Finished games can be saved to `public/game-logs`, where they appear under
-**Watch → Local logs**.
+**Watch → Local logs**. Saved replays carry the concealed frames; the raw
+per-seat frames stay in the file's `rawVisualize` for analysis.
 
 ### Quick play
 
