@@ -50,6 +50,7 @@ export type QuickPlayConfig = {
   agent: AgentOption;
   playerDeck: DeckOption;
   botDeck: DeckOption;
+  public?: boolean;
 };
 
 export async function loadQuickPlayConfig(): Promise<QuickPlayConfig> {
@@ -61,7 +62,12 @@ export async function loadQuickPlayConfig(): Promise<QuickPlayConfig> {
   if (!json.agent?.id || !json.playerDeck?.deckUrl || !json.botDeck?.deckUrl) {
     throw new Error('/local-engine/quickplay: expected { agent, playerDeck, botDeck }');
   }
-  return { agent: json.agent, playerDeck: json.playerDeck, botDeck: json.botDeck };
+  return {
+    agent: json.agent,
+    playerDeck: json.playerDeck,
+    botDeck: json.botDeck,
+    ...(response.headers?.get('X-CABT-Public') === '1' ? { public: true } : {}),
+  };
 }
 
 export async function loadGameLogs(): Promise<GameLogEntry[]> {

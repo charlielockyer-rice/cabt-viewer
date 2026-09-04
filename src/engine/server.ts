@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import { LocalEngineController } from './localEngine';
+import { publicModeBlocks, publicModeEnabled, publicQuickPlayPayload } from './publicMode';
 import { quickPlayMatchup } from './quickPlay';
 import { SessionManager } from './sessions';
 import { workspaceAgentDeckFile, workspaceAgentOptions } from './workspaceAgents';
@@ -8,6 +9,7 @@ import { workspaceDeckCsvFile, workspaceDeckOptions } from './workspaceDecks';
 
 const port = Number(process.env.LOCAL_ENGINE_PORT ?? 8095);
 const host = process.env.LOCAL_ENGINE_HOST ?? '127.0.0.1';
+const publicMode = publicModeEnabled();
 const sessions = new SessionManager(() => new LocalEngineController());
 
 function readBody(req: http.IncomingMessage, maxBytes = 1_000_000): Promise<string> {
@@ -26,17 +28,28 @@ function readBody(req: http.IncomingMessage, maxBytes = 1_000_000): Promise<stri
   });
 }
 
-function writeJson(res: http.ServerResponse, status: number, body: unknown): void {
+function writeJson(
+  res: http.ServerResponse,
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {},
+): void {
   const json = JSON.stringify(body);
   res.writeHead(status, {
     'Content-Type': 'application/json',
     'Content-Length': Buffer.byteLength(json),
+    ...headers,
   });
   res.end(json);
 }
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://localhost');
+
+  if (publicMode && publicModeBlocks(url.pathname)) {
+    writeJson(res, 404, { ok: false, error: 'Not found' });
+    return;
+  }
 
   if (req.method === 'GET' && url.pathname === '/local-engine/health') {
     writeJson(res, 200, { ok: true, sessions: sessions.stats() });
@@ -93,7 +106,12 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && url.pathname === '/local-engine/quickplay') {
     try {
       const matchup = quickPlayMatchup();
-      writeJson(res, matchup.ok ? 200 : 404, matchup);
+      writeJson(
+        res,
+        matchup.ok ? 200 : 404,
+        matchup,
+        publicMode ? { 'X-CABT-Public': '1' } : {},
+      );
     } catch (error) {
       writeJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) });
     }
@@ -123,10 +141,14 @@ const server = http.createServer(async (req, res) => {
   try {
     const raw = await readBody(req);
     const command = raw ? JSON.parse(raw) : { type: 'state' };
-    const response = command.type === 'startGame'
-      ? await sessions.startGame(command.payload)
-      : await sessions.handle(command);
-    writeJson(res, response.ok ? 200 : response.full ? 503 : 400, response);
+    let response;
+    if (command.type === 'startGame') {
+      const start = publicMode ? publicQuickPlayPayload(command.payload) : { ok: true as const, payload: command.payload };
+      response = start.ok ? await sessions.startGame(start.payload) : start;
+    } else {
+      response = await sessions.handle(command);
+    }
+    writeJson(res, response.ok ? 200 : 'full' in response && response.full ? 503 : 400, response);
   } catch (error) {
     writeJson(res, 400, {
       ok: false,

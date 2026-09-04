@@ -422,16 +422,18 @@
     try {
       quickConfig = config;
       homeMode = 'quick';
-      const loaded = await Promise.all([
-        loadSelectedDeck(config.playerDeck.deckUrl, config.playerDeck.id, 0),
-        loadSelectedDeck(config.botDeck.deckUrl, config.botDeck.id, 1),
-      ]);
-      const started = loaded.every(Boolean) && await startMatch({
+      const controls = {
         player1Control: 'self',
         player2Control: 'agent',
         player1AgentId: '',
         player2AgentId: config.agent.id,
-      });
+      } as const;
+      const started = config.public
+        ? (await gameSessionStore.run(() => localGameApi.start([], [], controls))).ok
+        : (await Promise.all([
+            loadSelectedDeck(config.playerDeck.deckUrl, config.playerDeck.id, 0),
+            loadSelectedDeck(config.botDeck.deckUrl, config.botDeck.id, 1),
+          ])).every(Boolean) && await startMatch(controls);
       if (!started) {
         // Back to the quick-play screen, which carries the reason.
         quickStartError = gameStore.error || catalogError || 'Unable to start the game.';
