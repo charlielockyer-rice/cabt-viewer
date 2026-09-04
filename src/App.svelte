@@ -396,11 +396,17 @@
       return false;
     }
 
+    return await startEngineGame(decks.player1Cards, decks.player2Cards, controls);
+  }
+
+  // Every engine start goes through here so the board-side state that belongs
+  // to the previous game is cleared the same way on all paths.
+  async function startEngineGame(player1Cards: string[], player2Cards: string[], controls: MatchControls) {
     selectionStore.setSelectedHand(null);
     resetSaveReplayStatus();
     replayStore.clear();
     const response = await gameSessionStore.run(
-      () => localGameApi.start(decks.player1Cards, decks.player2Cards, controls),
+      () => localGameApi.start(player1Cards, player2Cards, controls),
     );
     return response.ok;
   }
@@ -428,8 +434,10 @@
         player1AgentId: '',
         player2AgentId: config.agent.id,
       } as const;
+      // Public engine: the server picks both decks itself, and the deck
+      // routes are locked, so nothing is fetched client-side.
       const started = config.public
-        ? (await gameSessionStore.run(() => localGameApi.start([], [], controls))).ok
+        ? await startEngineGame([], [], controls)
         : (await Promise.all([
             loadSelectedDeck(config.playerDeck.deckUrl, config.playerDeck.id, 0),
             loadSelectedDeck(config.botDeck.deckUrl, config.botDeck.id, 1),
