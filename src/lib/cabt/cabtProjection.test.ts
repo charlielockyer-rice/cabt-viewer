@@ -401,7 +401,7 @@ describe('cabtObservationToGameView', () => {
     ]);
   });
 
-  it('labels CABT draw-count prompts with numeric choices', () => {
+  it('names the mulligan behind a CABT draw-count prompt, keeping the option labels', () => {
     const observation = {
       select: {
         type: CabtSelectType.COUNT,
@@ -441,7 +441,7 @@ describe('cabtObservationToGameView', () => {
     const decision = projectDecision(observation, 1, { cardData: {}, attacks: {} });
 
     expect(decision?.kind).toBe('choose-option');
-    expect(decision?.message).toBe('Choose cards to draw');
+    expect(decision?.message).toBe('Opponent mulliganed — draw up to 2 extra cards');
     expect(decision?.options.map((option) => option.label)).toEqual(['Draw 1', 'Draw 2']);
   });
 

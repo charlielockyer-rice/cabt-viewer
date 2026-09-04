@@ -1079,7 +1079,7 @@ function drawGroupLabel(events: ActionTimelineEvent[]): string {
     if (!samePlayer || playerIndex === undefined) {
       return 'Players redrew opening hands.';
     }
-    return `Player ${playerIndex + 1} redrew their opening hand.`;
+    return mulliganLabel(playerIndex, failedBasicChecks(events, playerIndex));
   }
   if (isOpeningHandGroup(events)) {
     if (!samePlayer || playerIndex === undefined) {
@@ -1139,7 +1139,7 @@ function moveCardGroupLabel(events: ActionTimelineEvent[], turn: number): string
   ) {
     if (turn === 0) {
       if (events.some((event) => event.kind === 'Draw')) {
-        return `Player ${playerIndex + 1} redrew their opening hand.`;
+        return mulliganLabel(playerIndex, failedBasicChecks(events, playerIndex));
       }
       return `Player ${playerIndex + 1} shuffled their opening hand into their deck.`;
     }
@@ -1370,7 +1370,12 @@ function groupedStepAnimationPhases(
 
   let phaseStartView = projectedViewForEvents(previousView, currentView, groups.slice(0, groupIndex).flatMap((item) => item.events));
   const phases: ReplayAnimationPhase[] = [];
-  for (const phase of eventPhases) {
+  for (const splitPhase of eventPhases) {
+    // A mulligan beat's return set is the hand as it stands right now, so it is
+    // resolved here rather than at split time.
+    const phase = splitPhase.key.startsWith('Mulligan:')
+      ? mulliganBeat(splitPhase, phaseStartView)
+      : splitPhase;
     // Cards dumped from hand land on top of the discard, so the pile keeps
     // showing its previous top card while the sprites are in flight.
     const handToDiscardPhase = phase.key.startsWith('HandMove:') && phase.key.endsWith(`:${CabtAreaType.DISCARD}`);
@@ -1384,14 +1389,14 @@ function groupedStepAnimationPhases(
     // handler copies the end-state bench, flashing the incoming Pokemon during
     // the attach phase before the deck-placement phase animates them in. Strip
     // both the future attachments and the future board arrivals of this step.
-    const futureEvents = eventPhases.slice(eventPhases.indexOf(phase) + 1).flatMap((later) => later.events);
+    const futureEvents = eventPhases.slice(eventPhases.indexOf(splitPhase) + 1).flatMap((later) => later.events);
     const phaseView = gameViewWithDeferredBoardArrivals(
       gameViewWithDeferredAttachments(projectedView, futureEvents),
       futureEvents,
     );
     phases.push({
       key: phase.key,
-      label: animationPhaseLabel(phase),
+      label: animationPhaseLabel(phase, currentView),
       view: {
         ...phaseView,
         actionTimeline: phase.events,
@@ -1404,16 +1409,217 @@ function groupedStepAnimationPhases(
   return phases;
 }
 
+// The engine resolves a player's ENTIRE mulligan sequence inside one
+// observation: `HasBasicPokemon false`, seven HAND->DECK returns, a Shuffle,
+// seven Draws — repeated until a Basic turns up (38 cycles is a real game).
+// Animated cycle by cycle that is a minute of shuffling, and for the player's
+// own mulligans every intermediate "drew 7" shows the FINAL hand, because the
+// settled hand is the only one that exists. So the whole run is ONE beat:
+// return the hand, shuffle, deal the hand they actually keep.
+type MulliganRun = {
+  playerIndex: number;
+  // Failed Basic checks in this batch — the "×K" the beat announces.
+  count: number;
+  events: Set<ActionTimelineEvent>;
+  first: ActionTimelineEvent;
+};
+
+// Synthetic beat events take negative ids (the timeline's own are positive) so
+// they can never collide, strided by the run's first event id so two players
+// mulliganing in one batch stay disjoint.
+const MULLIGAN_ID_STRIDE = 64;
+
+function isFailedBasicCheck(event: ActionTimelineEvent): boolean {
+  return event.kind === 'HasBasicPokemon'
+    && (event.params as Record<string, unknown> | undefined)?.hasBasicPokemon === false;
+}
+
+function isDrawKind(event: ActionTimelineEvent): boolean {
+  return event.kind === 'Draw' || event.kind === 'DrawReverse';
+}
+
+// The vocabulary a mulligan cycle is made of. A player's run extends over their
+// own consecutive events of these kinds around a failed Basic check — so the
+// opening draw that failed is part of the beat (the player never keeps that
+// hand), while their setup Active placement and Prize setting are not.
+function isMulliganCycleEvent(event: ActionTimelineEvent): boolean {
+  return event.kind === 'HasBasicPokemon'
+    || event.kind === 'Shuffle'
+    || isDrawKind(event)
+    || isHandToDeckMove(event);
+}
+
+function mulliganRuns(events: ActionTimelineEvent[]): MulliganRun[] {
+  const players = [...new Set(events
+    .filter((event) => event.kind === 'HasBasicPokemon')
+    .map((event) => event.playerIndex)
+    .filter((playerIndex): playerIndex is number => playerIndex !== undefined))];
+  const runs: MulliganRun[] = [];
+  for (const playerIndex of players) {
+    const own = events.filter((event) => event.playerIndex === playerIndex);
+    const seed = own.findIndex((event) => event.kind === 'HasBasicPokemon');
+    let from = seed;
+    while (from > 0 && isMulliganCycleEvent(own[from - 1])) {
+      from -= 1;
+    }
+    let to = seed;
+    while (to + 1 < own.length && isMulliganCycleEvent(own[to + 1])) {
+      to += 1;
+    }
+    const run = own.slice(from, to + 1);
+    // A Basic check alone is just the opening hand being accepted. It is a
+    // mulligan run only if the hand was rejected here, or if a rejection from
+    // the PREVIOUS observation is being resolved here (the engine splits a
+    // mulligan across observations when the opponent acts in between) — that
+    // shows up as the returns.
+    if (!run.some(isFailedBasicCheck) && !run.some(isHandToDeckMove)) {
+      continue;
+    }
+    runs.push({
+      playerIndex,
+      count: run.filter(isFailedBasicCheck).length,
+      events: new Set(run),
+      first: run[0],
+    });
+  }
+  // Both players mulliganing in one batch animate in the order the engine
+  // resolved them, which is player order.
+  return runs.sort((left, right) => events.indexOf(left.first) - events.indexOf(right.first));
+}
+
+// The split-time shell: one return set, one shuffle, one deal. The returns are
+// rewritten against the beat's own pre-state hand in groupedStepAnimationPhases
+// (that is where the hand is known), so the sprites fly from real hand slots —
+// face-down ones for a concealed opponent.
+function mulliganPhaseShell(run: MulliganRun): AnimationEventPhase {
+  const events = [...run.events];
+  const shuffle = events.find((event) => event.kind === 'Shuffle');
+  const draws = lastConsecutive(events, isDrawKind);
+  return {
+    key: `Mulligan:${run.playerIndex}`,
+    events: [...firstConsecutive(events, isHandToDeckMove), ...(shuffle ? [shuffle] : []), ...draws],
+    durationMs: 0,
+    usesSourceView: false,
+    mulliganCount: run.count,
+  };
+}
+
+function firstConsecutive(
+  events: ActionTimelineEvent[],
+  matches: (event: ActionTimelineEvent) => boolean,
+): ActionTimelineEvent[] {
+  const start = events.findIndex(matches);
+  if (start < 0) {
+    return [];
+  }
+  let end = start;
+  while (end + 1 < events.length && matches(events[end + 1])) {
+    end += 1;
+  }
+  return events.slice(start, end + 1);
+}
+
+function lastConsecutive(
+  events: ActionTimelineEvent[],
+  matches: (event: ActionTimelineEvent) => boolean,
+): ActionTimelineEvent[] {
+  const reversed = [...events].reverse();
+  return firstConsecutive(reversed, matches).reverse();
+}
+
+// Render-time resolution of a mulligan beat: the return set becomes the cards
+// actually in the pre-state hand (a concealed opponent's placeholders included,
+// so the count reads right and each sprite has a slot to leave), and the beat
+// ends with an Ability-style announce carrying "Mulligan ×K".
+function mulliganBeat(phase: AnimationEventPhase, phaseStartView: GameView): AnimationEventPhase {
+  const playerIndex = Number(phase.key.slice('Mulligan:'.length));
+  const hand = phaseStartView.players[playerIndex]?.hand ?? [];
+  const base = -((phase.events[0]?.id ?? 1) * MULLIGAN_ID_STRIDE);
+  const returns = hand.map((card, index) => handToDeckEvent(base - index, playerIndex, card));
+  const shuffle = phase.events.find((event) => event.kind === 'Shuffle');
+  const draws = phase.events.filter(isDrawKind);
+  const announce = mulliganAnnounceEvent(base - MULLIGAN_ID_STRIDE + 1, playerIndex, phase.mulliganCount ?? 1);
+  return {
+    ...phase,
+    events: [...returns, ...(shuffle ? [shuffle] : []), ...draws, announce],
+    durationMs: (returns.length ? animationPhaseDurationMs(`HandToDeck:${playerIndex}`, returns.length) : 0)
+      + (shuffle ? actionAnimationTiming.deckShuffleMs : 0)
+      + (draws.length ? animationPhaseDurationMs(`Draw:${playerIndex}`, draws.length) : 0),
+  };
+}
+
+function handToDeckEvent(id: number, playerIndex: number, card: CardView): ActionTimelineEvent {
+  const known = card.id !== undefined && card.id > 0;
+  return {
+    id,
+    kind: known ? 'MoveCard' : 'MoveCardReverse',
+    playerIndex,
+    message: known
+      ? `Player ${playerIndex + 1} moved a card from hand to deck.`
+      : `Player ${playerIndex + 1} moved a facedown card from hand to deck.`,
+    params: {
+      playerIndex,
+      fromArea: CabtAreaType.HAND,
+      toArea: CabtAreaType.DECK,
+      serial: card.serial,
+      ...(known ? { cardId: card.id } : {}),
+    },
+  };
+}
+
+// Anchored to the player's Active slot rather than a card: during setup the
+// hand is about to be empty and there may be no Pokemon in play at all, and the
+// slot is always rendered. motions.ts reads `slotAnnounce` for that.
+function mulliganAnnounceEvent(id: number, playerIndex: number, count: number): ActionTimelineEvent {
+  return {
+    id,
+    kind: 'Ability',
+    playerIndex,
+    message: mulliganLabel(playerIndex, count),
+    params: {
+      playerIndex,
+      abilityName: count > 0 ? `Mulligan ×${count}` : 'Mulligan',
+      slotAnnounce: true,
+    },
+  };
+}
+
+function failedBasicChecks(events: ActionTimelineEvent[], playerIndex: number): number {
+  return events.filter((event) => event.playerIndex === playerIndex && isFailedBasicCheck(event)).length;
+}
+
+// K counts the Basic checks this batch failed. A beat that only RESOLVES a
+// rejection announced in the previous observation has none of its own, and
+// says so without inventing a number that would double-count it.
+export function mulliganLabel(playerIndex: number, count: number): string {
+  return count > 0
+    ? `Player ${playerIndex + 1} mulliganed ×${count}`
+    : `Player ${playerIndex + 1} redrew their opening hand.`;
+}
+
 type AnimationEventPhase = {
   key: string;
   events: ActionTimelineEvent[];
   durationMs: number;
   usesSourceView: boolean;
+  // Mulligan beats only: how many times this player failed the Basic check in
+  // the batch. The failing checks themselves are not part of the beat.
+  mulliganCount?: number;
 };
 
 function animationEventPhases(events: ActionTimelineEvent[]): AnimationEventPhase[] {
+  const runs = mulliganRuns(events);
   const phases: AnimationEventPhase[] = [];
   for (const event of events) {
+    const run = runs.find((candidate) => candidate.events.has(event));
+    if (run) {
+      // One beat for the player's whole mulligan run, emitted where the run
+      // starts. Every other event of the run is folded into it.
+      if (event === run.first) {
+        phases.push(mulliganPhaseShell(run));
+      }
+      continue;
+    }
     const key = animationPhaseKeyForReplayEvent(event, phases);
     if (!key) {
       const last = phases.at(-1);
@@ -1463,7 +1669,15 @@ function animationPhaseKeyForReplayEvent(event: ActionTimelineEvent, phases: Ani
   return key;
 }
 
-function animationPhaseLabel(phase: AnimationEventPhase): string | undefined {
+function animationPhaseLabel(phase: AnimationEventPhase, view?: GameView): string | undefined {
+  if (phase.key.startsWith('Mulligan:')) {
+    const playerIndex = Number(phase.key.slice('Mulligan:'.length));
+    const count = phase.mulliganCount ?? 1;
+    // Your own mulligans hand the opponent extra cards; say so where the
+    // player is already looking.
+    const own = view?.seats?.[playerIndex]?.control === 'self';
+    return `${mulliganLabel(playerIndex, count)}${own && count > 0 ? ` — opponent may draw up to ${count}` : ''}`;
+  }
   const event = phase.events.find((candidate) => animationPhaseKey(candidate));
   if (!event) {
     return undefined;
@@ -1631,7 +1845,8 @@ function animationPhaseUsesSourceView(key: string): boolean {
 }
 
 function animationPhaseNeedsDedicatedView(phase: AnimationEventPhase): boolean {
-  return phase.key.startsWith('Evolve:')
+  return phase.key.startsWith('Mulligan:')
+    || phase.key.startsWith('Evolve:')
     || phase.key.startsWith('Ability:')
     || phase.key.startsWith('Attack:')
     || phase.key.startsWith('Pass:')

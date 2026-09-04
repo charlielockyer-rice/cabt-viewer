@@ -3725,7 +3725,9 @@ describe('cabtReplayToSnapshot', () => {
       }],
     });
 
-    expect(snapshot.steps[0].label).toBe('Player 2 redrew their opening hand.');
+    // The step counts the failed Basic checks it resolved, so a run of them
+    // reads as one mulligan beat rather than N anonymous redraws.
+    expect(snapshot.steps[0].label).toBe('Player 2 mulliganed ×1');
     expect(snapshot.steps[0].actionTimeline).toHaveLength(24);
   });
 
@@ -3786,6 +3788,15 @@ describe('cabtReplayToSnapshot', () => {
       'Player 2 redrew their opening hand.',
     ]);
     expect(snapshot.steps[1].actionTimeline).toHaveLength(16);
+    // ...and it animates as ONE beat: return the hand, shuffle, deal the hand
+    // they keep. The failed Basic check was announced by the previous step, so
+    // this one resolves it without counting it again.
+    expect(snapshot.steps[1].animationPhases?.map((phase) => phase.key)).toEqual(['Mulligan:1']);
+    const beat = snapshot.steps[1].animationPhases![0];
+    expect(beat.label).toBe('Player 2 redrew their opening hand.');
+    expect(beat.actionTimeline?.filter((event) => event.kind === 'Shuffle')).toHaveLength(1);
+    expect(beat.actionTimeline?.filter((event) => event.kind === 'Draw')).toHaveLength(7);
+    expect(beat.actionTimeline?.filter((event) => event.kind === 'Ability')).toHaveLength(1);
   });
 
   it('uses attack names in replay step labels when card metadata has them', () => {

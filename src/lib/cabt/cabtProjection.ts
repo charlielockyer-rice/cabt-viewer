@@ -222,7 +222,11 @@ export function projectDecision(observation: CabtObservation, seq: number, dataM
     seq,
     seat,
     kind,
-    message: kind === 'main' ? 'Main phase' : kind === 'choose-prize' ? 'Choose Prize Card' : cabtSelectLabel(select.context),
+    message: kind === 'main'
+      ? 'Main phase'
+      : kind === 'choose-prize'
+        ? 'Choose Prize Card'
+        : bonusDrawPrompt(select) ?? cabtSelectLabel(select.context),
     min: select.minCount,
     max: select.maxCount,
     remaining: select.remainDamageCounter > 0
@@ -237,6 +241,23 @@ export function projectDecision(observation: CabtObservation, seq: number, dataM
         : undefined,
     options: select.option.map((option, index) => projectOption(option, index, observation, dataMaps, seat)),
   };
+}
+
+// The engine asks the non-mulliganing player how many extra cards to take —
+// one option per count, `Draw 0`..`Draw N`. Labelled "Choose cards to draw" the
+// prompt gives no hint where the cards came from; the mulligan is the reason.
+function bonusDrawPrompt(select: NonNullable<CabtObservation['select']>): string | undefined {
+  if (select.context !== CabtSelectContext.DRAW_COUNT) {
+    return undefined;
+  }
+  const counts = select.option
+    .filter((option) => option.type === CabtOptionType.NUMBER)
+    .map((option) => option.number ?? option.count)
+    .filter((value): value is number => typeof value === 'number');
+  if (!counts.length) {
+    return undefined;
+  }
+  return `Opponent mulliganed — draw up to ${Math.max(...counts)} extra cards`;
 }
 
 function projectOption(

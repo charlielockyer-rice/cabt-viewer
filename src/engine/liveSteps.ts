@@ -370,6 +370,10 @@ export type LiveStep = {
   key?: string;
   label?: string;
   durationMs?: number;
+  // Which observation of the response this beat came from. One observation is
+  // one engine batch, and several rules ("one mulligan beat per player per
+  // batch") are stated in those terms.
+  observationIndex: number;
 };
 
 // Live playback steps, shaped like replay's: each observation contributes
@@ -433,10 +437,11 @@ export function buildLiveSteps(
           key: phase.key,
           label: phase.label,
           durationMs: phase.durationMs,
+          observationIndex: index,
         });
       }
     } else {
-      steps.push({ view: step });
+      steps.push({ view: step, observationIndex: index });
     }
   }
   return steps;

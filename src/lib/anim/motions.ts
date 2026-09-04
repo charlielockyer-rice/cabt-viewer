@@ -250,10 +250,14 @@ function announceEffects(event: ActionTimelineEvent, batch: ActionTimelineEvent[
   const targetSerial = num(params.serialTarget);
   const targetCardId = num(params.cardIdTarget);
   const attack = event.kind === 'Attack';
+  // A game-level announce (the mulligan beat) has no card of its own and may
+  // fire when the player has nothing in play at all, so it names the Active
+  // slot, which is always rendered.
+  const slotAnchored = !attack && params.slotAnnounce === true;
   // Abilities need the exact Pokemon (bench abilities exist); an attack
   // always comes from the active, so a missing identity still announces —
   // anchored to the attacker's active slot.
-  if (player === undefined || (!attack && serial === undefined && cardId === undefined)) {
+  if (player === undefined || (!attack && !slotAnchored && serial === undefined && cardId === undefined)) {
     return [];
   }
   const identitySerial = targetSerial ?? serial;
@@ -264,7 +268,7 @@ function announceEffects(event: ActionTimelineEvent, batch: ActionTimelineEvent[
     kind: attack ? 'announce-attack' : 'announce-ability',
     anchor: stadium
       ? { kind: 'stadium', player, serial }
-      : attack && identitySerial === undefined && identityCardId === undefined
+      : slotAnchored || (attack && identitySerial === undefined && identityCardId === undefined)
         ? { kind: 'slot', player, slot: 'active', index: 0 }
         : { kind: 'pokemon', player, serial: identitySerial, cardId: identityCardId },
     player,
@@ -665,11 +669,10 @@ function moveCardChoreography(
     }], effects: [] };
   }
 
-  if (cardId === undefined) {
-    return none;
-  }
-  const identity: Anchor = { kind: 'pokemon', player, serial, cardId };
-
+  // A hand->deck reset animates face-down too: a concealed opponent's mulligan
+  // returns a hand of card backs, and the serial (the tracked placeholder's) is
+  // all the hand slot needs to launch from. Handled before the cardId guard for
+  // that reason.
   if (fromArea === CabtAreaType.HAND && toArea === CabtAreaType.DECK) {
     if (serial === undefined) {
       return none;
@@ -679,7 +682,7 @@ function moveCardChoreography(
       style: 'hand-reset',
       space: 'viewport',
       player,
-      sprite: { kind: 'card', card: cabtCardToView(cardId) },
+      sprite: { kind: 'card', card: cardId === undefined ? unknownCard() : cabtCardToView(cardId) },
       from: { kind: 'hand-slot', player, serial },
       to: { kind: 'deck', player },
       startMs: actionAnimationStartMs(batch, event),
@@ -690,6 +693,11 @@ function moveCardChoreography(
       hide: [],
     }], effects: [] };
   }
+
+  if (cardId === undefined) {
+    return none;
+  }
+  const identity: Anchor = { kind: 'pokemon', player, serial, cardId };
 
   if (fromArea === CabtAreaType.HAND
     && (toArea === CabtAreaType.DISCARD || toArea === CabtAreaType.ACTIVE || toArea === CabtAreaType.BENCH)) {
@@ -1005,7 +1013,7 @@ function drawMotions(
   const count = drawCounts.get(player) ?? 1;
   const mulligan = batch.some((candidate) => {
     const candidateParams = eventParams(candidate);
-    return candidate.kind === 'MoveCard'
+    return (candidate.kind === 'MoveCard' || candidate.kind === 'MoveCardReverse')
       && candidate.playerIndex === player
       && num(candidateParams.fromArea) === CabtAreaType.HAND
       && num(candidateParams.toArea) === CabtAreaType.DECK;
