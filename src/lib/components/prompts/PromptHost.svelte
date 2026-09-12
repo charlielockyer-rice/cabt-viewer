@@ -42,6 +42,8 @@
      two grids in this one scrolling region. */
   :global(.search-card-scroll) {
     display: grid;
+    /* Keep each section at its content height; only the container scrolls. */
+    grid-auto-rows: max-content;
     gap: 12px;
     align-content: start;
     min-height: 0;
