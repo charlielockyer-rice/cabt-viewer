@@ -40,14 +40,12 @@ async function mountScreen(props: Record<string, unknown> = {}) {
   return app;
 }
 
-it('shows the bot and both deck names once the matchup loads', async () => {
+it('shows only Start game once the matchup loads', async () => {
   const fetchMock = stubFetch({ ok: true, json: matchup });
   await mountScreen();
 
   expect(fetchMock).toHaveBeenCalledWith('/local-engine/quickplay');
-  expect(document.querySelector('h1')?.textContent).toBe('Play vs Copycat v1 (20M)');
-  expect(document.body.textContent).toContain('Imitation policy trained on ladder games.');
-  expect(document.querySelector('.decks')?.textContent).toBe('You: Dragapult Dusknoir · Bot: Raging Bolt Ogerpon');
+  expect(document.body.textContent?.trim()).toBe('Start game');
   expect(document.querySelector('.start')?.textContent?.trim()).toBe('Start game');
 });
 
@@ -70,7 +68,7 @@ it('retries the load after a failure', async () => {
   document.querySelector<HTMLButtonElement>('button')!.click();
   await vi.waitFor(() => {
     flushSync();
-    expect(document.querySelector('h1')?.textContent).toBe('Play vs Copycat v1 (20M)');
+    expect(document.querySelector('.start')?.textContent?.trim()).toBe('Start game');
   });
 });
 

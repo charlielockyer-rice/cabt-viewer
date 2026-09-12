@@ -2,8 +2,7 @@
   import { onMount } from 'svelte';
   import { loadQuickPlayConfig, type QuickPlayConfig } from '../home/catalog';
 
-  // The hosted landing screen: a friend sees who they are about to play and
-  // presses one button. Everything else (bot, decks) is preconfigured by the
+  // The hosted landing screen: one button starts the configured matchup. Everything else (bot, decks) is preconfigured by the
   // engine server, and the decks re-roll on every load.
   type Props = {
     busy?: boolean;
@@ -44,11 +43,6 @@
       <pre class="error">{error || 'The quick play matchup is not configured.'}</pre>
       <button class="primary" type="button" onclick={() => void load()}>Retry</button>
     {:else}
-      <h1>Play vs {config.agent.name}</h1>
-      {#if config.agent.description}
-        <p class="description">{config.agent.description}</p>
-      {/if}
-      <p class="decks">You: {config.playerDeck.name} &middot; Bot: {config.botDeck.name}</p>
       <button class="primary start" type="button" disabled={busy} onclick={() => startQuickGame(config)}>
         {busy ? 'Starting...' : 'Start game'}
       </button>
@@ -71,13 +65,8 @@
   .quick-play {
     display: grid;
     gap: 14px;
-    justify-items: start;
+    justify-items: center;
     width: min(520px, calc(100vw - 48px));
-    padding: 24px;
-    border-radius: 8px;
-    border: 1px solid var(--surface-inset-border);
-    background: var(--surface-inset-bg);
-    box-shadow: var(--surface-toolbar-shadow);
   }
 
   h1 {
@@ -85,19 +74,6 @@
     color: var(--text-primary);
     font-size: 28px;
     line-height: 1.1;
-  }
-
-  .description {
-    margin: 0;
-    color: var(--text-secondary);
-    font-size: 14px;
-  }
-
-  .decks {
-    margin: 0;
-    color: var(--text-muted);
-    font-size: 13px;
-    font-weight: 900;
   }
 
   .start {
