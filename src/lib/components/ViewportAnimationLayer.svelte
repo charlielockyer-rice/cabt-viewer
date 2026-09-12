@@ -1265,6 +1265,8 @@
     pointer-events: none;
     transform: translate(-50%, -50%);
     transform-style: preserve-3d;
+    /* Fade the wrapper: opacity on the rotating coin flattens its two faces. */
+    animation: coin-visibility var(--coin-duration, 920ms) cubic-bezier(0.16, 0.84, 0.26, 1) var(--coin-delay) both;
   }
 
   .coin-flip-coin {
@@ -1276,7 +1278,7 @@
     transform-style: preserve-3d;
     transform-origin: center;
     animation: coin-flip var(--coin-duration, 920ms) cubic-bezier(0.16, 0.84, 0.26, 1) var(--coin-delay) both;
-    will-change: transform, opacity;
+    will-change: transform;
   }
 
   .coin-face {
@@ -1344,29 +1346,28 @@
     animation: coin-result-caption var(--coin-duration, 920ms) ease-out var(--coin-delay) both;
   }
 
+  @keyframes coin-visibility {
+    0%, 100% { opacity: 0; }
+    6%, 88% { opacity: 1; }
+  }
+
   @keyframes coin-flip {
     0% {
-      opacity: 0;
       transform: translate3d(0, 18px, 0) scale(0.4) rotateX(0deg);
     }
     6% {
-      opacity: 1;
       transform: translate3d(0, 8px, 0) scale(0.74) rotateX(180deg);
     }
     24% {
-      opacity: 1;
       transform: translate3d(0, -34px, 0) scale(1) rotateX(720deg);
     }
     65% {
-      opacity: 1;
       transform: translate3d(0, -10px, 0) scale(1) rotateX(var(--coin-end-rotation));
     }
     88% {
-      opacity: 1;
       transform: translate3d(0, -10px, 0) scale(1) rotateX(var(--coin-end-rotation));
     }
     100% {
-      opacity: 0;
       transform: translate3d(0, -18px, 0) scale(0.94) rotateX(var(--coin-end-rotation));
     }
   }
